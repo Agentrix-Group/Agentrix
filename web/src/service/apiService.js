@@ -1,5 +1,5 @@
 /**
- * High-level API service functions
+ * High-level API service functions for Agentrix
  */
 
 import { api } from '../api/client.js';
@@ -13,11 +13,19 @@ export const ApiService = {
     }
     return data;
   },
+  register: (username, email, password) =>
+    api.post('/auth/register', { username, email, password }),
+  logout: () => {
+    localStorage.removeItem('agentrix_token');
+  },
   getCurrentUser: () => api.get('/me'),
 
   // Contests
   listContests: () => api.get('/contests'),
   getContest: (id) => api.get(`/contests/${id}`),
+  listContestAgents: (contestId) => api.get(`/contests/${contestId}/agents`),
+  enrollAgent: (contestId, agentId) =>
+    api.post(`/contests/${contestId}/agents`, { agent_id: agentId }),
 
   // Games
   listGames: () => api.get('/games'),
@@ -28,6 +36,15 @@ export const ApiService = {
     const query = participantId ? `?participant_id=${encodeURIComponent(participantId)}` : '';
     return api.get(`/agents${query}`);
   },
+  createAgent: (agentData) => api.post('/agents', agentData),
+
+  // Submissions
+  listSubmissions: (agentId) => {
+    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
+    return api.get(`/submissions${query}`);
+  },
+  submitCode: (agentId, code, language = 'python') =>
+    api.post('/submissions', { agent_id: agentId, code, language }),
 
   // Matches
   listMatches: (contestId) => {

@@ -45,7 +45,7 @@ func (r *repository) ListMatchesByContest(ctx context.Context, contestId string)
 	}
 
 	tracer.Debugf(ctx, "Querying matches for contest %s", contestId)
-	query := `SELECT id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at FROM matches WHERE contest_id = ? AND active = TRUE ORDER BY created_at DESC`
+	query := `SELECT id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at FROM matches WHERE contest_id = $1 AND active = TRUE ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query, contestId)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *repository) GetMatch(ctx context.Context, id string) (*model.Match, err
 	}
 
 	tracer.Debugf(ctx, "Querying database for match %s", id)
-	query := `SELECT id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at FROM matches WHERE id = ? AND active = TRUE`
+	query := `SELECT id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at FROM matches WHERE id = $1 AND active = TRUE`
 
 	var m model.Match
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -99,7 +99,7 @@ func (r *repository) CreateMatch(ctx context.Context, match *model.Match) error 
 	}
 
 	tracer.Debugf(ctx, "Creating match '%s'", match.Id)
-	query := `INSERT INTO matches (id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO matches (id, contest_id, game_id, status, seed, replay_id, active, created_at, finished_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
 
 	_, err = db.ExecContext(ctx, query,
 		match.Id, match.ContestId, match.GameId, match.Status,
@@ -121,7 +121,7 @@ func (r *repository) UpdateMatch(ctx context.Context, match *model.Match) error 
 	}
 
 	tracer.Debugf(ctx, "Updating match '%s'", match.Id)
-	query := `UPDATE matches SET status = ?, replay_id = ?, finished_at = ?, active = ? WHERE id = ?`
+	query := `UPDATE matches SET status = $1, replay_id = $2, finished_at = $3, active = $4 WHERE id = $5`
 
 	_, err = db.ExecContext(ctx, query, match.Status, match.ReplayId, match.FinishedAt, match.Active, match.Id)
 	if err != nil {
@@ -140,7 +140,7 @@ func (r *repository) ActivateMatch(ctx context.Context, id string, isActive bool
 	}
 
 	tracer.Debugf(ctx, "Setting match '%s' active status to %t", id, isActive)
-	query := `UPDATE matches SET active = ? WHERE id = ?`
+	query := `UPDATE matches SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err

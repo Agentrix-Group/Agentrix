@@ -14,7 +14,9 @@ func TestNewConfiguration(t *testing.T) {
 	r.NotNil(cfg)
 	r.Equal("dev", cfg.Mode)
 	r.Equal("8080", cfg.Server.Port)
-	r.Equal("3306", cfg.Database.Port)
+	r.Equal("5432", cfg.Database.Port)
+	r.Equal("postgres", cfg.Database.Username)
+	r.Equal("pgx", cfg.Database.Driver)
 	r.Equal("agentrix", cfg.Database.Name)
 }
 
@@ -25,16 +27,17 @@ func TestGetStringDBConnection(t *testing.T) {
 	cfg.Database.Username = "testuser"
 	cfg.Database.Password = "testpass"
 	cfg.Database.Host = "localhost"
-	cfg.Database.Port = "3306"
+	cfg.Database.Port = "5432"
 	cfg.Database.Name = "agentrix_test"
+	cfg.Database.SSLMode = "disable"
 
 	connStr := cfg.GetStringDBConnection()
-	r.Contains(connStr, "testuser:testpass@tcp(localhost:3306)/agentrix_test")
+	r.Equal("postgres://testuser:testpass@localhost:5432/agentrix_test?sslmode=disable", connStr)
 
 	// Test GCP Mode
 	cfg.Mode = ModeGCP
 	gcpConnStr := cfg.GetStringDBConnection()
-	r.Contains(gcpConnStr, "testuser:testpass@unix(/cloudsql/localhost)/agentrix_test")
+	r.Equal("postgres://testuser:testpass@/cloudsql/localhost/agentrix_test?sslmode=disable", gcpConnStr)
 }
 
 func TestEnvOverride(t *testing.T) {

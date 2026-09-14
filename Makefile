@@ -2,12 +2,12 @@
 BINARY_NAME=agentrix
 BUILD_DIR=bin
 MAIN_PATH=main.go
-DB_SCRIPT=./script/capsule.sh
+DB_SCRIPT=./script/setup_postgres.sh
 TEST_PARALLEL=4
 GO_PACKAGES=./...
 
 .DEFAULT_GOAL := help
-.PHONY: setup agentrix-setup db-setup build lint test run clean help coverage
+.PHONY: setup agentrix-setup db-setup build lint test run clean help coverage web-install web-build web-dev
 
 # Show available targets
 help:
@@ -76,3 +76,17 @@ clean:
 	rm -rf $(BUILD_DIR)/
 	go clean -cache
 	@echo "Clean complete!"
+
+# Frontend Web targets
+web-install:
+	@echo "Installing frontend dependencies..."
+	cd web && npm install
+
+web-build:
+	@echo "Building frontend application..."
+	cd web && npm run build
+
+web-dev:
+	@echo "Starting frontend dev server..."
+	cd web && npm run dev
+

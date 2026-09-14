@@ -30,7 +30,7 @@ var ErrorCodes = map[int]int{
 	NOT_FOUND_ERROR:           http.StatusNotFound,
 	ALREADY_EXISTS_ERROR:      http.StatusConflict,
 	INVALID_CREDENTIALS_ERROR: http.StatusUnauthorized,
-	ACCESS_DENIED_ERROR:       http.StatusForbidden,
+	ACCESS_DENIED_ERROR:       http.StatusUnauthorized,
 	MISSING_PERMISSION_ERROR:  http.StatusForbidden,
 	INVALID_GAME_ACTION_ERROR: http.StatusBadRequest,
 	EXECUTION_TIMEOUT_ERROR:   http.StatusGatewayTimeout,

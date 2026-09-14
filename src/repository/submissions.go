@@ -45,7 +45,7 @@ func (r *repository) ListSubmissionsByAgent(ctx context.Context, agentId string)
 	}
 
 	tracer.Debugf(ctx, "Querying submissions for agent %s", agentId)
-	query := `SELECT id, agent_id, version, code_path, language, status, active, created_at FROM submissions WHERE agent_id = ? AND active = TRUE ORDER BY version DESC`
+	query := `SELECT id, agent_id, version, code_path, language, status, active, created_at FROM submissions WHERE agent_id = $1 AND active = TRUE ORDER BY version DESC`
 
 	rows, err := db.QueryContext(ctx, query, agentId)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *repository) GetSubmission(ctx context.Context, id string) (*model.Submi
 	}
 
 	tracer.Debugf(ctx, "Querying database for submission %s", id)
-	query := `SELECT id, agent_id, version, code_path, language, status, active, created_at FROM submissions WHERE id = ? AND active = TRUE`
+	query := `SELECT id, agent_id, version, code_path, language, status, active, created_at FROM submissions WHERE id = $1 AND active = TRUE`
 
 	var s model.Submission
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -99,7 +99,7 @@ func (r *repository) CreateSubmission(ctx context.Context, submission *model.Sub
 	}
 
 	tracer.Debugf(ctx, "Creating submission '%s' for agent '%s'", submission.Id, submission.AgentId)
-	query := `INSERT INTO submissions (id, agent_id, version, code_path, language, status, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO submissions (id, agent_id, version, code_path, language, status, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 	_, err = db.ExecContext(ctx, query,
 		submission.Id, submission.AgentId, submission.Version, submission.CodePath,
@@ -121,7 +121,7 @@ func (r *repository) UpdateSubmission(ctx context.Context, submission *model.Sub
 	}
 
 	tracer.Debugf(ctx, "Updating submission '%s'", submission.Id)
-	query := `UPDATE submissions SET status = ?, code_path = ?, active = ? WHERE id = ?`
+	query := `UPDATE submissions SET status = $1, code_path = $2, active = $3 WHERE id = $4`
 
 	_, err = db.ExecContext(ctx, query, submission.Status, submission.CodePath, submission.Active, submission.Id)
 	if err != nil {
@@ -140,7 +140,7 @@ func (r *repository) ActivateSubmission(ctx context.Context, id string, isActive
 	}
 
 	tracer.Debugf(ctx, "Setting submission '%s' active status to %t", id, isActive)
-	query := `UPDATE submissions SET active = ? WHERE id = ?`
+	query := `UPDATE submissions SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err

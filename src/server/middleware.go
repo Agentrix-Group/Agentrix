@@ -25,13 +25,16 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodPatch: common.AdminPermission,
 	},
 	"/api/v1/contests": {
-		http.MethodGet:  common.ReadPermission,
 		http.MethodPost: common.AdminPermission,
 	},
 	"/api/v1/contests/{id}": {
 		http.MethodGet:   common.ReadPermission,
 		http.MethodPut:   common.AdminPermission,
 		http.MethodPatch: common.AdminPermission,
+	},
+	"/api/v1/contests/{id}/agents": {
+		http.MethodGet:  common.ReadPermission,
+		http.MethodPost: common.SubmitAgentPermission,
 	},
 	"/api/v1/categories": {
 		http.MethodGet:  common.ReadPermission,

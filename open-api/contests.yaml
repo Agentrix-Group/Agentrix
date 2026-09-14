@@ -1,20 +1,48 @@
 paths:
   /api/v1/contests:
     get:
-      summary: List all active contests
+      summary: List public contests
+      description: Returns a list of contests available publicly. Draft contests are excluded by default.
       tags:
         - Contests
-      security:
-        - bearerAuth: []
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Optional filter by specific public contest state
+          schema:
+            type: string
+            enum:
+              - published
+              - registration_open
+              - preparation
+              - in_progress
+              - final_selection
+              - live_final
+              - finished
+              - archived
+              - suspended
+              - cancelled
+        - name: include_archived
+          in: query
+          required: false
+          description: When true, include archived contests in results
+          schema:
+            type: boolean
+            default: false
       responses:
         '200':
-          description: List of contests
+          description: List of public contests
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: './components/models.yaml#/Contest'
+                  $ref: './components/models.yaml#/PublicContestSummary'
+        '400':
+          $ref: './components/errors.yaml#/BadRequest'
+        '500':
+          $ref: './components/errors.yaml#/InternalServerError'
     post:
       summary: Create a new contest
       tags:
@@ -38,10 +66,9 @@ paths:
   /api/v1/contests/{id}:
     get:
       summary: Get contest details by ID
+      description: Returns details of a contest. Draft contests return 404 for unauthenticated or non-admin requests.
       tags:
         - Contests
-      security:
-        - bearerAuth: []
       parameters:
         - name: id
           in: path
@@ -106,3 +133,60 @@ paths:
             application/json:
               schema:
                 $ref: './components/models.yaml#/SuccessResponse'
+
+  /api/v1/contests/{id}/agents:
+    get:
+      summary: List agents enrolled in a contest
+      tags:
+        - Contests
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of enrolled rankings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Ranking'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+    post:
+      summary: Enroll an agent into a contest
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/EnrollAgentRequest'
+      responses:
+        '201':
+          description: Agent successfully enrolled
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/EnrollAgentResponse'
+        '400':
+          $ref: './components/errors.yaml#/BadRequest'
+        '403':
+          $ref: './components/errors.yaml#/Forbidden'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+        '409':
+          $ref: './components/errors.yaml#/Conflict'
+

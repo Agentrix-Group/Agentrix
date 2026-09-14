@@ -12,6 +12,7 @@ import (
 
 type Repository interface {
 	// Contests & Categories
+	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
 	ListContests(ctx context.Context) ([]model.Contest, error)
 	GetContest(ctx context.Context, id string) (*model.Contest, error)
 	CreateContest(ctx context.Context, contest *model.Contest) error
@@ -27,6 +28,7 @@ type Repository interface {
 	ListParticipants(ctx context.Context) ([]model.Participant, error)
 	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
 	GetParticipantByUsername(ctx context.Context, username string) (*model.Participant, error)
+	GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error)
 	CreateParticipant(ctx context.Context, participant *model.Participant) error
 	UpdateParticipant(ctx context.Context, participant *model.Participant) error
 	ActivateParticipant(ctx context.Context, id string, isActive bool) error
@@ -73,7 +75,30 @@ type Repository interface {
 	ListRankings(ctx context.Context) ([]model.Ranking, error)
 	ListRankingsByContest(ctx context.Context, contestId string) ([]model.Ranking, error)
 	GetRanking(ctx context.Context, id string) (*model.Ranking, error)
+	GetRankingByContestAndAgent(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
 	UpsertRanking(ctx context.Context, ranking *model.Ranking) error
+}
+
+// ParticipantReader defines read-only operations for participants (ATD-015).
+type ParticipantReader interface {
+	ListParticipants(ctx context.Context) ([]model.Participant, error)
+	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
+	GetParticipantByUsername(ctx context.Context, username string) (*model.Participant, error)
+	GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error)
+	HasPermission(ctx context.Context, participantId string, permission string) (bool, error)
+}
+
+// ParticipantWriter defines write-only operations for participants (ATD-015).
+type ParticipantWriter interface {
+	CreateParticipant(ctx context.Context, participant *model.Participant) error
+	UpdateParticipant(ctx context.Context, participant *model.Participant) error
+	ActivateParticipant(ctx context.Context, id string, isActive bool) error
+}
+
+// ParticipantRepository combines participant read and write operations.
+type ParticipantRepository interface {
+	ParticipantReader
+	ParticipantWriter
 }
 
 type repository struct {
@@ -128,7 +153,7 @@ func (r *repository) GetParticipant(ctx context.Context, id string) (*model.Part
 	}
 
 	tracer.Debugf(ctx, "Querying database for participant %s", id)
-	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE id = ? AND active = TRUE`
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE id = $1 AND active = TRUE`
 
 	var p model.Participant
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -154,7 +179,7 @@ func (r *repository) GetParticipantByUsername(ctx context.Context, username stri
 	}
 
 	tracer.Debugf(ctx, "Querying database for participant by username '%s'", username)
-	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE username = ? AND active = TRUE`
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE username = $1 AND active = TRUE`
 
 	var p model.Participant
 	err = db.QueryRowContext(ctx, query, username).Scan(
@@ -173,6 +198,32 @@ func (r *repository) GetParticipantByUsername(ctx context.Context, username stri
 	return &p, nil
 }
 
+func (r *repository) GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	tracer.Debugf(ctx, "Querying database for participant by email '%s'", email)
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE email = $1 AND active = TRUE`
+
+	var p model.Participant
+	err = db.QueryRowContext(ctx, query, email).Scan(
+		&p.Id, &p.Username, &p.Email, &p.Password, &p.RoleId, &p.Active, &p.CreatedAt,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			tracer.Warnf(ctx, "Participant with email '%s' not found", email)
+			return nil, err
+		}
+		tracer.Errorf(ctx, "Database query failed for email '%s': %s", email, err)
+		return nil, err
+	}
+
+	tracer.Debugf(ctx, "Successfully retrieved participant by email '%s'", email)
+	return &p, nil
+}
+
 func (r *repository) CreateParticipant(ctx context.Context, participant *model.Participant) error {
 	db, err := r.getDb()
 	if err != nil {
@@ -180,7 +231,7 @@ func (r *repository) CreateParticipant(ctx context.Context, participant *model.P
 	}
 
 	tracer.Debugf(ctx, "Creating participant '%s'", participant.Username)
-	query := `INSERT INTO participants (id, username, email, password, role_id, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO participants (id, username, email, password, role_id, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
 		participant.Id, participant.Username, participant.Email, participant.Password,
@@ -202,7 +253,7 @@ func (r *repository) UpdateParticipant(ctx context.Context, participant *model.P
 	}
 
 	tracer.Debugf(ctx, "Updating participant '%s'", participant.Id)
-	query := `UPDATE participants SET email = ?, role_id = ?, active = ? WHERE id = ?`
+	query := `UPDATE participants SET email = $1, role_id = $2, active = $3 WHERE id = $4`
 
 	_, err = db.ExecContext(ctx, query, participant.Email, participant.RoleId, participant.Active, participant.Id)
 	if err != nil {
@@ -221,7 +272,7 @@ func (r *repository) ActivateParticipant(ctx context.Context, id string, isActiv
 	}
 
 	tracer.Debugf(ctx, "Setting participant '%s' active status to %t", id, isActive)
-	query := `UPDATE participants SET active = ? WHERE id = ?`
+	query := `UPDATE participants SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	if err != nil {
@@ -244,7 +295,7 @@ func (r *repository) HasPermission(ctx context.Context, participantId string, pe
 		FROM permissions p
 		JOIN role_permissions rp ON p.id = rp.permission_id
 		JOIN participants part ON part.role_id = rp.role_id
-		WHERE part.id = ? AND p.id = ? AND p.active = TRUE AND rp.active = TRUE AND part.active = TRUE`
+		WHERE part.id = $1 AND p.id = $2 AND p.active = TRUE AND rp.active = TRUE AND part.active = TRUE`
 
 	var count int
 	err = db.QueryRowContext(ctx, query, participantId, permission).Scan(&count)

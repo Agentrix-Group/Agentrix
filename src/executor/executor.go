@@ -56,13 +56,14 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		}
 	}
 
-	// If fewer than 2 submissions provided, create dummy bots for basic simulation
+	// If fewer than 2 submissions provided, create reference bots with reference agent script
 	if len(submissions) < 2 {
 		for i := len(submissions); i < 2; i++ {
 			dummySub := &model.Submission{
 				Id:       fmt.Sprintf("bot-ref-%d", i+1),
 				AgentId:  fmt.Sprintf("reference-agent-%d", i+1),
 				Language: "python",
+				CodePath: "games/arena-basica/examples/bot_hunter.py",
 				Status:   common.SubmissionStatusReady,
 				Active:   true,
 			}

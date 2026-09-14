@@ -45,7 +45,7 @@ func (r *repository) GetGame(ctx context.Context, id string) (*model.Game, error
 	}
 
 	tracer.Debugf(ctx, "Querying database for game %s", id)
-	query := `SELECT id, name, description, manifest_path, min_players, max_players, active, created_at FROM games WHERE id = ? AND active = TRUE`
+	query := `SELECT id, name, description, manifest_path, min_players, max_players, active, created_at FROM games WHERE id = $1 AND active = TRUE`
 
 	var g model.Game
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -71,7 +71,7 @@ func (r *repository) CreateGame(ctx context.Context, game *model.Game) error {
 	}
 
 	tracer.Debugf(ctx, "Creating game '%s'", game.Id)
-	query := `INSERT INTO games (id, name, description, manifest_path, min_players, max_players, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO games (id, name, description, manifest_path, min_players, max_players, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 	_, err = db.ExecContext(ctx, query,
 		game.Id, game.Name, game.Description, game.ManifestPath,
@@ -93,7 +93,7 @@ func (r *repository) UpdateGame(ctx context.Context, game *model.Game) error {
 	}
 
 	tracer.Debugf(ctx, "Updating game '%s'", game.Id)
-	query := `UPDATE games SET name = ?, description = ?, manifest_path = ?, min_players = ?, max_players = ?, active = ? WHERE id = ?`
+	query := `UPDATE games SET name = $1, description = $2, manifest_path = $3, min_players = $4, max_players = $5, active = $6 WHERE id = $7`
 
 	_, err = db.ExecContext(ctx, query,
 		game.Name, game.Description, game.ManifestPath, game.MinPlayers, game.MaxPlayers, game.Active, game.Id,
@@ -114,7 +114,7 @@ func (r *repository) ActivateGame(ctx context.Context, id string, isActive bool)
 	}
 
 	tracer.Debugf(ctx, "Setting game '%s' active status to %t", id, isActive)
-	query := `UPDATE games SET active = ? WHERE id = ?`
+	query := `UPDATE games SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err

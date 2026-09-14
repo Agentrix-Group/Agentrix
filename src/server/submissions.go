@@ -3,12 +3,14 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
@@ -58,6 +60,12 @@ func (s *Server) getSubmission(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if !ok || claims == nil {
+		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
+		return
+	}
+
 	var req CreateSubmissionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
@@ -76,12 +84,25 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Service.CreateSubmission(ctx, &submission, []byte(req.Code)); err != nil {
+	if err := s.Service.CreateSubmission(ctx, claims.ParticipantId, claims.RoleId, &submission, []byte(req.Code)); err != nil {
+		if errors.Is(err, service.ErrAgentNotFound) {
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Agent not found")
+			return
+		}
+		if errors.Is(err, service.ErrAgentNotOwned) {
+			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "You are not authorized to submit code for this agent")
+			return
+		}
+		if errors.Is(err, service.ErrEmptySubmissionCode) {
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Submission code cannot be empty")
+			return
+		}
+		tracer.Errorf(ctx, "Failed to create submission: %s", err)
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
 
-	common.WriteSuccessResponse(w, http.StatusCreated, fmt.Sprintf("Submission %s created successfully", submission.Id))
+	common.WriteObjectResponse(w, http.StatusCreated, submission)
 }
 
 func (s *Server) updateSubmission(w http.ResponseWriter, r *http.Request) {

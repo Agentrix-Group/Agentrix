@@ -3,7 +3,8 @@ package executor
 import (
 	"context"
 	"encoding/json"
-	"math/rand"
+	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"time"
@@ -12,8 +13,31 @@ import (
 	"github.com/F4nk1/Agentrix/src/tracer"
 )
 
+// OpponentPublicState exposes strictly observable arena attributes to rival bots,
+// masking internal attributes such as energy, max_hp, and private strategy details (CA-004, CA-013).
+type OpponentPublicState struct {
+	ID       string `json:"id"`
+	X        int    `json:"x"`
+	Y        int    `json:"y"`
+	Alive    bool   `json:"alive"`
+	Shielded bool   `json:"shielded"`
+}
+
+// SlotPerception represents the filtered view of the arena supplied to a bot slot.
+type SlotPerception struct {
+	Tick       int                    `json:"tick"`
+	GridWidth  int                    `json:"grid_width"`
+	GridHeight int                    `json:"grid_height"`
+	Me         *game.PlayerState      `json:"me,omitempty"`
+	Players    map[string]interface{} `json:"players"`
+	Events     []string               `json:"events"`
+	Done       bool                   `json:"done"`
+	Winner     string                 `json:"winner,omitempty"`
+}
+
 type Sandbox interface {
 	ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error)
+	FilterPerception(state *game.GameState, playerID string) SlotPerception
 }
 
 type agentSandbox struct {
@@ -27,116 +51,99 @@ func NewSandbox(timeout time.Duration) Sandbox {
 	return &agentSandbox{timeout: timeout}
 }
 
-func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
-	// If script file exists on disk, execute with timeout and JSON IPC
-	if codePath != "" {
-		if _, err := os.Stat(codePath); err == nil {
-			action, err := s.runProcess(ctx, codePath, state, playerID)
-			if err == nil {
-				return action, nil
-			}
-			tracer.Warnf(ctx, "Bot process execution failed, falling back to heuristic: %s", err)
+// FilterPerception builds a slot-isolated view of the game state for the given player.
+// The bot receives its own complete state under its ID and 'me', while opponent details
+// are restricted to observable coordinates and shield status.
+func (s *agentSandbox) FilterPerception(state *game.GameState, playerID string) SlotPerception {
+	if state == nil {
+		return SlotPerception{
+			Players: make(map[string]interface{}),
 		}
 	}
 
-	// Default intelligent heuristic bot behavior for Arena Basica
-	return s.heuristicBot(state, playerID), nil
+	playersMap := make(map[string]interface{})
+	var meState *game.PlayerState
+
+	for pID, p := range state.Players {
+		if pID == playerID {
+			meState = p
+			playersMap[pID] = p
+		} else {
+			playersMap[pID] = OpponentPublicState{
+				ID:       p.ID,
+				X:        p.X,
+				Y:        p.Y,
+				Alive:    p.Alive,
+				Shielded: p.Shielded,
+			}
+		}
+	}
+
+	return SlotPerception{
+		Tick:       state.Tick,
+		GridWidth:  state.GridWidth,
+		GridHeight: state.GridHeight,
+		Me:         meState,
+		Players:    playersMap,
+		Events:     state.Events,
+		Done:       state.Done,
+		Winner:     state.Winner,
+	}
 }
 
-func (s *agentSandbox) runProcess(ctx context.Context, scriptPath string, state *game.GameState, playerID string) (game.Action, error) {
-	callCtx, cancel := context.WithTimeout(ctx, s.timeout)
-	defer cancel()
+func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
+	// If no code path is configured, attribute failure and take neutral REST action
+	if codePath == "" {
+		tracer.Warnf(ctx, "Agent '%s' has no executable code attached; performing neutral action REST", playerID)
+		return game.Action{Type: game.ActionRest}, errors.New("agent has no executable code attached")
+	}
 
-	stateJSON, err := json.Marshal(state)
+	// If script file is missing from disk, attribute failure and take neutral REST action
+	if _, err := os.Stat(codePath); err != nil {
+		tracer.Warnf(ctx, "Agent '%s' executable script not found at '%s': %s; performing neutral action REST", playerID, codePath, err)
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("agent executable not found: %w", err)
+	}
+
+	// Filter perception by slot
+	perception := s.FilterPerception(state, playerID)
+
+	// Execute isolated process with timeout
+	action, err := s.runProcess(ctx, codePath, perception, playerID)
 	if err != nil {
+		tracer.Warnf(ctx, "Agent '%s' process execution failed: %s; performing neutral action REST", playerID, err)
 		return game.Action{Type: game.ActionRest}, err
 	}
 
-	cmd := exec.CommandContext(callCtx, "python3", scriptPath, playerID, string(stateJSON))
+	// Validate action protocol compliance
+	switch action.Type {
+	case game.ActionUp, game.ActionDown, game.ActionLeft, game.ActionRight,
+		game.ActionAttack, game.ActionShield, game.ActionRest:
+		return action, nil
+	default:
+		tracer.Warnf(ctx, "Agent '%s' emitted unrecognized action '%s'; performing neutral action REST", playerID, action.Type)
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("unrecognized action '%s'", action.Type)
+	}
+}
+
+func (s *agentSandbox) runProcess(ctx context.Context, scriptPath string, perception SlotPerception, playerID string) (game.Action, error) {
+	callCtx, cancel := context.WithTimeout(ctx, s.timeout)
+	defer cancel()
+
+	perceptionJSON, err := json.Marshal(perception)
+	if err != nil {
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("failed to marshal slot perception: %w", err)
+	}
+
+	cmd := exec.CommandContext(callCtx, "python3", scriptPath, playerID, string(perceptionJSON))
 	out, err := cmd.Output()
 	if err != nil {
-		return game.Action{Type: game.ActionRest}, err
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("process execution failed: %w", err)
 	}
 
 	var action game.Action
 	if err := json.Unmarshal(out, &action); err != nil {
-		return game.Action{Type: game.ActionRest}, err
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("invalid action json from bot: %w", err)
 	}
 
 	return action, nil
-}
-
-func (s *agentSandbox) heuristicBot(state *game.GameState, playerID string) game.Action {
-	me, ok := state.Players[playerID]
-	if !ok || !me.Alive {
-		return game.Action{Type: game.ActionRest}
-	}
-
-	// Find closest opponent
-	var closestOpponent *game.PlayerState
-	minDist := 9999
-
-	for pID, opp := range state.Players {
-		if pID == playerID || !opp.Alive {
-			continue
-		}
-		dist := absDiff(me.X, opp.X) + absDiff(me.Y, opp.Y)
-		if dist < minDist {
-			minDist = dist
-			closestOpponent = opp
-		}
-	}
-
-	if closestOpponent == nil {
-		return game.Action{Type: game.ActionRest}
-	}
-
-	// If adjacent, attack or shield
-	if minDist <= 1 {
-		if me.HP < 25 && me.Energy >= 10 {
-			return game.Action{Type: game.ActionShield}
-		}
-		if me.Energy >= 15 {
-			return game.Action{Type: game.ActionAttack}
-		}
-		return game.Action{Type: game.ActionRest}
-	}
-
-	// If low on energy, rest
-	if me.Energy < 20 {
-		return game.Action{Type: game.ActionRest}
-	}
-
-	// Navigate towards closest opponent
-	dx := closestOpponent.X - me.X
-	dy := closestOpponent.Y - me.Y
-
-	if absDiff(dx, 0) > absDiff(dy, 0) {
-		if dx > 0 {
-			return game.Action{Type: game.ActionRight}
-		}
-		return game.Action{Type: game.ActionLeft}
-	} else {
-		if dy > 0 {
-			return game.Action{Type: game.ActionDown}
-		}
-		return game.Action{Type: game.ActionUp}
-	}
-}
-
-func absDiff(a, b int) int {
-	diff := a - b
-	if diff < 0 {
-		return -diff
-	}
-	return diff
-}
-
-func randomMove() game.Action {
-	moves := []game.ActionType{
-		game.ActionUp, game.ActionDown, game.ActionLeft, game.ActionRight,
-		game.ActionAttack, game.ActionShield, game.ActionRest,
-	}
-	idx := rand.Intn(len(moves))
-	return game.Action{Type: moves[idx]}
 }

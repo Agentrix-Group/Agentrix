@@ -19,11 +19,15 @@ type Service interface {
 	HasPermission(ctx context.Context, participantId, permission string) (bool, error)
 
 	// Contests & Categories
+	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
+	GetPublicContest(ctx context.Context, id string) (*model.Contest, error)
 	ListContests(ctx context.Context) ([]model.Contest, error)
 	GetContest(ctx context.Context, id string) (*model.Contest, error)
 	CreateContest(ctx context.Context, contest *model.Contest) error
 	UpdateContest(ctx context.Context, contest *model.Contest) error
 	ActivateContest(ctx context.Context, id string, isActive bool) error
+	EnrollAgent(ctx context.Context, participantId string, contestId string, agentId string) (*model.Ranking, error)
+	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
 	ListCategories(ctx context.Context) ([]model.Category, error)
 	GetCategory(ctx context.Context, id string) (*model.Category, error)
 	CreateCategory(ctx context.Context, category *model.Category) error
@@ -49,7 +53,7 @@ type Service interface {
 	ListSubmissions(ctx context.Context) ([]model.Submission, error)
 	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
 	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
-	CreateSubmission(ctx context.Context, submission *model.Submission, codeContent []byte) error
+	CreateSubmission(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error
 	UpdateSubmission(ctx context.Context, submission *model.Submission) error
 	ActivateSubmission(ctx context.Context, id string, isActive bool) error
 

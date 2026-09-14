@@ -15,7 +15,7 @@ func (r *repository) ListResults(ctx context.Context) ([]model.Result, error) {
 	}
 
 	tracer.Debugf(ctx, "Executing database query to fetch results")
-	query := `SELECT id, match_id, submission_id, score, ` + "`rank`" + `, status, details, created_at FROM results ORDER BY created_at DESC`
+	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -45,7 +45,7 @@ func (r *repository) ListResultsByMatch(ctx context.Context, matchId string) ([]
 	}
 
 	tracer.Debugf(ctx, "Querying results for match %s", matchId)
-	query := `SELECT id, match_id, submission_id, score, ` + "`rank`" + `, status, details, created_at FROM results WHERE match_id = ? ORDER BY ` + "`rank`" + ` ASC`
+	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results WHERE match_id = $1 ORDER BY "rank" ASC`
 
 	rows, err := db.QueryContext(ctx, query, matchId)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *repository) GetResult(ctx context.Context, id string) (*model.Result, e
 	}
 
 	tracer.Debugf(ctx, "Querying database for result %s", id)
-	query := `SELECT id, match_id, submission_id, score, ` + "`rank`" + `, status, details, created_at FROM results WHERE id = ?`
+	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results WHERE id = $1`
 
 	var res model.Result
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -98,7 +98,7 @@ func (r *repository) CreateResult(ctx context.Context, result *model.Result) err
 	}
 
 	tracer.Debugf(ctx, "Creating result '%s' for match '%s'", result.Id, result.MatchId)
-	query := `INSERT INTO results (id, match_id, submission_id, score, ` + "`rank`" + `, status, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO results (id, match_id, submission_id, score, "rank", status, details, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
 
 	_, err = db.ExecContext(ctx, query,
 		result.Id, result.MatchId, result.SubmissionId, result.Score,

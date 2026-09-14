@@ -45,7 +45,7 @@ func (r *repository) ListAgentsByParticipant(ctx context.Context, participantId 
 	}
 
 	tracer.Debugf(ctx, "Querying agents for participant %s", participantId)
-	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE participant_id = ? AND active = TRUE ORDER BY created_at DESC`
+	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE participant_id = $1 AND active = TRUE ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query, participantId)
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, err
 	}
 
 	tracer.Debugf(ctx, "Querying database for agent %s", id)
-	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE id = ? AND active = TRUE`
+	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE id = $1 AND active = TRUE`
 
 	var a model.Agent
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -99,7 +99,7 @@ func (r *repository) CreateAgent(ctx context.Context, agent *model.Agent) error 
 	}
 
 	tracer.Debugf(ctx, "Creating agent '%s'", agent.Name)
-	query := `INSERT INTO agents (id, participant_id, game_id, name, description, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
+	query := `INSERT INTO agents (id, participant_id, game_id, name, description, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
 		agent.Id, agent.ParticipantId, agent.GameId, agent.Name,
@@ -121,7 +121,7 @@ func (r *repository) UpdateAgent(ctx context.Context, agent *model.Agent) error 
 	}
 
 	tracer.Debugf(ctx, "Updating agent '%s'", agent.Id)
-	query := `UPDATE agents SET name = ?, description = ?, active = ? WHERE id = ?`
+	query := `UPDATE agents SET name = $1, description = $2, active = $3 WHERE id = $4`
 
 	_, err = db.ExecContext(ctx, query, agent.Name, agent.Description, agent.Active, agent.Id)
 	if err != nil {
@@ -140,7 +140,7 @@ func (r *repository) ActivateAgent(ctx context.Context, id string, isActive bool
 	}
 
 	tracer.Debugf(ctx, "Setting agent '%s' active status to %t", id, isActive)
-	query := `UPDATE agents SET active = ? WHERE id = ?`
+	query := `UPDATE agents SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err

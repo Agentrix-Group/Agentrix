@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/F4nk1/Agentrix/src/config"
 	"github.com/F4nk1/Agentrix/src/tracer"

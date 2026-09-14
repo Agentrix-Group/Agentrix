@@ -3,15 +3,57 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
+
+func (s *Server) listPublicContests(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+
+	stateParam := r.URL.Query().Get("state")
+	includeArchivedParam := r.URL.Query().Get("include_archived")
+
+	var includeArchived bool
+	if includeArchivedParam != "" {
+		parsed, err := strconv.ParseBool(includeArchivedParam)
+		if err != nil {
+			tracer.Warnf(ctx, "Invalid include_archived parameter '%s': %s", includeArchivedParam, err)
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Parameter 'include_archived' must be a boolean (true or false)")
+			return
+		}
+		includeArchived = parsed
+	}
+
+	filter := model.PublicContestsFilter{
+		State:           model.ContestState(stateParam),
+		IncludeArchived: includeArchived,
+	}
+
+	contests, err := s.Service.ListPublicContests(ctx, filter)
+	if err != nil {
+		if errors.Is(err, service.ErrInvalidStateFilter) || errors.Is(err, service.ErrPrivateStateFilter) {
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+			return
+		}
+		tracer.Errorf(ctx, "Failed to retrieve public contests: %s", err)
+		common.WriteErrorResponse(w, common.DATABASE_ERROR)
+		return
+	}
+
+	if contests == nil {
+		contests = make([]model.PublicContestSummary, 0)
+	}
+
+	common.WriteObjectResponse(w, http.StatusOK, contests)
+}
 
 func (s *Server) listContests(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -38,6 +80,92 @@ func (s *Server) getContest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	common.WriteObjectResponse(w, http.StatusOK, contest)
+}
+
+func (s *Server) getPublicContest(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id := mux.Vars(r)["id"]
+
+	contest, err := s.Service.GetPublicContest(ctx, id)
+	if err != nil {
+		if errors.Is(err, service.ErrContestNotFound) || err == sql.ErrNoRows {
+			tracer.Warnf(ctx, "Public contest '%s' not found or private", id)
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
+		} else {
+			tracer.Errorf(ctx, "Database error retrieving public contest '%s': %s", id, err)
+			common.WriteErrorResponse(w, common.DATABASE_ERROR)
+		}
+		return
+	}
+
+	common.WriteObjectResponse(w, http.StatusOK, contest)
+}
+
+func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	contestId := mux.Vars(r)["id"]
+
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if !ok || claims == nil {
+		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
+		return
+	}
+
+	var req model.EnrollAgentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.AgentId == "" {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Field 'agent_id' is required")
+		return
+	}
+
+	ranking, err := s.Service.EnrollAgent(ctx, claims.ParticipantId, contestId, req.AgentId)
+	if err != nil {
+		if errors.Is(err, service.ErrContestNotFound) || errors.Is(err, service.ErrAgentNotFound) {
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrUnauthorizedAgent) {
+			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrRegistrationClosed) || errors.Is(err, service.ErrGameMismatch) {
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrAgentAlreadyEnrolled) {
+			common.WriteErrorMessage(w, common.ALREADY_EXISTS_ERROR, err.Error())
+			return
+		}
+		tracer.Errorf(ctx, "Failed to enroll agent '%s' into contest '%s': %s", req.AgentId, contestId, err)
+		common.WriteErrorResponse(w, common.DATABASE_ERROR)
+		return
+	}
+
+	common.WriteObjectResponse(w, http.StatusCreated, model.EnrollAgentResponse{
+		HttpStatusCode: http.StatusCreated,
+		Message:        "Agent enrolled in contest successfully",
+		Ranking:        ranking,
+	})
+}
+
+func (s *Server) listContestAgents(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	contestId := mux.Vars(r)["id"]
+
+	rankings, err := s.Service.ListContestAgents(ctx, contestId)
+	if err != nil {
+		if errors.Is(err, service.ErrContestNotFound) || err == sql.ErrNoRows {
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
+			return
+		}
+		tracer.Errorf(ctx, "Failed to list agents for contest '%s': %s", contestId, err)
+		common.WriteErrorResponse(w, common.DATABASE_ERROR)
+		return
+	}
+
+	if rankings == nil {
+		rankings = make([]model.Ranking, 0)
+	}
+	common.WriteObjectResponse(w, http.StatusOK, rankings)
 }
 
 func (s *Server) createContest(w http.ResponseWriter, r *http.Request) {

@@ -24,6 +24,7 @@ type Database struct {
 	Protocol string `json:"protocol"`
 	Host     string `json:"host"`
 	Port     string `json:"port"`
+	SSLMode  string `json:"sslmode"`
 }
 
 type Artifacts struct {
@@ -55,9 +56,14 @@ func NewConfiguration() *Config {
 		serverPort = "8080"
 	}
 
+	dbDriver := os.Getenv("DB_DRIVER")
+	if dbDriver == "" {
+		dbDriver = "pgx"
+	}
+
 	dbUser := os.Getenv("DB_USER")
 	if dbUser == "" {
-		dbUser = "root"
+		dbUser = "postgres"
 	}
 
 	dbPass := os.Getenv("DB_PASSWORD")
@@ -69,12 +75,17 @@ func NewConfiguration() *Config {
 
 	dbPort := os.Getenv("DB_PORT")
 	if dbPort == "" {
-		dbPort = "3306"
+		dbPort = "5432"
 	}
 
 	dbName := os.Getenv("DB_NAME")
 	if dbName == "" {
 		dbName = "agentrix"
+	}
+
+	dbSSLMode := os.Getenv("DB_SSLMODE")
+	if dbSSLMode == "" {
+		dbSSLMode = "disable"
 	}
 
 	artifactsDir := os.Getenv("ARTIFACTS_DIR")
@@ -104,13 +115,14 @@ func NewConfiguration() *Config {
 			Port: serverPort,
 		},
 		Database: Database{
-			Driver:   "mysql",
+			Driver:   dbDriver,
 			Name:     dbName,
 			Username: dbUser,
 			Password: dbPass,
 			Protocol: "tcp",
 			Host:     dbHost,
 			Port:     dbPort,
+			SSLMode:  dbSSLMode,
 		},
 		Artifacts: Artifacts{
 			Dir: artifactsDir,
@@ -125,19 +137,39 @@ func NewConfiguration() *Config {
 
 func (c *Config) GetStringDBConnection() string {
 	if c.Mode == ModeGCP {
-		return fmt.Sprintf("%s:%s@unix(/cloudsql/%s)/%s?parseTime=true",
+		if c.Database.Password != "" {
+			return fmt.Sprintf("postgres://%s:%s@/cloudsql/%s/%s?sslmode=%s",
+				c.Database.Username,
+				c.Database.Password,
+				c.Database.Host,
+				c.Database.Name,
+				c.Database.SSLMode,
+			)
+		}
+		return fmt.Sprintf("postgres://%s@/cloudsql/%s/%s?sslmode=%s",
 			c.Database.Username,
-			c.Database.Password,
 			c.Database.Host,
 			c.Database.Name,
+			c.Database.SSLMode,
 		)
 	}
 
-	return fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
+	if c.Database.Password != "" {
+		return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
+			c.Database.Username,
+			c.Database.Password,
+			c.Database.Host,
+			c.Database.Port,
+			c.Database.Name,
+			c.Database.SSLMode,
+		)
+	}
+
+	return fmt.Sprintf("postgres://%s@%s:%s/%s?sslmode=%s",
 		c.Database.Username,
-		c.Database.Password,
 		c.Database.Host,
 		c.Database.Port,
 		c.Database.Name,
+		c.Database.SSLMode,
 	)
 }

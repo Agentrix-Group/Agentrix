@@ -45,6 +45,47 @@ LoginResponse:
     participant:
       $ref: '#/Participant'
 
+RegisterRequest:
+  type: object
+  properties:
+    username:
+      type: string
+      example: "botmaster"
+    email:
+      type: string
+      format: email
+      example: "botmaster@example.com"
+    password:
+      type: string
+      format: password
+      example: "secretPass123"
+  required:
+    - username
+    - email
+    - password
+
+EnrollAgentRequest:
+  type: object
+  properties:
+    agent_id:
+      type: string
+      example: "agent-1234"
+  required:
+    - agent_id
+
+EnrollAgentResponse:
+  type: object
+  properties:
+    httpStatusCode:
+      type: integer
+      example: 201
+    message:
+      type: string
+      example: "Agent enrolled in contest successfully"
+    ranking:
+      $ref: '#/Ranking'
+
+
 Participant:
   type: object
   properties:
@@ -273,3 +314,45 @@ Replay:
     created_at:
       type: string
       format: date-time
+
+PublicContestSummary:
+  type: object
+  properties:
+    id:
+      type: string
+      format: uuid
+      example: "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+    name:
+      type: string
+      example: "Torneo Primavera 2026"
+    description:
+      type: string
+      example: "Concurso universitario de agentes en arena básica"
+    state:
+      type: string
+      enum:
+        - published
+        - registration_open
+        - preparation
+        - in_progress
+        - final_selection
+        - live_final
+        - finished
+        - archived
+        - suspended
+        - cancelled
+      example: "registration_open"
+    starts_at:
+      type: string
+      format: date-time
+      nullable: true
+    ends_at:
+      type: string
+      format: date-time
+      nullable: true
+  required:
+    - id
+    - name
+    - description
+    - state
+

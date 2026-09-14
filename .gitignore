@@ -2,6 +2,10 @@
 main
 bin/
 
+# Python bytecode
+__pycache__/
+*.py[cod]
+
 # Artifacts and Replays generated at runtime
 artifacts/
 *.log

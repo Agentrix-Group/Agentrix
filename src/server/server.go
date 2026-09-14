@@ -50,13 +50,16 @@ func (s *Server) buildHandler() http.Handler {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
-	// Public authentication endpoints
+	// Public endpoints
 	api.HandleFunc("/login", s.login).Methods(http.MethodPost, http.MethodOptions)
 	api.HandleFunc("/register", s.register).Methods(http.MethodPost, http.MethodOptions)
 	api.HandleFunc("/refresh", s.refreshToken).Methods(http.MethodPost, http.MethodOptions)
 	api.HandleFunc("/auth/login", s.login).Methods(http.MethodPost, http.MethodOptions)
 	api.HandleFunc("/auth/register", s.register).Methods(http.MethodPost, http.MethodOptions)
 	api.HandleFunc("/auth/refresh", s.refreshToken).Methods(http.MethodPost, http.MethodOptions)
+	api.HandleFunc("/contests", s.listPublicContests).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}", s.getPublicContest).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}/agents", s.listContestAgents).Methods(http.MethodGet, http.MethodOptions)
 
 	// Protected routes
 	protected := api.NewRoute().Subrouter()
@@ -73,11 +76,10 @@ func (s *Server) buildHandler() http.Handler {
 	protected.HandleFunc("/participants/{id}", s.activateParticipant).Methods(http.MethodPatch)
 
 	// Contests
-	protected.HandleFunc("/contests", s.listContests).Methods(http.MethodGet)
 	protected.HandleFunc("/contests", s.createContest).Methods(http.MethodPost)
-	protected.HandleFunc("/contests/{id}", s.getContest).Methods(http.MethodGet)
 	protected.HandleFunc("/contests/{id}", s.updateContest).Methods(http.MethodPut)
 	protected.HandleFunc("/contests/{id}", s.activateContest).Methods(http.MethodPatch)
+	protected.HandleFunc("/contests/{id}/agents", s.enrollAgent).Methods(http.MethodPost)
 
 	// Categories
 	protected.HandleFunc("/categories", s.listCategories).Methods(http.MethodGet)

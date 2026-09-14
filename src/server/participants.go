@@ -3,25 +3,20 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
 
-type LoginRequest struct {
-	Username string `json:"username"`
-	Password string `json:"password"`
-}
-
-type LoginResponse struct {
-	Token       *model.Token       `json:"token"`
-	Participant *model.Participant `json:"participant"`
-}
+type LoginRequest = model.LoginRequest
+type LoginResponse = model.LoginResponse
 
 func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -40,9 +35,12 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	participant, err := s.Service.Login(ctx, req.Username, req.Password)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, service.ErrInvalidCredentials) || err == sql.ErrNoRows {
 			tracer.Warnf(ctx, "Login credentials incorrect for '%s'", req.Username)
 			common.WriteErrorMessage(w, common.INVALID_CREDENTIALS_ERROR, "Invalid username or password")
+		} else if errors.Is(err, service.ErrAccountInactive) {
+			tracer.Warnf(ctx, "Login rejected: participant '%s' is inactive", req.Username)
+			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "Participant account is inactive")
 		} else {
 			tracer.Errorf(ctx, "Database error during login for '%s': %s", req.Username, err)
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
@@ -66,26 +64,31 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var participant model.Participant
-	if err := json.NewDecoder(r.Body).Decode(&participant); err != nil {
+	var req model.RegisterRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		tracer.Warnf(ctx, "Failed to decode register request: %s", err)
 		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
 		return
 	}
 
-	if err := validateParticipant(&participant); err != nil {
-		tracer.Warnf(ctx, "Validation failed for registration: %s", err)
-		common.WriteErrorResponse(w, common.MISSING_FIELDS_ERROR)
-		return
-	}
-
-	if participant.Password == "" {
-		common.WriteErrorMessage(w, common.MISSING_FIELDS_ERROR, "Password is required")
-		return
+	participant := model.Participant{
+		Username: req.Username,
+		Email:    req.Email,
+		Password: req.Password,
 	}
 
 	err := s.Service.Register(ctx, &participant)
 	if err != nil {
+		if errors.Is(err, service.ErrUsernameAlreadyExists) || errors.Is(err, service.ErrEmailAlreadyExists) {
+			tracer.Warnf(ctx, "Registration conflict: %s", err)
+			common.WriteErrorMessage(w, common.ALREADY_EXISTS_ERROR, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrInvalidUsername) || errors.Is(err, service.ErrInvalidEmail) || errors.Is(err, service.ErrInvalidPassword) {
+			tracer.Warnf(ctx, "Registration validation error: %s", err)
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+			return
+		}
 		tracer.Errorf(ctx, "Failed to register participant: %s", err)
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return

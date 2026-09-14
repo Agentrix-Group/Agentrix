@@ -1,0 +1,83 @@
+paths:
+  /api/v1/auth/login:
+    post:
+      summary: Authenticate participant and obtain JWT token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/LoginRequest'
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/LoginResponse'
+        '400':
+          $ref: './components/errors.yaml#/BadRequest'
+        '401':
+          $ref: './components/errors.yaml#/Unauthorized'
+
+  /api/v1/auth/register:
+    post:
+      summary: Register a new participant
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Participant'
+      responses:
+        '201':
+          description: Participant registered
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+        '400':
+          $ref: './components/errors.yaml#/BadRequest'
+
+  /api/v1/auth/refresh:
+    post:
+      summary: Refresh access token
+      tags:
+        - Authentication
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Refreshed token
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Token'
+
+  /api/v1/me:
+    get:
+      summary: Get authenticated participant session
+      tags:
+        - Authentication
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Current participant profile
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Participant'
+        '401':
+          $ref: './components/errors.yaml#/Unauthorized'

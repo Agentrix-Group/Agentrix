@@ -1,0 +1,44 @@
+paths:
+  /api/v1/results:
+    get:
+      summary: List match results
+      tags:
+        - Results
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: match_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Result'
+
+  /api/v1/results/{id}:
+    get:
+      summary: Get result by ID
+      tags:
+        - Results
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Result details
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Result'

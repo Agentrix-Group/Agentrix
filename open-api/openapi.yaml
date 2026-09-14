@@ -1,0 +1,91 @@
+openapi: 3.1.0
+info:
+  title: Agentrix API
+  description: REST API backend and competition platform for Agentrix
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+paths:
+  # Authentication
+  /api/v1/auth/login:
+    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1login'
+  /api/v1/auth/register:
+    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1register'
+  /api/v1/auth/refresh:
+    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1refresh'
+  /api/v1/me:
+    $ref: './auth.yaml#/paths/~1api~1v1~1me'
+
+  # Participants
+  /api/v1/participants:
+    $ref: './participants.yaml#/paths/~1api~1v1~1participants'
+  /api/v1/participants/{id}:
+    $ref: './participants.yaml#/paths/~1api~1v1~1participants~1{id}'
+
+  # Contests
+  /api/v1/contests:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests'
+  /api/v1/contests/{id}:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}'
+
+  # Categories
+  /api/v1/categories:
+    $ref: './categories.yaml#/paths/~1api~1v1~1categories'
+  /api/v1/categories/{id}:
+    $ref: './categories.yaml#/paths/~1api~1v1~1categories~1{id}'
+
+  # Games
+  /api/v1/games:
+    $ref: './games.yaml#/paths/~1api~1v1~1games'
+  /api/v1/games/{id}:
+    $ref: './games.yaml#/paths/~1api~1v1~1games~1{id}'
+
+  # Agents
+  /api/v1/agents:
+    $ref: './agents.yaml#/paths/~1api~1v1~1agents'
+  /api/v1/agents/{id}:
+    $ref: './agents.yaml#/paths/~1api~1v1~1agents~1{id}'
+
+  # Submissions
+  /api/v1/submissions:
+    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions'
+  /api/v1/submissions/{id}:
+    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions~1{id}'
+
+  # Matches
+  /api/v1/matches:
+    $ref: './matches.yaml#/paths/~1api~1v1~1matches'
+  /api/v1/matches/{id}:
+    $ref: './matches.yaml#/paths/~1api~1v1~1matches~1{id}'
+  /api/v1/matches/{id}/run:
+    $ref: './matches.yaml#/paths/~1api~1v1~1matches~1{id}~1run'
+
+  # Results
+  /api/v1/results:
+    $ref: './results.yaml#/paths/~1api~1v1~1results'
+  /api/v1/results/{id}:
+    $ref: './results.yaml#/paths/~1api~1v1~1results~1{id}'
+
+  # Rankings
+  /api/v1/rankings:
+    $ref: './rankings.yaml#/paths/~1api~1v1~1rankings'
+  /api/v1/rankings/{id}:
+    $ref: './rankings.yaml#/paths/~1api~1v1~1rankings~1{id}'
+
+  # Replays
+  /api/v1/replays/{id}:
+    $ref: './replays.yaml#/paths/~1api~1v1~1replays~1{id}'
+  /api/v1/replays/{id}/stream:
+    $ref: './replays.yaml#/paths/~1api~1v1~1replays~1{id}~1stream'
+
+  # Permissions
+  /api/v1/permissions:
+    $ref: './permissions.yaml#/paths/~1api~1v1~1permissions'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      $ref: './components/security.yaml#/bearerAuth'
+    sessionAuth:
+      $ref: './components/security.yaml#/sessionAuth'

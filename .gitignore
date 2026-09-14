@@ -1,0 +1,33 @@
+# Binaries
+main
+bin/
+
+# Artifacts and Replays generated at runtime
+artifacts/
+*.log
+
+# Database files
+script/capsule.sql
+
+# Test and coverage files
+*.txt
+coverage.*
+src/coverage.*
+
+# Node modules
+web/node_modules/
+web/dist/
+
+# Environment files
+.env
+.env.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db

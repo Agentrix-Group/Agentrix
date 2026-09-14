@@ -1,0 +1,44 @@
+paths:
+  /api/v1/rankings:
+    get:
+      summary: List tournament rankings / leaderboard
+      tags:
+        - Rankings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: contest_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Leaderboard rankings
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Ranking'
+
+  /api/v1/rankings/{id}:
+    get:
+      summary: Get ranking entry by ID
+      tags:
+        - Rankings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Ranking entry
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Ranking'

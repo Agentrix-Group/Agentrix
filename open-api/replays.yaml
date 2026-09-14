@@ -1,0 +1,46 @@
+paths:
+  /api/v1/replays/{id}:
+    get:
+      summary: Get replay metadata and frames
+      tags:
+        - Replays
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Replay data
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Replay'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+
+  /api/v1/replays/{id}/stream:
+    get:
+      summary: Stream raw JSON replay artifact
+      tags:
+        - Replays
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Replay JSON file
+          content:
+            application/json:
+              schema:
+                type: object
+        '404':
+          $ref: './components/errors.yaml#/NotFound'

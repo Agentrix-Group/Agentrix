@@ -1,0 +1,87 @@
+paths:
+  /api/v1/participants:
+    get:
+      summary: List registered participants
+      tags:
+        - Participants
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of participants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Participant'
+
+  /api/v1/participants/{id}:
+    get:
+      summary: Get participant profile by ID
+      tags:
+        - Participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Participant profile
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Participant'
+    put:
+      summary: Update participant profile
+      tags:
+        - Participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Participant'
+      responses:
+        '200':
+          description: Participant updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+    patch:
+      summary: Activate or deactivate participant
+      tags:
+        - Participants
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Participant status updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'

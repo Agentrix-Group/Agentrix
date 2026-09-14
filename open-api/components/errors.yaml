@@ -1,0 +1,118 @@
+ErrorResponse:
+  type: object
+  properties:
+    httpStatusCode:
+      type: integer
+      example: 400
+    errorCode:
+      type: integer
+      example: 1001
+    message:
+      type: string
+      example: "Invalid request format"
+  required:
+    - httpStatusCode
+    - errorCode
+    - message
+
+BadRequest:
+  description: Bad request
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        invalid_request:
+          summary: Invalid request format
+          value:
+            httpStatusCode: 400
+            errorCode: 1001
+            message: "Invalid request format"
+        missing_fields:
+          summary: Missing required fields
+          value:
+            httpStatusCode: 400
+            errorCode: 1002
+            message: "Required fields are missing"
+
+Unauthorized:
+  description: Authentication required
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        invalid_credentials:
+          summary: Invalid credentials
+          value:
+            httpStatusCode: 401
+            errorCode: 2001
+            message: "Invalid credentials provided"
+        access_denied:
+          summary: Authentication required
+          value:
+            httpStatusCode: 401
+            errorCode: 2002
+            message: "Authentication required"
+
+Forbidden:
+  description: Insufficient permissions
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        missing_permission:
+          summary: Insufficient permissions
+          value:
+            httpStatusCode: 403
+            errorCode: 2003
+            message: "Insufficient permissions"
+
+NotFound:
+  description: Resource not found
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        not_found:
+          summary: Resource not found
+          value:
+            httpStatusCode: 404
+            errorCode: 1003
+            message: "Resource not found"
+
+Conflict:
+  description: Resource already exists
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        already_exists:
+          summary: Resource already exists
+          value:
+            httpStatusCode: 409
+            errorCode: 1004
+            message: "Resource already exists"
+
+InternalServerError:
+  description: Internal server error
+  content:
+    application/json:
+      schema:
+        $ref: '#/ErrorResponse'
+      examples:
+        database_error:
+          summary: Database operation failed
+          value:
+            httpStatusCode: 500
+            errorCode: 5001
+            message: "Database operation failed"
+        internal_error:
+          summary: Internal server error
+          value:
+            httpStatusCode: 500
+            errorCode: 5002
+            message: "Internal server error"

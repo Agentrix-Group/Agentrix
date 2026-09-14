@@ -1,0 +1,112 @@
+paths:
+  /api/v1/agents:
+    get:
+      summary: List agent bots
+      tags:
+        - Agents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: participant_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of agent bots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Agent'
+    post:
+      summary: Register a new agent bot
+      tags:
+        - Agents
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Agent'
+      responses:
+        '201':
+          description: Agent registered
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+
+  /api/v1/agents/{id}:
+    get:
+      summary: Get agent details by ID
+      tags:
+        - Agents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Agent details
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Agent'
+    put:
+      summary: Update agent
+      tags:
+        - Agents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Agent'
+      responses:
+        '200':
+          description: Agent updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+    patch:
+      summary: Activate or deactivate agent
+      tags:
+        - Agents
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'

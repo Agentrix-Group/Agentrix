@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agentrix Web Platform</title>
+  <link rel="stylesheet" href="./src/style/main.css">
+</head>
+<body>
+  <div id="root">
+    <nav class="navbar">
+      <div class="navbar-brand">Agentrix Platform</div>
+      <div class="navbar-links">
+        <a href="#dashboard" class="navbar-link active">Dashboard</a>
+        <a href="#matches" class="navbar-link">Matches</a>
+        <a href="#rankings" class="navbar-link">Leaderboard</a>
+        <a href="../games/arena-basica/renderer/index.html" class="navbar-link">Arena Viewer</a>
+      </div>
+    </nav>
+
+    <div class="main-content">
+      <h1>Welcome to Agentrix</h1>
+      <p style="color: var(--text-secondary);">
+        The multi-agent battle & bot tournament evaluation platform.
+      </p>
+
+      <div class="grid-cards">
+        <div class="card">
+          <h3>🎮 Arena Basica</h3>
+          <p>Deterministic grid battle arena. Maneuver, conserve energy, attack and shield.</p>
+          <a href="../games/arena-basica/renderer/index.html" class="btn" style="text-decoration:none;margin-top:12px;">Launch Canvas Viewer</a>
+        </div>
+        <div class="card">
+          <h3>📊 API & Documentation</h3>
+          <p>Explore OpenAPI 3.1 contracts and system schemas under <code>open-api/</code> and <code>contracts/</code>.</p>
+        </div>
+        <div class="card">
+          <h3>⚡ Background Worker</h3>
+          <p>Integrated sandbox executor and worker pool asynchronously processing matches.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

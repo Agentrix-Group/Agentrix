@@ -1,0 +1,108 @@
+paths:
+  /api/v1/contests:
+    get:
+      summary: List all active contests
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of contests
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Contest'
+    post:
+      summary: Create a new contest
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Contest'
+      responses:
+        '201':
+          description: Contest created
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+
+  /api/v1/contests/{id}:
+    get:
+      summary: Get contest details by ID
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contest details
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Contest'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+    put:
+      summary: Update contest
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Contest'
+      responses:
+        '200':
+          description: Contest updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+    patch:
+      summary: Activate or deactivate contest
+      tags:
+        - Contests
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Contest status updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'

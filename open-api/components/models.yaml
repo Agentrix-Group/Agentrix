@@ -1,0 +1,275 @@
+SuccessResponse:
+  type: object
+  properties:
+    httpStatusCode:
+      type: integer
+      example: 200
+    message:
+      type: string
+      example: "Operation completed successfully"
+  required:
+    - httpStatusCode
+    - message
+
+Token:
+  type: object
+  properties:
+    access_token:
+      type: string
+    refresh_token:
+      type: string
+    expires_in:
+      type: integer
+    token_type:
+      type: string
+      example: "Bearer"
+
+LoginRequest:
+  type: object
+  properties:
+    username:
+      type: string
+      example: "admin"
+    password:
+      type: string
+      example: "admin123"
+  required:
+    - username
+    - password
+
+LoginResponse:
+  type: object
+  properties:
+    token:
+      $ref: '#/Token'
+    participant:
+      $ref: '#/Participant'
+
+Participant:
+  type: object
+  properties:
+    id:
+      type: string
+    username:
+      type: string
+    email:
+      type: string
+    role_id:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+
+Role:
+  type: object
+  properties:
+    id:
+      type: string
+    description:
+      type: string
+    active:
+      type: boolean
+
+Permission:
+  type: object
+  properties:
+    id:
+      type: string
+    description:
+      type: string
+    active:
+      type: boolean
+
+Category:
+  type: object
+  properties:
+    id:
+      type: string
+    description:
+      type: string
+    active:
+      type: boolean
+  required:
+    - id
+    - description
+
+Game:
+  type: object
+  properties:
+    id:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+    manifest_path:
+      type: string
+    min_players:
+      type: integer
+    max_players:
+      type: integer
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+
+Contest:
+  type: object
+  properties:
+    id:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+    game_id:
+      type: string
+    category_id:
+      type: string
+    start_date:
+      type: string
+      format: date-time
+    end_date:
+      type: string
+      format: date-time
+    status:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+
+Agent:
+  type: object
+  properties:
+    id:
+      type: string
+    participant_id:
+      type: string
+    game_id:
+      type: string
+    name:
+      type: string
+    description:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+
+Submission:
+  type: object
+  properties:
+    id:
+      type: string
+    agent_id:
+      type: string
+    version:
+      type: integer
+    code_path:
+      type: string
+    language:
+      type: string
+    status:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+
+Match:
+  type: object
+  properties:
+    id:
+      type: string
+    contest_id:
+      type: string
+    game_id:
+      type: string
+    status:
+      type: string
+    seed:
+      type: integer
+    replay_id:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time
+    finished_at:
+      type: string
+      format: date-time
+
+Result:
+  type: object
+  properties:
+    id:
+      type: string
+    match_id:
+      type: string
+    submission_id:
+      type: string
+    score:
+      type: integer
+    rank:
+      type: integer
+    status:
+      type: string
+    details:
+      type: string
+    created_at:
+      type: string
+      format: date-time
+
+Ranking:
+  type: object
+  properties:
+    id:
+      type: string
+    contest_id:
+      type: string
+    agent_id:
+      type: string
+    participant_id:
+      type: string
+    score:
+      type: integer
+    matches_played:
+      type: integer
+    wins:
+      type: integer
+    losses:
+      type: integer
+    draws:
+      type: integer
+    rank:
+      type: integer
+    updated_at:
+      type: string
+      format: date-time
+
+Replay:
+  type: object
+  properties:
+    id:
+      type: string
+    match_id:
+      type: string
+    file_path:
+      type: string
+    duration_ticks:
+      type: integer
+    summary:
+      type: string
+    active:
+      type: boolean
+    created_at:
+      type: string
+      format: date-time

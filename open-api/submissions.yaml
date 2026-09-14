@@ -1,0 +1,124 @@
+paths:
+  /api/v1/submissions:
+    get:
+      summary: List agent code submissions
+      tags:
+        - Submissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: agent_id
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of submissions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Submission'
+    post:
+      summary: Upload new code submission for an agent
+      tags:
+        - Submissions
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_id:
+                  type: string
+                version:
+                  type: integer
+                language:
+                  type: string
+                  example: "python"
+                code:
+                  type: string
+              required:
+                - agent_id
+      responses:
+        '201':
+          description: Submission created
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+
+  /api/v1/submissions/{id}:
+    get:
+      summary: Get submission by ID
+      tags:
+        - Submissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Submission details
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/Submission'
+    put:
+      summary: Update submission
+      tags:
+        - Submissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: './components/models.yaml#/Submission'
+      responses:
+        '200':
+          description: Submission updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'
+    patch:
+      summary: Activate or deactivate submission
+      tags:
+        - Submissions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Status updated
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/SuccessResponse'

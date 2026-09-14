@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 const (
@@ -45,7 +46,39 @@ type Config struct {
 	Auth      Auth      `json:"auth"`
 }
 
+// loadDotEnv reads key=value pairs from specified files and populates them into
+// the environment only if they are not already set. It ignores comments and empty lines.
+func loadDotEnv(filenames ...string) {
+	for _, filename := range filenames {
+		data, err := os.ReadFile(filename)
+		if err != nil {
+			continue
+		}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) != 2 {
+				continue
+			}
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			if len(val) >= 2 && ((val[0] == '"' && val[len(val)-1] == '"') || (val[0] == '\'' && val[len(val)-1] == '\'')) {
+				val = val[1 : len(val)-1]
+			}
+			if os.Getenv(key) == "" {
+				_ = os.Setenv(key, val)
+			}
+		}
+	}
+}
+
 func NewConfiguration() *Config {
+	loadDotEnv(".env")
+
 	mode := os.Getenv("MODE")
 	if mode == "" {
 		mode = ModeDev

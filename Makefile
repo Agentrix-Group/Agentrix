@@ -1,4 +1,7 @@
-# Variables
+# Variables and Environment
+-include .env
+export
+
 BINARY_NAME=agentrix
 BUILD_DIR=bin
 MAIN_PATH=main.go

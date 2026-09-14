@@ -2,7 +2,8 @@
  * Base API Client for Agentrix Backend
  */
 
-const BASE_URL = '/api/v1';
+const API_HOST = (import.meta.env?.VITE_API_URL || '').replace(/\/+$/, '');
+const BASE_URL = `${API_HOST}/api/v1`;
 
 export async function request(endpoint, options = {}) {
   const token = localStorage.getItem('agentrix_token');

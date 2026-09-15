@@ -2,7 +2,7 @@
 
 ## 1. Estado de estas decisiones
 
-Las decisiones ATD-001 a ATD-015 son derivaciones profesionales, no texto literal del cuestionario. Requieren aprobación individual según AR-102. ATD-003 fue aprobada por José Daniel el 2026-09-13. ATD-015 aplica DP-001, que sí es una decisión directa y aprobada; su adaptación técnica exacta permanece abierta a revisión.
+Las decisiones ATD-001 a ATD-016 son derivaciones profesionales, no texto literal del cuestionario. Requieren aprobación individual según AR-102. ATD-003 fue aprobada por José Daniel el 2026-09-13. ATD-015 aplica DP-001, que sí es una decisión directa y aprobada; su adaptación técnica exacta permanece abierta a revisión. ATD-016 fue aprobada por José Daniel el 2026-09-15.
 
 ## 2. Principios
 
@@ -263,6 +263,35 @@ La auditoría confirmó que el prototipo sí usa `repository` para separar SQL d
 3. **Retirar `repository` y llevar consultas a `connection`.** Mantiene SQL fuera de `service`, pero convierte una carpeta técnica en propietaria de semántica del dominio y rompe el paralelismo por funcionalidad.
 
 La recomendación técnica es la primera alternativa. No añade otra capa: conserva la frontera que ya tiene un consumidor concreto, elimina la interfaz monolítica y crea únicamente los métodos necesarios para el corte actual. La distribución física no cambia las fronteras de ejecución: API, worker, juego y agentes siguen siendo procesos aislables.
+
+### ATD-016 — Consola operativa serena y eventos estructurados
+
+**Estado:** aprobada por José Daniel el 2026-09-15.
+
+`tracer` ofrece dos presentaciones del mismo evento operativo:
+
+- consola local compacta, en español, sin caller ni stack trace automáticos;
+- JSON estructurado en producción, con nombre estable de evento y campos completos.
+
+Cada evento declara nivel, subsistema, nombre técnico en inglés, mensaje humano y campos tipados. La correlación puede incluir `request_id`, `actor_id`, `job_id`, `match_id` y `attempt`; la consola acorta identificadores y el JSON conserva sus valores completos.
+
+Política de niveles:
+
+- `DEBUG`: consultas, rechazos esperables y diagnóstico solicitado;
+- `INFO`: inicio, disponibilidad y transiciones operativas relevantes;
+- `WARN`: degradación o consecuencia recuperable que requiere atención;
+- `ERROR`: operación que no pudo completarse.
+
+Un fallo se registra una sola vez por su propietario operativo. `repository` devuelve errores sin imprimirlos; `service` registra únicamente transiciones que coordina; `server` cierra cada solicitud con una única línea; `executor` posee el ciclo de la partida. Los fallos se atribuyen a `agent`, `game`, `platform` o `infrastructure`.
+
+La consola no es una fuente de verdad ni un almacén general. Permanecen separados:
+
+- auditoría de acciones sensibles;
+- eventos autoritativos por tick y replay;
+- informes sanitizados para participantes;
+- métricas técnicas agregadas.
+
+No se escriben tokens, credenciales, código, payloads, SQL, correo, username, percepción privada ni rutas completas en eventos operativos normales. Los incidentes repetidos por tick se resumen al terminar la partida. La retención de logs operativos continúa limitada según ATD-014.
 
 ## 6. Contrato de un módulo de juego
 

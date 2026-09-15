@@ -25,7 +25,6 @@ func (s *Server) listPublicContests(w http.ResponseWriter, r *http.Request) {
 	if includeArchivedParam != "" {
 		parsed, err := strconv.ParseBool(includeArchivedParam)
 		if err != nil {
-			tracer.Warnf(ctx, "Invalid include_archived parameter '%s': %s", includeArchivedParam, err)
 			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Parameter 'include_archived' must be a boolean (true or false)")
 			return
 		}
@@ -43,7 +42,7 @@ func (s *Server) listPublicContests(w http.ResponseWriter, r *http.Request) {
 			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
 			return
 		}
-		tracer.Errorf(ctx, "Failed to retrieve public contests: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contests.public_list.failed", "No se pudieron consultar los concursos", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -59,7 +58,7 @@ func (s *Server) listContests(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	contests, err := s.Service.ListContests(ctx)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list contests: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contests.list.failed", "No se pudieron consultar los concursos", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -75,6 +74,7 @@ func (s *Server) getContest(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.get.failed", "No se pudo consultar el concurso", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -89,10 +89,10 @@ func (s *Server) getPublicContest(w http.ResponseWriter, r *http.Request) {
 	contest, err := s.Service.GetPublicContest(ctx, id)
 	if err != nil {
 		if errors.Is(err, service.ErrContestNotFound) || err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Public contest '%s' not found or private", id)
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
 		} else {
-			tracer.Errorf(ctx, "Database error retrieving public contest '%s': %s", id, err)
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.public_get.failed", "No se pudo consultar el concurso",
+				tracer.String("contest_id", id), tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -135,7 +135,8 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 			common.WriteErrorMessage(w, common.ALREADY_EXISTS_ERROR, err.Error())
 			return
 		}
-		tracer.Errorf(ctx, "Failed to enroll agent '%s' into contest '%s': %s", req.AgentId, contestId, err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.enrollment.failed", "No se pudo registrar el agente en el concurso",
+			tracer.String("agent_id", req.AgentId), tracer.String("contest_id", contestId), tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -157,7 +158,8 @@ func (s *Server) listContestAgents(w http.ResponseWriter, r *http.Request) {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
 			return
 		}
-		tracer.Errorf(ctx, "Failed to list agents for contest '%s': %s", contestId, err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.agents.failed", "No se pudieron consultar los agentes del concurso",
+			tracer.String("contest_id", contestId), tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -182,6 +184,7 @@ func (s *Server) createContest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Service.CreateContest(ctx, &contest); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.create.failed", "No se pudo crear el concurso", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -201,6 +204,7 @@ func (s *Server) updateContest(w http.ResponseWriter, r *http.Request) {
 	contest.Id = id
 
 	if err := s.Service.UpdateContest(ctx, &contest); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.update.failed", "No se pudo actualizar el concurso", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -225,6 +229,7 @@ func (s *Server) listCategories(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	categories, err := s.Service.ListCategories(ctx)
 	if err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "categories.list.failed", "No se pudieron consultar las categorías", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -240,6 +245,7 @@ func (s *Server) getCategory(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Category not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "category.get.failed", "No se pudo consultar la categoría", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -261,6 +267,7 @@ func (s *Server) createCategory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Service.CreateCategory(ctx, &category); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "category.create.failed", "No se pudo crear la categoría", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -280,6 +287,7 @@ func (s *Server) updateCategory(w http.ResponseWriter, r *http.Request) {
 	category.Id = id
 
 	if err := s.Service.UpdateCategory(ctx, &category); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "category.update.failed", "No se pudo actualizar la categoría", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

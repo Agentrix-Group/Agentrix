@@ -3,6 +3,7 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -36,11 +37,17 @@ func NewMatchExecutor(svc service.Service, sandbox Sandbox) MatchExecutor {
 }
 
 func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) error {
-	tracer.Infof(ctx, "Starting execution for match %s (game: %s)", job.MatchId, job.GameId)
+	startedAt := time.Now()
+	ctx = tracer.WithMatchID(ctx, job.MatchId)
+	ctx = tracer.WithJobID(ctx, job.JobId)
+	ctx = tracer.WithAttempt(ctx, job.Attempt)
+	tracer.InfoEvent(ctx, tracer.ScopeMatch, "match.started", "Partida iniciada",
+		tracer.String("game", job.GameId))
 
 	match, err := e.svc.GetMatch(ctx, job.MatchId)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to get match %s: %s", job.MatchId, err)
+		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.load.failed", "No se pudo preparar la partida",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 		return err
 	}
 
@@ -73,7 +80,8 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 	engine, err := game.GetRegistry().CreateEngine(job.GameId)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to create game engine for %s: %s", job.GameId, err)
+		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.create.failed", "El juego no pudo iniciarse",
+			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
 		return err
@@ -88,13 +96,18 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 	state, err := engine.Init(playerIDs, job.Seed)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to init game engine: %s", err)
+		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.initialize.failed", "El juego rechazó la configuración inicial",
+			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
 		return err
 	}
 
 	replayFrames := make([]model.ReplayFrame, 0)
+	agentIssues := make(map[string]*agentIssueSummary)
+	var executionErr error
+	persistenceFailures := 0
+	resultFailures := 0
 
 	// Record initial frame
 	initialStateMap, _ := structToMap(state)
@@ -117,6 +130,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 			action, err := e.sandbox.ExecuteTurn(ctx, codePath, state, pID)
 			if err != nil {
+				recordAgentIssue(agentIssues, pID, err)
 				action = game.Action{Type: game.ActionRest}
 			}
 			actions[pID] = action
@@ -124,7 +138,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 		state, err = engine.Step(actions)
 		if err != nil {
-			tracer.Errorf(ctx, "Engine step error at tick %d: %s", state.Tick, err)
+			executionErr = err
+			tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.tick.failed", "El juego falló durante la partida",
+				tracer.Origin(tracer.OriginGame), tracer.Int("tick", state.Tick), tracer.Err(err))
 			break
 		}
 
@@ -174,7 +190,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		MatchId: job.MatchId,
 	}
 	if err := e.svc.SaveReplay(ctx, replay, replayData); err != nil {
-		tracer.Errorf(ctx, "Failed to save replay for match %s: %s", job.MatchId, err)
+		persistenceFailures++
+		tracer.ErrorEvent(ctx, tracer.ScopeReplay, "replay.save.failed", "No se pudo guardar el replay",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	}
 
 	// Save individual results
@@ -195,8 +213,13 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			CreatedAt:    time.Now().UTC(),
 		}
 		if err := e.svc.CreateResult(ctx, res); err != nil {
-			tracer.Warnf(ctx, "Failed to persist result for submission %s: %s", item.SubID, err)
+			persistenceFailures++
+			resultFailures++
 		}
+	}
+	if resultFailures > 0 {
+		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "results.save.failed", "No se pudieron guardar todos los resultados",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Int("failed_results", resultFailures))
 	}
 
 	// Mark match finished
@@ -205,16 +228,80 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	match.ReplayId = replayID
 	match.FinishedAt = &now
 	if err := e.svc.UpdateMatch(ctx, match); err != nil {
-		tracer.Errorf(ctx, "Failed to update finished status for match %s: %s", match.Id, err)
+		persistenceFailures++
+		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.finish.failed", "No se pudo guardar el estado final de la partida",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	}
 
 	// Update rankings for contest if contest is set
 	if job.ContestId != "" {
-		_, _ = e.svc.CalculateRankings(ctx, job.ContestId)
+		if _, err := e.svc.CalculateRankings(ctx, job.ContestId); err != nil {
+			persistenceFailures++
+			tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "rankings.update.failed", "No se pudo actualizar la clasificación",
+				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		}
 	}
 
-	tracer.Infof(ctx, "Successfully completed match %s (winner: %s, duration: %d ticks)", job.MatchId, state.Winner, len(replayFrames))
-	return nil
+	logAgentIssueSummaries(ctx, agentIssues)
+	completionFields := []tracer.Field{
+		tracer.String("winner_id", state.Winner),
+		tracer.Int("ticks", len(replayFrames)),
+		tracer.Duration("elapsed", time.Since(startedAt)),
+	}
+	if executionErr != nil || persistenceFailures > 0 {
+		completionFields = append(completionFields, tracer.Int("persistence_failures", persistenceFailures))
+		tracer.WarnEvent(ctx, tracer.ScopeMatch, "match.completed_with_incidents", "Partida finalizada con incidencias", completionFields...)
+	} else {
+		tracer.InfoEvent(ctx, tracer.ScopeMatch, "match.completed", "Partida finalizada", completionFields...)
+	}
+	return executionErr
+}
+
+type agentIssueSummary struct {
+	total          int
+	timeouts       int
+	invalidActions int
+	unavailable    int
+	execution      int
+}
+
+func recordAgentIssue(summaries map[string]*agentIssueSummary, playerID string, err error) {
+	summary := summaries[playerID]
+	if summary == nil {
+		summary = &agentIssueSummary{}
+		summaries[playerID] = summary
+	}
+	summary.total++
+	switch {
+	case errors.Is(err, ErrAgentTimeout):
+		summary.timeouts++
+	case errors.Is(err, ErrAgentInvalidAction):
+		summary.invalidActions++
+	case errors.Is(err, ErrAgentUnavailable):
+		summary.unavailable++
+	default:
+		summary.execution++
+	}
+}
+
+func logAgentIssueSummaries(ctx context.Context, summaries map[string]*agentIssueSummary) {
+	playerIDs := make([]string, 0, len(summaries))
+	for playerID := range summaries {
+		playerIDs = append(playerIDs, playerID)
+	}
+	sort.Strings(playerIDs)
+	for _, playerID := range playerIDs {
+		summary := summaries[playerID]
+		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.incidents.summary", "Incidencias del agente",
+			tracer.Origin(tracer.OriginAgent),
+			tracer.String("agent_id", playerID),
+			tracer.Int("total", summary.total),
+			tracer.Int("timeouts", summary.timeouts),
+			tracer.Int("invalid_actions", summary.invalidActions),
+			tracer.Int("unavailable", summary.unavailable),
+			tracer.Int("execution_failures", summary.execution),
+		)
+	}
 }
 
 func structToMap(obj interface{}) (map[string]interface{}, error) {

@@ -16,7 +16,8 @@ func (s *Server) listResults(w http.ResponseWriter, r *http.Request) {
 	if matchId != "" {
 		results, err := s.Service.ListResultsByMatch(ctx, matchId)
 		if err != nil {
-			tracer.Errorf(ctx, "Failed to list results for match %s: %s", matchId, err)
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "results.list.failed", "No se pudieron consultar los resultados",
+				tracer.String("match_id", matchId), tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 			return
 		}
@@ -26,7 +27,7 @@ func (s *Server) listResults(w http.ResponseWriter, r *http.Request) {
 
 	results, err := s.Service.ListResults(ctx)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list results: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "results.list.failed", "No se pudieron consultar los resultados", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -42,6 +43,7 @@ func (s *Server) getResult(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Result not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "result.get.failed", "No se pudo consultar el resultado", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return

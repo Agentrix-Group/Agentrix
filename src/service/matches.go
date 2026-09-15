@@ -35,7 +35,6 @@ func (s *service) GetMatch(ctx context.Context, id string) (*model.Match, error)
 }
 
 func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) error {
-	tracer.Debugf(ctx, "Creating match for game '%s' in contest '%s'", match.GameId, match.ContestId)
 	if match.Id == "" {
 		match.Id = uuid.New().String()
 	}
@@ -49,13 +48,14 @@ func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissio
 	match.CreatedAt = time.Now().UTC()
 
 	if err := s.repo.CreateMatch(ctx, match); err != nil {
-		tracer.Errorf(ctx, "Failed to create match %s: %s", match.Id, err)
 		return err
 	}
 
 	// Queue job for executor
 	if s.queue != nil && len(submissionIds) > 0 {
 		job := &connection.MatchJob{
+			JobId:         uuid.New().String(),
+			Attempt:       1,
 			MatchId:       match.Id,
 			ContestId:     match.ContestId,
 			GameId:        match.GameId,
@@ -63,7 +63,12 @@ func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissio
 			Seed:          match.Seed,
 		}
 		if err := s.queue.Enqueue(ctx, job); err != nil {
-			tracer.Warnf(ctx, "Failed to enqueue match job %s: %s", match.Id, err)
+			tracer.WarnEvent(ctx, tracer.ScopeQueue, "match.enqueue.degraded", "La partida fue creada, pero no pudo encolarse",
+				tracer.Origin(tracer.OriginInfrastructure), tracer.String("job_id", job.JobId),
+				tracer.String("match_id", job.MatchId), tracer.Err(err))
+		} else {
+			tracer.InfoEvent(ctx, tracer.ScopeQueue, "match.queued", "Partida en cola",
+				tracer.String("job_id", job.JobId), tracer.String("match_id", job.MatchId))
 		}
 	}
 
@@ -71,7 +76,6 @@ func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissio
 }
 
 func (s *service) RunMatch(ctx context.Context, matchId string) error {
-	tracer.Debugf(ctx, "Triggering match run for %s", matchId)
 	match, err := s.repo.GetMatch(ctx, matchId)
 	if err != nil {
 		return err
@@ -86,13 +90,20 @@ func (s *service) RunMatch(ctx context.Context, matchId string) error {
 
 	if s.queue != nil {
 		job := &connection.MatchJob{
+			JobId:         uuid.New().String(),
+			Attempt:       1,
 			MatchId:       match.Id,
 			ContestId:     match.ContestId,
 			GameId:        match.GameId,
 			SubmissionIds: submissionIds,
 			Seed:          match.Seed,
 		}
-		return s.queue.Enqueue(ctx, job)
+		if err := s.queue.Enqueue(ctx, job); err != nil {
+			return err
+		}
+		tracer.InfoEvent(ctx, tracer.ScopeQueue, "match.queued", "Partida en cola",
+			tracer.String("job_id", job.JobId), tracer.String("match_id", job.MatchId))
+		return nil
 	}
 
 	return nil

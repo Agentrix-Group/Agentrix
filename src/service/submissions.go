@@ -9,7 +9,6 @@ import (
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -32,10 +31,7 @@ var (
 )
 
 func (s *service) CreateSubmission(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error {
-	tracer.Debugf(ctx, "Creating submission for agent '%s' by participant '%s'", submission.AgentId, participantId)
-
 	if len(codeContent) == 0 {
-		tracer.Warnf(ctx, "Submission rejected: empty code payload for agent '%s'", submission.AgentId)
 		return ErrEmptySubmissionCode
 	}
 
@@ -43,16 +39,13 @@ func (s *service) CreateSubmission(ctx context.Context, participantId, roleId st
 	agent, err := s.repo.GetAgent(ctx, submission.AgentId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Submission rejected: agent '%s' not found", submission.AgentId)
 			return ErrAgentNotFound
 		}
-		tracer.Errorf(ctx, "Failed to retrieve agent '%s': %s", submission.AgentId, err)
 		return err
 	}
 
 	// Verify ownership (unless admin)
 	if roleId != common.RoleAdmin && agent.ParticipantId != participantId {
-		tracer.Warnf(ctx, "Submission rejected: agent '%s' (owner '%s') not owned by caller '%s'", submission.AgentId, agent.ParticipantId, participantId)
 		return ErrAgentNotOwned
 	}
 
@@ -88,7 +81,6 @@ func (s *service) CreateSubmission(ctx context.Context, participantId, roleId st
 	subpath := fmt.Sprintf("submissions/%s/agent_v%d.%s", submission.AgentId, submission.Version, ext)
 	savedPath, err := s.artifacts.Save(ctx, subpath, codeContent)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to save submission artifact: %s", err)
 		return err
 	}
 	submission.CodePath = savedPath

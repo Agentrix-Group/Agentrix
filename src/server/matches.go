@@ -33,7 +33,7 @@ func (s *Server) listMatches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list matches: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "matches.list.failed", "No se pudieron consultar las partidas", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -49,6 +49,7 @@ func (s *Server) getMatch(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Match not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "match.get.failed", "No se pudo consultar la partida", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -76,6 +77,7 @@ func (s *Server) createMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Service.CreateMatch(ctx, &match, req.SubmissionIds); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "match.create.failed", "No se pudo crear la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -88,7 +90,7 @@ func (s *Server) runMatch(w http.ResponseWriter, r *http.Request) {
 	id := mux.Vars(r)["id"]
 
 	if err := s.Service.RunMatch(ctx, id); err != nil {
-		tracer.Errorf(ctx, "Failed to trigger match run: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeQueue, "match.enqueue.failed", "No se pudo encolar la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -108,6 +110,7 @@ func (s *Server) updateMatch(w http.ResponseWriter, r *http.Request) {
 	match.Id = id
 
 	if err := s.Service.UpdateMatch(ctx, &match); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "match.update.failed", "No se pudo actualizar la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

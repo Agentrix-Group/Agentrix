@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"sync"
-
-	"github.com/F4nk1/Agentrix/src/tracer"
 )
 
 type MatchJob struct {
+	JobId         string   `json:"job_id"`
+	Attempt       int      `json:"attempt"`
 	MatchId       string   `json:"match_id"`
 	ContestId     string   `json:"contest_id"`
 	GameId        string   `json:"game_id"`
@@ -50,7 +50,6 @@ func (q *inMemoryJobQueue) Enqueue(ctx context.Context, job *MatchJob) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	case q.ch <- job:
-		tracer.Debugf(ctx, "Enqueued match job: %s for game %s", job.MatchId, job.GameId)
 		return nil
 	}
 }
@@ -63,7 +62,6 @@ func (q *inMemoryJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
 		if !ok {
 			return nil, errors.New("queue closed")
 		}
-		tracer.Debugf(ctx, "Dequeued match job: %s", job.MatchId)
 		return job, nil
 	}
 }

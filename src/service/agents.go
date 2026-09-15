@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -22,7 +21,6 @@ func (s *service) GetAgent(ctx context.Context, id string) (*model.Agent, error)
 }
 
 func (s *service) CreateAgent(ctx context.Context, agent *model.Agent) error {
-	tracer.Debugf(ctx, "Creating agent '%s'", agent.Name)
 	if agent.Id == "" {
 		agent.Id = uuid.New().String()
 	}

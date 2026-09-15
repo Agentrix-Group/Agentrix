@@ -36,6 +36,9 @@ main.go
 | --- | --- | --- |
 | `MODE` | Execution mode (`dev`, `gcp`, `railway`) | `dev` |
 | `PORT` | HTTP Server port | `8080` |
+| `LOG_LEVEL` | Minimum operational log level (`debug`, `info`, `warn`, `error`) | `info` |
+| `LOG_FORMAT` | Output format (`console`, `json`) | `console` in `dev`; `json` in deployed modes |
+| `LOG_COLOR` | Console color (`auto`, `always`, `never`) | `auto` |
 | `DB_USER` | PostgreSQL user | `postgres` |
 | `DB_PASSWORD` | PostgreSQL password | `` |
 | `DB_HOST` | PostgreSQL host | `localhost` |
@@ -45,6 +48,18 @@ main.go
 | `REFRESH_SECRET` | JWT Refresh Token Secret | `agentrix-refresh-secret-key-change-in-prod` |
 | `SESSION_SECRET` | Cookie Session Secret | `agentrix-session-secret-key-change-in-prod` |
 | `ARTIFACTS_DIR` | Directory for submission code & replays | `./artifacts` |
+
+### Backend logs
+
+The default console is intentionally quiet and oriented to people. It shows startup and recovery, relevant HTTP mutations, queue transitions, match lifecycle, aggregated agent incidents, and failures that require attention. Routine reads, expected client errors, SQL operations, and per-tick events do not appear at `info`.
+
+```text
+10:43:10  INFO   MATCH      Partida iniciada                        game=arena-basica match_id=87c2fa91
+10:43:13  WARN   AGENT      Incidencias del agente                  timeouts=3 agent_id=ae14c7f2
+10:43:16  INFO   MATCH      Partida finalizada                      elapsed=2.8s ticks=142 match_id=87c2fa91
+```
+
+Use `LOG_LEVEL=debug` for diagnostic detail. Production should use `LOG_FORMAT=json`; stable English event names and full correlation identifiers remain available there for filtering. Operational logs must never be used as replay storage, competitive evidence, participant reports, or security audit records.
 
 ## Quick Start
 

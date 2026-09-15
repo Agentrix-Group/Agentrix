@@ -17,7 +17,7 @@ func (s *Server) listGames(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	games, err := s.Service.ListGames(ctx)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list games: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "games.list.failed", "No se pudieron consultar los juegos", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -33,6 +33,7 @@ func (s *Server) getGame(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Game not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "game.get.failed", "No se pudo consultar el juego", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -54,6 +55,7 @@ func (s *Server) createGame(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Service.CreateGame(ctx, &game); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "game.create.failed", "No se pudo crear el juego", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -73,6 +75,7 @@ func (s *Server) updateGame(w http.ResponseWriter, r *http.Request) {
 	game.Id = id
 
 	if err := s.Service.UpdateGame(ctx, &game); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "game.update.failed", "No se pudo actualizar el juego", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

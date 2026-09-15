@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -23,8 +22,6 @@ func (s *service) GetRanking(ctx context.Context, id string) (*model.Ranking, er
 }
 
 func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	tracer.Debugf(ctx, "Recalculating rankings for contest %s", contestId)
-
 	matches, err := s.repo.ListMatchesByContest(ctx, contestId)
 	if err != nil {
 		return nil, err
@@ -111,12 +108,10 @@ func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]mo
 		}
 
 		if err := s.repo.UpsertRanking(ctx, &ranking); err != nil {
-			tracer.Errorf(ctx, "Failed to upsert ranking for agent %s: %s", st.AgentId, err)
-		} else {
-			rankings = append(rankings, ranking)
+			continue
 		}
+		rankings = append(rankings, ranking)
 	}
 
-	tracer.Debugf(ctx, "Calculated %d rankings for contest %s", len(rankings), contestId)
 	return rankings, nil
 }

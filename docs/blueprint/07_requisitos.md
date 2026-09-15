@@ -142,6 +142,8 @@
 | RNF-018 | Los flujos críticos deben tener pruebas de integración y extremo a extremo separadas. | Ejecución de suites | AR-103, RD-008 |
 | RNF-019 | La documentación y los diagramas deben actualizarse en la misma PR que cambie su comportamiento. | Lista de revisión | AR-101, AR-102 |
 | RNF-020 | Compilación, pruebas y validaciones deben pasar antes de merge. | Pipeline de PR | AR-104, notas |
+| RNF-021 | La consola operativa debe mostrar eventos breves y atribuibles, sin stacks automáticos ni repetición del mismo fallo entre capas. | Pruebas de formato, nivel y ciclo HTTP | AR-042, AR-074, AR-087 |
+| RNF-022 | Los logs operativos no deben exponer credenciales, correo, username, código, payloads, SQL, rutas internas ni percepciones privadas. | Pruebas de redacción y revisión de eventos | AR-043, AR-078, AR-082 |
 
 ## 4. Valores por fijar
 
@@ -160,4 +162,3 @@ Los siguientes requisitos existen, pero sus objetivos numéricos permanecen como
 - presupuesto de infraestructura.
 
 No deben convertirse en números arbitrarios dentro del código.
-

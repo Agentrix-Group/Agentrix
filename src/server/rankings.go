@@ -16,7 +16,8 @@ func (s *Server) listRankings(w http.ResponseWriter, r *http.Request) {
 	if contestId != "" {
 		rankings, err := s.Service.ListRankingsByContest(ctx, contestId)
 		if err != nil {
-			tracer.Errorf(ctx, "Failed to list rankings for contest %s: %s", contestId, err)
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "rankings.list.failed", "No se pudo consultar la clasificación",
+				tracer.String("contest_id", contestId), tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 			return
 		}
@@ -26,7 +27,7 @@ func (s *Server) listRankings(w http.ResponseWriter, r *http.Request) {
 
 	rankings, err := s.Service.ListRankings(ctx)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list rankings: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "rankings.list.failed", "No se pudo consultar la clasificación", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -42,6 +43,7 @@ func (s *Server) getRanking(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Ranking not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "ranking.get.failed", "No se pudo consultar la posición", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return

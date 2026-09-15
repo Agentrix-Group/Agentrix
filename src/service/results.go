@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -22,7 +21,6 @@ func (s *service) GetResult(ctx context.Context, id string) (*model.Result, erro
 }
 
 func (s *service) CreateResult(ctx context.Context, result *model.Result) error {
-	tracer.Debugf(ctx, "Creating match result for match '%s'", result.MatchId)
 	if result.Id == "" {
 		result.Id = uuid.New().String()
 	}

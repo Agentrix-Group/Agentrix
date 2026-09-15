@@ -14,7 +14,8 @@ func (s *Server) getReplay(w http.ResponseWriter, r *http.Request) {
 
 	replay, err := s.Service.GetReplay(ctx, id)
 	if err != nil {
-		tracer.Warnf(ctx, "Replay %s not found: %s", id, err)
+		tracer.DebugEvent(ctx, tracer.ScopeReplay, "replay.not_found", "Replay no disponible",
+			tracer.String("replay_id", id), tracer.Err(err))
 		common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Replay not found")
 		return
 	}
@@ -28,7 +29,8 @@ func (s *Server) streamReplay(w http.ResponseWriter, r *http.Request) {
 
 	data, err := s.Service.StreamReplay(ctx, id)
 	if err != nil {
-		tracer.Warnf(ctx, "Failed to stream replay %s: %s", id, err)
+		tracer.DebugEvent(ctx, tracer.ScopeReplay, "replay.not_found", "Replay no disponible",
+			tracer.String("replay_id", id), tracer.Err(err))
 		common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Replay not found")
 		return
 	}

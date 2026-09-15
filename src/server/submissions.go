@@ -35,7 +35,7 @@ func (s *Server) listSubmissions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list submissions: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "submissions.list.failed", "No se pudieron consultar los envíos", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -51,6 +51,7 @@ func (s *Server) getSubmission(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Submission not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "submission.get.failed", "No se pudo consultar el envío", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -97,7 +98,7 @@ func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
 			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Submission code cannot be empty")
 			return
 		}
-		tracer.Errorf(ctx, "Failed to create submission: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeArtifact, "submission.create.failed", "No se pudo guardar el envío", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -117,6 +118,7 @@ func (s *Server) updateSubmission(w http.ResponseWriter, r *http.Request) {
 	submission.Id = id
 
 	if err := s.Service.UpdateSubmission(ctx, &submission); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "submission.update.failed", "No se pudo actualizar el envío", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

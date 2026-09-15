@@ -38,12 +38,19 @@ type Auth struct {
 	SessionSecret string `json:"session_secret"`
 }
 
+type Logging struct {
+	Level  string `json:"level"`
+	Format string `json:"format"`
+	Color  string `json:"color"`
+}
+
 type Config struct {
 	Mode      string    `json:"mode"`
 	Server    Server    `json:"server"`
 	Database  Database  `json:"database"`
 	Artifacts Artifacts `json:"artifacts"`
 	Auth      Auth      `json:"auth"`
+	Logging   Logging   `json:"logging"`
 }
 
 // loadDotEnv reads key=value pairs from specified files and populates them into
@@ -141,6 +148,25 @@ func NewConfiguration() *Config {
 		sessionSecret = "agentrix-session-secret-key-change-in-prod"
 	}
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	logFormat := os.Getenv("LOG_FORMAT")
+	if logFormat == "" {
+		if mode == ModeGCP || mode == ModeRailway {
+			logFormat = "json"
+		} else {
+			logFormat = "console"
+		}
+	}
+
+	logColor := os.Getenv("LOG_COLOR")
+	if logColor == "" {
+		logColor = "auto"
+	}
+
 	return &Config{
 		Mode: mode,
 		Server: Server{
@@ -164,6 +190,11 @@ func NewConfiguration() *Config {
 			AccessSecret:  accessSecret,
 			RefreshSecret: refreshSecret,
 			SessionSecret: sessionSecret,
+		},
+		Logging: Logging{
+			Level:  logLevel,
+			Format: logFormat,
+			Color:  logColor,
 		},
 	}
 }

@@ -22,13 +22,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		tracer.Warnf(ctx, "Failed to decode login request: %s", err)
 		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
 		return
 	}
 
 	if err := validateLoginRequest(req.Username, req.Password); err != nil {
-		tracer.Warnf(ctx, "Validation failed for login: %s", err)
 		common.WriteErrorResponse(w, common.MISSING_FIELDS_ERROR)
 		return
 	}
@@ -36,13 +34,11 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	participant, err := s.Service.Login(ctx, req.Username, req.Password)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidCredentials) || err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Login credentials incorrect for '%s'", req.Username)
 			common.WriteErrorMessage(w, common.INVALID_CREDENTIALS_ERROR, "Invalid username or password")
 		} else if errors.Is(err, service.ErrAccountInactive) {
-			tracer.Warnf(ctx, "Login rejected: participant '%s' is inactive", req.Username)
 			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "Participant account is inactive")
 		} else {
-			tracer.Errorf(ctx, "Database error during login for '%s': %s", req.Username, err)
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "auth.login.failed", "No se pudo completar el ingreso", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -50,7 +46,7 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 
 	token, err := s.Auth.GenerateAuthToken(participant.Id, participant.RoleId)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to generate auth token: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.token.failed", "No se pudo crear la sesión", tracer.Err(err))
 		common.WriteErrorResponse(w, common.INTERNAL_ERROR)
 		return
 	}
@@ -66,7 +62,6 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var req model.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		tracer.Warnf(ctx, "Failed to decode register request: %s", err)
 		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
 		return
 	}
@@ -80,16 +75,14 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 	err := s.Service.Register(ctx, &participant)
 	if err != nil {
 		if errors.Is(err, service.ErrUsernameAlreadyExists) || errors.Is(err, service.ErrEmailAlreadyExists) {
-			tracer.Warnf(ctx, "Registration conflict: %s", err)
 			common.WriteErrorMessage(w, common.ALREADY_EXISTS_ERROR, err.Error())
 			return
 		}
 		if errors.Is(err, service.ErrInvalidUsername) || errors.Is(err, service.ErrInvalidEmail) || errors.Is(err, service.ErrInvalidPassword) {
-			tracer.Warnf(ctx, "Registration validation error: %s", err)
 			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
 			return
 		}
-		tracer.Errorf(ctx, "Failed to register participant: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "account.register.failed", "No se pudo registrar la cuenta", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -98,7 +91,6 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
@@ -109,13 +101,13 @@ func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {
 
 	claims, err := s.Auth.ValidateRefreshToken(req.RefreshToken)
 	if err != nil {
-		tracer.Warnf(ctx, "Invalid refresh token: %s", err)
 		common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
 		return
 	}
 
 	token, err := s.Auth.GenerateAuthToken(claims.ParticipantId, claims.RoleId)
 	if err != nil {
+		tracer.FailRequest(r.Context(), tracer.ScopeAuth, "auth.token.failed", "No se pudo renovar la sesión", tracer.Err(err))
 		common.WriteErrorResponse(w, common.INTERNAL_ERROR)
 		return
 	}
@@ -145,7 +137,7 @@ func (s *Server) listParticipants(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	participants, err := s.Service.ListParticipants(ctx)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list participants: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "accounts.list.failed", "No se pudieron consultar las cuentas", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -165,6 +157,7 @@ func (s *Server) getParticipant(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Participant not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "account.get.failed", "No se pudo consultar la cuenta", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -186,6 +179,7 @@ func (s *Server) updateParticipant(w http.ResponseWriter, r *http.Request) {
 	p.Id = id
 
 	if err := s.Service.UpdateParticipant(ctx, &p); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "account.update.failed", "No se pudo actualizar la cuenta", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

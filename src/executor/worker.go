@@ -32,18 +32,19 @@ func (p *WorkerPool) Start(ctx context.Context) {
 	workerCtx, cancel := context.WithCancel(ctx)
 	p.cancel = cancel
 
-	tracer.Infof(workerCtx, "Starting worker pool with %d concurrent workers", p.concurrency)
+	tracer.InfoEvent(workerCtx, tracer.ScopeWorker, "workers.ready", "Workers disponibles",
+		tracer.Int("workers", p.concurrency))
 
 	for i := 0; i < p.concurrency; i++ {
 		p.wg.Add(1)
 		go func(workerID int) {
 			defer p.wg.Done()
-			tracer.Debugf(workerCtx, "Worker %d started", workerID)
+			tracer.DebugEvent(workerCtx, tracer.ScopeWorker, "worker.started", "Worker iniciado", tracer.Int("worker", workerID))
 
 			for {
 				select {
 				case <-workerCtx.Done():
-					tracer.Debugf(workerCtx, "Worker %d stopped", workerID)
+					tracer.DebugEvent(workerCtx, tracer.ScopeWorker, "worker.stopped", "Worker detenido", tracer.Int("worker", workerID))
 					return
 				default:
 					job, err := p.queue.Dequeue(workerCtx)
@@ -58,10 +59,11 @@ func (p *WorkerPool) Start(ctx context.Context) {
 					}
 
 					if job != nil {
-						tracer.Infof(workerCtx, "Worker %d picked up match job: %s", workerID, job.MatchId)
-						if err := p.executor.Execute(workerCtx, job); err != nil {
-							tracer.Errorf(workerCtx, "Worker %d failed to execute match %s: %s", workerID, job.MatchId, err)
-						}
+						jobCtx := tracer.WithJobID(workerCtx, job.JobId)
+						jobCtx = tracer.WithMatchID(jobCtx, job.MatchId)
+						jobCtx = tracer.WithAttempt(jobCtx, job.Attempt)
+						tracer.DebugEvent(jobCtx, tracer.ScopeWorker, "worker.job.reserved", "Trabajo reservado", tracer.Int("worker", workerID))
+						_ = p.executor.Execute(jobCtx, job)
 					}
 				}
 			}

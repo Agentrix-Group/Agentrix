@@ -18,13 +18,23 @@ import (
 func main() {
 	ctx := context.Background()
 	cfg := config.NewConfiguration()
-	tracer.Infof(ctx, "Starting Agentrix in '%s' mode, database host '%s:%s'", cfg.Mode, cfg.Database.Host, cfg.Database.Port)
+	tracer.Configure(tracer.Config{
+		Level:  cfg.Logging.Level,
+		Format: cfg.Logging.Format,
+		Color:  cfg.Logging.Color,
+	})
+	defer tracer.Sync()
+	tracer.InfoEvent(ctx, tracer.ScopeSystem, "system.starting", "Agentrix iniciando",
+		tracer.String("mode", cfg.Mode),
+	)
 
 	// Initialize Artifact Store
 	artifacts, err := connection.NewArtifactStore(ctx, cfg)
 	if err != nil {
-		tracer.Fatalf(ctx, "Failed to initialize artifact store: %s", err)
+		tracer.FatalEvent(ctx, tracer.ScopeArtifact, "artifact.unavailable", "No se pudo preparar el almacén de artefactos",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	}
+	tracer.InfoEvent(ctx, tracer.ScopeArtifact, "artifact.ready", "Almacén de artefactos disponible")
 
 	// Initialize Match Job Queue
 	queue := connection.NewJobQueue(100)
@@ -33,15 +43,18 @@ func main() {
 	// Load Game Registry
 	registry := game.GetRegistry()
 	if err := registry.LoadGamesFromDir("./games"); err != nil {
-		tracer.Warnf(ctx, "Could not load games directory: %s", err)
+		tracer.WarnEvent(ctx, tracer.ScopeSystem, "games.degraded", "Algunos juegos no pudieron cargarse",
+			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 	}
 
 	// Initialize Database Connection
 	conn, err := connection.NewConnection(ctx, cfg)
 	if err != nil {
-		tracer.Errorf(ctx, "Warning: Database connection failed (%s). Continuing in degraded mode for local tests.", err)
+		tracer.WarnEvent(ctx, tracer.ScopeDatabase, "database.unavailable", "Sin conexión; Agentrix continúa en modo degradado",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	} else {
 		defer conn.Close()
+		tracer.InfoEvent(ctx, tracer.ScopeDatabase, "database.ready", "Base de datos disponible")
 	}
 
 	// Compose Layers
@@ -59,6 +72,9 @@ func main() {
 	srv := server.NewServer(svc)
 
 	serverHost := fmt.Sprintf(":%s", cfg.Server.Port)
-	tracer.Infof(ctx, "Starting Agentrix server on %s", serverHost)
-	tracer.Fatal(ctx, http.ListenAndServe(serverHost, srv.Handler))
+	tracer.InfoEvent(ctx, tracer.ScopeHTTP, "http.ready", "Servidor disponible", tracer.String("address", serverHost))
+	if err := http.ListenAndServe(serverHost, srv.Handler); err != nil {
+		tracer.FatalEvent(ctx, tracer.ScopeHTTP, "http.stopped", "El servidor se detuvo",
+			tracer.Origin(tracer.OriginPlatform), tracer.Err(err))
+	}
 }

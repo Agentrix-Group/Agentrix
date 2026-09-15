@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -18,7 +17,6 @@ func (s *service) GetGame(ctx context.Context, id string) (*model.Game, error) {
 }
 
 func (s *service) CreateGame(ctx context.Context, game *model.Game) error {
-	tracer.Debugf(ctx, "Creating game '%s'", game.Name)
 	if game.Id == "" {
 		game.Id = uuid.New().String()
 	}

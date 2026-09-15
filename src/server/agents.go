@@ -26,7 +26,7 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to list agents: %s", err)
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "agents.list.failed", "No se pudieron consultar los agentes", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -42,6 +42,7 @@ func (s *Server) getAgent(w http.ResponseWriter, r *http.Request) {
 		if err == sql.ErrNoRows {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Agent not found")
 		} else {
+			tracer.FailRequest(ctx, tracer.ScopeDatabase, "agent.get.failed", "No se pudo consultar el agente", tracer.Err(err))
 			common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		}
 		return
@@ -70,6 +71,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := s.Service.CreateAgent(ctx, &agent); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "agent.create.failed", "No se pudo crear el agente", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
@@ -89,6 +91,7 @@ func (s *Server) updateAgent(w http.ResponseWriter, r *http.Request) {
 	agent.Id = id
 
 	if err := s.Service.UpdateAgent(ctx, &agent); err != nil {
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "agent.update.failed", "No se pudo actualizar el agente", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}

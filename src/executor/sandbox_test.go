@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,12 +94,14 @@ func TestExecuteTurn_AttributableFailures(t *testing.T) {
 	t.Run("Empty code path returns ActionRest and attributable error", func(t *testing.T) {
 		action, err := sandbox.ExecuteTurn(ctx, "", state, "bot-1")
 		r.Error(err)
+		r.True(errors.Is(err, ErrAgentUnavailable))
 		r.Equal(game.ActionRest, action.Type)
 	})
 
 	t.Run("Missing script file returns ActionRest and attributable error", func(t *testing.T) {
 		action, err := sandbox.ExecuteTurn(ctx, "/path/to/nonexistent/script.py", state, "bot-1")
 		r.Error(err)
+		r.True(errors.Is(err, ErrAgentUnavailable))
 		r.Equal(game.ActionRest, action.Type)
 	})
 
@@ -110,6 +113,7 @@ func TestExecuteTurn_AttributableFailures(t *testing.T) {
 
 		action, err := sandbox.ExecuteTurn(ctx, badScript, state, "bot-1")
 		r.Error(err)
+		r.True(errors.Is(err, ErrAgentExecution))
 		r.Equal(game.ActionRest, action.Type)
 	})
 
@@ -121,6 +125,7 @@ func TestExecuteTurn_AttributableFailures(t *testing.T) {
 
 		action, err := sandbox.ExecuteTurn(ctx, badScript, state, "bot-1")
 		r.Error(err)
+		r.True(errors.Is(err, ErrAgentInvalidAction))
 		r.Equal(game.ActionRest, action.Type)
 	})
 
@@ -132,8 +137,33 @@ func TestExecuteTurn_AttributableFailures(t *testing.T) {
 
 		action, err := sandbox.ExecuteTurn(ctx, badScript, state, "bot-1")
 		r.Error(err)
+		r.True(errors.Is(err, ErrAgentInvalidAction))
 		r.Equal(game.ActionRest, action.Type)
 	})
+
+	t.Run("Timeout returns ActionRest and timeout origin", func(t *testing.T) {
+		tmpDir := t.TempDir()
+		slowScript := filepath.Join(tmpDir, "slow.py")
+		err := os.WriteFile(slowScript, []byte("import time\ntime.sleep(2)\n"), 0755)
+		r.NoError(err)
+
+		fastSandbox := NewSandbox(20 * time.Millisecond)
+		action, err := fastSandbox.ExecuteTurn(ctx, slowScript, state, "bot-1")
+		r.Error(err)
+		r.True(errors.Is(err, ErrAgentTimeout))
+		r.Equal(game.ActionRest, action.Type)
+	})
+}
+
+func TestRecordAgentIssueAggregatesByOrigin(t *testing.T) {
+	summaries := make(map[string]*agentIssueSummary)
+	recordAgentIssue(summaries, "agent-1", ErrAgentTimeout)
+	recordAgentIssue(summaries, "agent-1", ErrAgentTimeout)
+	recordAgentIssue(summaries, "agent-1", ErrAgentInvalidAction)
+	recordAgentIssue(summaries, "agent-2", ErrAgentUnavailable)
+
+	require.Equal(t, &agentIssueSummary{total: 3, timeouts: 2, invalidActions: 1}, summaries["agent-1"])
+	require.Equal(t, &agentIssueSummary{total: 1, unavailable: 1}, summaries["agent-2"])
 }
 
 func TestExecuteTurn_ValidBotExecution(t *testing.T) {

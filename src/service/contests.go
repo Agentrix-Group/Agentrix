@@ -8,7 +8,6 @@ import (
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -37,15 +36,11 @@ type ContestService interface {
 }
 
 func (s *service) ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error) {
-	tracer.Debugf(ctx, "Listing public contests with filter state='%s', include_archived=%t", filter.State, filter.IncludeArchived)
-
 	if filter.State != "" {
 		if !filter.State.IsValid() {
-			tracer.Warnf(ctx, "Rejected query for unrecognized state filter: %s", filter.State)
 			return nil, ErrInvalidStateFilter
 		}
 		if !filter.State.IsPublic() {
-			tracer.Warnf(ctx, "Rejected public query for private state filter: %s", filter.State)
 			return nil, ErrPrivateStateFilter
 		}
 	}
@@ -62,7 +57,6 @@ func (s *service) GetContest(ctx context.Context, id string) (*model.Contest, er
 }
 
 func (s *service) CreateContest(ctx context.Context, contest *model.Contest) error {
-	tracer.Debugf(ctx, "Creating contest '%s'", contest.Name)
 	if contest.Id == "" {
 		contest.Id = uuid.New().String()
 	}
@@ -84,7 +78,6 @@ func (s *service) ActivateContest(ctx context.Context, id string, isActive bool)
 }
 
 func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Contest, error) {
-	tracer.Debugf(ctx, "Querying public contest details for '%s'", id)
 	c, err := s.repo.GetContest(ctx, id)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -94,7 +87,6 @@ func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Conte
 	}
 
 	if !c.Active || !c.State.IsPublic() {
-		tracer.Warnf(ctx, "Rejected public query for contest '%s': not active or in non-public state '%s'", id, c.State)
 		return nil, ErrContestNotFound
 	}
 
@@ -102,38 +94,31 @@ func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Conte
 }
 
 func (s *service) EnrollAgent(ctx context.Context, participantId string, contestId string, agentId string) (*model.Ranking, error) {
-	tracer.Debugf(ctx, "Enrolling agent '%s' into contest '%s' for participant '%s'", agentId, contestId, participantId)
-
 	contest, err := s.repo.GetContest(ctx, contestId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Enrollment failed: contest '%s' not found", contestId)
 			return nil, ErrContestNotFound
 		}
 		return nil, err
 	}
 
 	if !contest.Active {
-		tracer.Warnf(ctx, "Enrollment failed: contest '%s' is inactive", contestId)
 		return nil, ErrContestNotFound
 	}
 
 	if contest.State != model.ContestStateRegistrationOpen {
-		tracer.Warnf(ctx, "Enrollment failed: contest '%s' state is '%s', not '%s'", contestId, contest.State, model.ContestStateRegistrationOpen)
 		return nil, ErrRegistrationClosed
 	}
 
 	agent, err := s.repo.GetAgent(ctx, agentId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Enrollment failed: agent '%s' not found", agentId)
 			return nil, ErrAgentNotFound
 		}
 		return nil, err
 	}
 
 	if !agent.Active {
-		tracer.Warnf(ctx, "Enrollment failed: agent '%s' is inactive", agentId)
 		return nil, ErrAgentNotFound
 	}
 
@@ -141,14 +126,12 @@ func (s *service) EnrollAgent(ctx context.Context, participantId string, contest
 	if participantId != "" && agent.ParticipantId != participantId {
 		isAdmin, permErr := s.repo.HasPermission(ctx, participantId, common.AdminPermission)
 		if permErr != nil || !isAdmin {
-			tracer.Warnf(ctx, "Enrollment failed: agent '%s' (owner '%s') does not belong to participant '%s'", agentId, agent.ParticipantId, participantId)
 			return nil, ErrUnauthorizedAgent
 		}
 	}
 
 	// Verify game compatibility
 	if contest.GameId != "" && agent.GameId != "" && contest.GameId != agent.GameId {
-		tracer.Warnf(ctx, "Enrollment failed: agent game '%s' does not match contest game '%s'", agent.GameId, contest.GameId)
 		return nil, ErrGameMismatch
 	}
 
@@ -158,7 +141,6 @@ func (s *service) EnrollAgent(ctx context.Context, participantId string, contest
 		return nil, err
 	}
 	if existingRanking != nil {
-		tracer.Warnf(ctx, "Enrollment failed: agent '%s' is already enrolled in contest '%s'", agentId, contestId)
 		return nil, ErrAgentAlreadyEnrolled
 	}
 
@@ -178,17 +160,13 @@ func (s *service) EnrollAgent(ctx context.Context, participantId string, contest
 
 	err = s.repo.UpsertRanking(ctx, ranking)
 	if err != nil {
-		tracer.Errorf(ctx, "Failed to persist enrollment for agent '%s' in contest '%s': %s", agentId, contestId, err)
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Agent '%s' successfully enrolled in contest '%s' with ranking ID '%s'", agentId, contestId, ranking.Id)
 	return ranking, nil
 }
 
 func (s *service) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	tracer.Debugf(ctx, "Listing agents enrolled in contest '%s'", contestId)
-
 	_, err := s.repo.GetContest(ctx, contestId)
 	if err != nil {
 		if err == sql.ErrNoRows {

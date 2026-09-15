@@ -66,6 +66,7 @@ Todas las respuestas tienen representación. Las frases que no fijaban un valor 
 | RBAC con alcance | permisos dinámicos seguros | AR-058, AR-059, AR-071 |
 | Digests y snapshots | historia defendible | AR-027–AR-029, AR-044, AR-051 |
 | Repositorio horizontal por responsabilidad técnica | navegación simple y trazabilidad por nombre | DP-001, AR-094, AR-105 |
+| Consola operativa y eventos estructurados | diagnóstico atribuible sin saturación ni exposición de secretos | AR-036, AR-042, AR-074, AR-087, RF-034, RF-065 |
 
 ## 4. Decisiones derivadas y decisión posterior
 
@@ -98,6 +99,7 @@ Marca cada una:
 - [ ] ATD-013: identidad técnica por commit, digest y versión de contrato.
 - [ ] ATD-014: borrado controlado según tipo de dato.
 - [ ] ATD-015: elegir entre las alternativas documentadas; se recomienda `repository` con interfaces pequeñas.
+- [x] ATD-016: consola humana compacta, JSON estructurado y fallos registrados una sola vez.
 
 ## 5. Parámetros por completar
 

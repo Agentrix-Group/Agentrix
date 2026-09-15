@@ -7,7 +7,6 @@ import (
 
 	"github.com/F4nk1/Agentrix/src/connection"
 	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/tracer"
 )
 
 type Repository interface {
@@ -122,12 +121,10 @@ func (r *repository) ListParticipants(ctx context.Context) ([]model.Participant,
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Executing database query to fetch active participants")
 	query := `SELECT id, username, email, role_id, active, created_at FROM participants WHERE active = TRUE ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
-		tracer.Errorf(ctx, "Database query failed for listing participants: %s", err)
 		return nil, err
 	}
 	defer rows.Close()
@@ -136,13 +133,11 @@ func (r *repository) ListParticipants(ctx context.Context) ([]model.Participant,
 	for rows.Next() {
 		var p model.Participant
 		if err := rows.Scan(&p.Id, &p.Username, &p.Email, &p.RoleId, &p.Active, &p.CreatedAt); err != nil {
-			tracer.Errorf(ctx, "Database row scan failed for participants: %s", err)
 			return nil, err
 		}
 		participants = append(participants, p)
 	}
 
-	tracer.Debugf(ctx, "Retrieved %d participants from database", len(participants))
 	return participants, nil
 }
 
@@ -152,7 +147,6 @@ func (r *repository) GetParticipant(ctx context.Context, id string) (*model.Part
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Querying database for participant %s", id)
 	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE id = $1 AND active = TRUE`
 
 	var p model.Participant
@@ -161,14 +155,11 @@ func (r *repository) GetParticipant(ctx context.Context, id string) (*model.Part
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Participant %s not found", id)
 			return nil, err
 		}
-		tracer.Errorf(ctx, "Database query failed for participant %s: %s", id, err)
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Successfully retrieved participant %s", id)
 	return &p, nil
 }
 
@@ -178,7 +169,6 @@ func (r *repository) GetParticipantByUsername(ctx context.Context, username stri
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Querying database for participant by username '%s'", username)
 	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE username = $1 AND active = TRUE`
 
 	var p model.Participant
@@ -187,14 +177,11 @@ func (r *repository) GetParticipantByUsername(ctx context.Context, username stri
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Participant with username '%s' not found", username)
 			return nil, err
 		}
-		tracer.Errorf(ctx, "Database query failed for username '%s': %s", username, err)
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Successfully retrieved participant '%s'", username)
 	return &p, nil
 }
 
@@ -204,7 +191,6 @@ func (r *repository) GetParticipantByEmail(ctx context.Context, email string) (*
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Querying database for participant by email '%s'", email)
 	query := `SELECT id, username, email, password, role_id, active, created_at FROM participants WHERE email = $1 AND active = TRUE`
 
 	var p model.Participant
@@ -213,14 +199,11 @@ func (r *repository) GetParticipantByEmail(ctx context.Context, email string) (*
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			tracer.Warnf(ctx, "Participant with email '%s' not found", email)
 			return nil, err
 		}
-		tracer.Errorf(ctx, "Database query failed for email '%s': %s", email, err)
 		return nil, err
 	}
 
-	tracer.Debugf(ctx, "Successfully retrieved participant by email '%s'", email)
 	return &p, nil
 }
 
@@ -230,7 +213,6 @@ func (r *repository) CreateParticipant(ctx context.Context, participant *model.P
 		return err
 	}
 
-	tracer.Debugf(ctx, "Creating participant '%s'", participant.Username)
 	query := `INSERT INTO participants (id, username, email, password, role_id, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
@@ -238,11 +220,9 @@ func (r *repository) CreateParticipant(ctx context.Context, participant *model.P
 		participant.RoleId, participant.Active, participant.CreatedAt,
 	)
 	if err != nil {
-		tracer.Errorf(ctx, "Database insert failed for participant %s: %s", participant.Username, err)
 		return err
 	}
 
-	tracer.Debugf(ctx, "Successfully created participant %s", participant.Id)
 	return nil
 }
 
@@ -252,16 +232,13 @@ func (r *repository) UpdateParticipant(ctx context.Context, participant *model.P
 		return err
 	}
 
-	tracer.Debugf(ctx, "Updating participant '%s'", participant.Id)
 	query := `UPDATE participants SET email = $1, role_id = $2, active = $3 WHERE id = $4`
 
 	_, err = db.ExecContext(ctx, query, participant.Email, participant.RoleId, participant.Active, participant.Id)
 	if err != nil {
-		tracer.Errorf(ctx, "Database update failed for participant %s: %s", participant.Id, err)
 		return err
 	}
 
-	tracer.Debugf(ctx, "Successfully updated participant %s", participant.Id)
 	return nil
 }
 
@@ -271,12 +248,10 @@ func (r *repository) ActivateParticipant(ctx context.Context, id string, isActiv
 		return err
 	}
 
-	tracer.Debugf(ctx, "Setting participant '%s' active status to %t", id, isActive)
 	query := `UPDATE participants SET active = $1 WHERE id = $2`
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	if err != nil {
-		tracer.Errorf(ctx, "Database activation update failed for participant %s: %s", id, err)
 		return err
 	}
 
@@ -289,7 +264,6 @@ func (r *repository) HasPermission(ctx context.Context, participantId string, pe
 		return false, err
 	}
 
-	tracer.Debugf(ctx, "Checking permission '%s' for participant '%s'", permission, participantId)
 	query := `
 		SELECT COUNT(*)
 		FROM permissions p
@@ -300,10 +274,8 @@ func (r *repository) HasPermission(ctx context.Context, participantId string, pe
 	var count int
 	err = db.QueryRowContext(ctx, query, participantId, permission).Scan(&count)
 	if err != nil {
-		tracer.Errorf(ctx, "Permission query failed for participant '%s': %s", participantId, err)
 		return false, err
 	}
 
-	tracer.Debugf(ctx, "Permission check '%s' for '%s': %t", permission, participantId, count > 0)
 	return count > 0, nil
 }

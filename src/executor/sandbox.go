@@ -10,7 +10,13 @@ import (
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/game"
-	"github.com/F4nk1/Agentrix/src/tracer"
+)
+
+var (
+	ErrAgentUnavailable   = errors.New("agent unavailable")
+	ErrAgentTimeout       = errors.New("agent timeout")
+	ErrAgentExecution     = errors.New("agent execution failed")
+	ErrAgentInvalidAction = errors.New("agent action invalid")
 )
 
 // OpponentPublicState exposes strictly observable arena attributes to rival bots,
@@ -94,14 +100,12 @@ func (s *agentSandbox) FilterPerception(state *game.GameState, playerID string) 
 func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
 	// If no code path is configured, attribute failure and take neutral REST action
 	if codePath == "" {
-		tracer.Warnf(ctx, "Agent '%s' has no executable code attached; performing neutral action REST", playerID)
-		return game.Action{Type: game.ActionRest}, errors.New("agent has no executable code attached")
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: executable not configured", ErrAgentUnavailable)
 	}
 
 	// If script file is missing from disk, attribute failure and take neutral REST action
 	if _, err := os.Stat(codePath); err != nil {
-		tracer.Warnf(ctx, "Agent '%s' executable script not found at '%s': %s; performing neutral action REST", playerID, codePath, err)
-		return game.Action{Type: game.ActionRest}, fmt.Errorf("agent executable not found: %w", err)
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: %v", ErrAgentUnavailable, err)
 	}
 
 	// Filter perception by slot
@@ -110,7 +114,6 @@ func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *
 	// Execute isolated process with timeout
 	action, err := s.runProcess(ctx, codePath, perception, playerID)
 	if err != nil {
-		tracer.Warnf(ctx, "Agent '%s' process execution failed: %s; performing neutral action REST", playerID, err)
 		return game.Action{Type: game.ActionRest}, err
 	}
 
@@ -120,8 +123,7 @@ func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *
 		game.ActionAttack, game.ActionShield, game.ActionRest:
 		return action, nil
 	default:
-		tracer.Warnf(ctx, "Agent '%s' emitted unrecognized action '%s'; performing neutral action REST", playerID, action.Type)
-		return game.Action{Type: game.ActionRest}, fmt.Errorf("unrecognized action '%s'", action.Type)
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: %s", ErrAgentInvalidAction, action.Type)
 	}
 }
 
@@ -137,12 +139,15 @@ func (s *agentSandbox) runProcess(ctx context.Context, scriptPath string, percep
 	cmd := exec.CommandContext(callCtx, "python3", scriptPath, playerID, string(perceptionJSON))
 	out, err := cmd.Output()
 	if err != nil {
-		return game.Action{Type: game.ActionRest}, fmt.Errorf("process execution failed: %w", err)
+		if callCtx.Err() != nil {
+			return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: %v", ErrAgentTimeout, callCtx.Err())
+		}
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: %v", ErrAgentExecution, err)
 	}
 
 	var action game.Action
 	if err := json.Unmarshal(out, &action); err != nil {
-		return game.Action{Type: game.ActionRest}, fmt.Errorf("invalid action json from bot: %w", err)
+		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: malformed output", ErrAgentInvalidAction)
 	}
 
 	return action, nil

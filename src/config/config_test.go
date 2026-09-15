@@ -18,6 +18,28 @@ func TestNewConfiguration(t *testing.T) {
 	r.Equal("postgres", cfg.Database.Username)
 	r.Equal("pgx", cfg.Database.Driver)
 	r.Equal("agentrix", cfg.Database.Name)
+	r.Equal("info", cfg.Logging.Level)
+	r.Equal("console", cfg.Logging.Format)
+	r.Equal("auto", cfg.Logging.Color)
+}
+
+func TestLoggingConfiguration(t *testing.T) {
+	t.Setenv("LOG_LEVEL", "debug")
+	t.Setenv("LOG_FORMAT", "json")
+	t.Setenv("LOG_COLOR", "never")
+
+	cfg := NewConfiguration()
+	require.Equal(t, "debug", cfg.Logging.Level)
+	require.Equal(t, "json", cfg.Logging.Format)
+	require.Equal(t, "never", cfg.Logging.Color)
+}
+
+func TestDeployedModeDefaultsToJSONLogs(t *testing.T) {
+	t.Setenv("MODE", ModeRailway)
+	t.Setenv("LOG_FORMAT", "")
+
+	cfg := NewConfiguration()
+	require.Equal(t, "json", cfg.Logging.Format)
 }
 
 func TestGetStringDBConnection(t *testing.T) {

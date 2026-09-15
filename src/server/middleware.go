@@ -132,27 +132,27 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			tracer.Debugf(ctx, "Missing authorization header")
+			tracer.DebugEvent(ctx, tracer.ScopeAuth, "auth.credentials.missing", "Solicitud sin credenciales")
 			common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
 			return
 		}
 
 		tokenString := strings.TrimPrefix(authHeader, fmt.Sprintf("%s ", auth.TokenType))
 		if tokenString == authHeader {
-			tracer.Warnf(ctx, "Invalid token format")
+			tracer.DebugEvent(ctx, tracer.ScopeAuth, "auth.credentials.invalid", "Formato de credencial inválido")
 			common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
 			return
 		}
 
 		claims, err := s.Auth.ValidateAccessToken(tokenString)
 		if err != nil {
-			tracer.Warnf(ctx, "Invalid access token: %s", err)
+			tracer.DebugEvent(ctx, tracer.ScopeAuth, "auth.credentials.invalid", "Credencial rechazada", tracer.Err(err))
 			common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
 			return
 		}
 
 		ctx = context.WithValue(ctx, common.UserContextKey, claims)
-		ctx = context.WithValue(ctx, tracer.ParticipantIdKey, claims.ParticipantId)
+		ctx = tracer.WithActorID(ctx, claims.ParticipantId)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -169,7 +169,7 @@ func (s *Server) permissionMiddleware(next http.Handler) http.Handler {
 
 		claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
 		if !ok {
-			tracer.Warnf(ctx, "Missing claims in context")
+			tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.context.missing", "No se pudo comprobar la autorización")
 			common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
 			return
 		}
@@ -181,8 +181,15 @@ func (s *Server) permissionMiddleware(next http.Handler) http.Handler {
 		}
 
 		hasPermission, err := s.Service.HasPermission(ctx, claims.ParticipantId, requiredPermission)
-		if err != nil || !hasPermission {
-			tracer.Warnf(ctx, "Permission '%s' denied for participant '%s'", requiredPermission, claims.ParticipantId)
+		if err != nil {
+			tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.permission.failed", "No se pudo comprobar el permiso",
+				tracer.String("permission", requiredPermission), tracer.Err(err))
+			common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
+			return
+		}
+		if !hasPermission {
+			tracer.DebugEvent(ctx, tracer.ScopeAuth, "auth.permission.denied", "Permiso denegado",
+				tracer.String("permission", requiredPermission))
 			common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
 			return
 		}
@@ -194,23 +201,49 @@ func (s *Server) permissionMiddleware(next http.Handler) http.Handler {
 func (s *Server) correlationMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestId := r.Header.Get("X-Request-Id")
-		if requestId == "" {
+		if !isSafeRequestID(requestId) {
 			requestId = uuid.New().String()
 		}
-		ctx := context.WithValue(r.Context(), tracer.RequestIdKey, requestId)
+		ctx := tracer.BeginRequest(r.Context(), requestId)
 		w.Header().Set("X-Request-Id", requestId)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
+func isSafeRequestID(value string) bool {
+	if value == "" || len(value) > 64 {
+		return false
+	}
+	for _, char := range value {
+		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') ||
+			(char >= '0' && char <= '9') || char == '-' || char == '_' || char == '.' || char == ':' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 type statusLoggingResponseWriter struct {
 	http.ResponseWriter
-	statusCode int
+	statusCode  int
+	wroteHeader bool
 }
 
 func (rw *statusLoggingResponseWriter) WriteHeader(code int) {
+	if rw.wroteHeader {
+		return
+	}
+	rw.wroteHeader = true
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *statusLoggingResponseWriter) Write(data []byte) (int, error) {
+	if !rw.wroteHeader {
+		rw.WriteHeader(http.StatusOK)
+	}
+	return rw.ResponseWriter.Write(data)
 }
 
 func (s *Server) requestLoggingMiddleware(next http.Handler) http.Handler {
@@ -221,7 +254,13 @@ func (s *Server) requestLoggingMiddleware(next http.Handler) http.Handler {
 		duration := time.Since(start)
 
 		ctx := r.Context()
-		tracer.Infof(ctx, "HTTP %d %s %s (%s)", wrapped.statusCode, r.Method, r.URL.Path, duration.Round(time.Microsecond))
+		path := r.URL.Path
+		if route := mux.CurrentRoute(r); route != nil {
+			if template, err := route.GetPathTemplate(); err == nil {
+				path = template
+			}
+		}
+		tracer.CompleteRequest(ctx, r.Method, path, wrapped.statusCode, duration)
 	})
 }
 

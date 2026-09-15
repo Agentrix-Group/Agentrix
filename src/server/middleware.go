@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/F4nk1/Agentrix/src/auth"
 	"github.com/F4nk1/Agentrix/src/common"
@@ -131,7 +132,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		ctx := r.Context()
 		authHeader := r.Header.Get("Authorization")
 		if authHeader == "" {
-			tracer.Warnf(ctx, "Missing authorization header")
+			tracer.Debugf(ctx, "Missing authorization header")
 			common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
 			return
 		}
@@ -199,6 +200,28 @@ func (s *Server) correlationMiddleware(next http.Handler) http.Handler {
 		ctx := context.WithValue(r.Context(), tracer.RequestIdKey, requestId)
 		w.Header().Set("X-Request-Id", requestId)
 		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+type statusLoggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (rw *statusLoggingResponseWriter) WriteHeader(code int) {
+	rw.statusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (s *Server) requestLoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		wrapped := &statusLoggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		next.ServeHTTP(wrapped, r)
+		duration := time.Since(start)
+
+		ctx := r.Context()
+		tracer.Infof(ctx, "HTTP %d %s %s (%s)", wrapped.statusCode, r.Method, r.URL.Path, duration.Round(time.Microsecond))
 	})
 }
 

@@ -47,12 +47,12 @@ export function AuthPage({ onLoginSuccess }) {
         </p>
 
         {error && (
-          <div style={{ padding: '10px 14px', background: '#ef444420', color: '#f87171', borderRadius: '6px', marginBottom: '16px', fontSize: '0.85rem' }}>
+          <div style={{ padding: '10px 14px', background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: '6px', marginBottom: '16px', fontSize: '0.85rem' }}>
             {error}
           </div>
         )}
         {success && (
-          <div style={{ padding: '10px 14px', background: '#22c55e20', color: '#4ade80', borderRadius: '6px', marginBottom: '16px', fontSize: '0.85rem' }}>
+          <div style={{ padding: '10px 14px', background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: '6px', marginBottom: '16px', fontSize: '0.85rem' }}>
             {success}
           </div>
         )}
@@ -68,7 +68,7 @@ export function AuthPage({ onLoginSuccess }) {
               onChange={(e) => setUsername(e.target.value)}
               required
               placeholder="e.g. mastercoder"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: '#fff', borderRadius: '6px' }}
+              style={{ width: '100%', padding: '10px 12px' }}
             />
           </div>
 
@@ -83,7 +83,7 @@ export function AuthPage({ onLoginSuccess }) {
                 onChange={(e) => setEmail(e.target.value)}
                 required
                 placeholder="developer@example.com"
-                style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: '#fff', borderRadius: '6px' }}
+                style={{ width: '100%', padding: '10px 12px' }}
               />
             </div>
           )}
@@ -98,7 +98,7 @@ export function AuthPage({ onLoginSuccess }) {
               onChange={(e) => setPassword(e.target.value)}
               required
               placeholder="Min. 6 characters"
-              style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: '#fff', borderRadius: '6px' }}
+              style={{ width: '100%', padding: '10px 12px' }}
             />
           </div>
 

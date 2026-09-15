@@ -118,12 +118,12 @@ export function AgentsPage({ currentUser }) {
       </p>
 
       {statusMsg && (
-        <div style={{ padding: '12px', background: '#22c55e20', color: '#4ade80', borderRadius: '6px', margin: '16px 0' }}>
+        <div style={{ padding: '12px', background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: '6px', margin: '16px 0' }}>
           {statusMsg}
         </div>
       )}
       {errorMsg && (
-        <div style={{ padding: '12px', background: '#ef444420', color: '#f87171', borderRadius: '6px', margin: '16px 0' }}>
+        <div style={{ padding: '12px', background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: '6px', margin: '16px 0' }}>
           {errorMsg}
         </div>
       )}
@@ -139,7 +139,7 @@ export function AgentsPage({ currentUser }) {
                 placeholder="Bot Name (e.g. HunterAlpha)"
                 value={newAgentName}
                 onChange={(e) => setNewAgentName(e.target.value)}
-                style={{ padding: '8px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px' }}
+                style={{ padding: '8px 12px' }}
                 required
               />
               <textarea
@@ -147,7 +147,7 @@ export function AgentsPage({ currentUser }) {
                 value={newAgentDesc}
                 onChange={(e) => setNewAgentDesc(e.target.value)}
                 rows={2}
-                style={{ padding: '8px 12px', background: 'var(--bg-primary)', border: '1px solid var(--border)', color: '#fff', borderRadius: '4px', resize: 'vertical' }}
+                style={{ padding: '8px 12px', resize: 'vertical' }}
               />
               <button type="submit" className="btn">Create Bot</button>
             </form>
@@ -192,7 +192,7 @@ export function AgentsPage({ currentUser }) {
                     <select
                       value={selectedContestId}
                       onChange={(e) => setSelectedContestId(e.target.value)}
-                      style={{ padding: '6px 10px', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border)', borderRadius: '4px' }}
+                      style={{ padding: '6px 10px' }}
                     >
                       {contests.map((c) => (
                         <option key={c.id} value={c.id}>{c.name}</option>
@@ -212,7 +212,7 @@ export function AgentsPage({ currentUser }) {
                     <select
                       value={language}
                       onChange={(e) => setLanguage(e.target.value)}
-                      style={{ padding: '6px 10px', background: 'var(--bg-primary)', color: '#fff', border: '1px solid var(--border)', borderRadius: '4px' }}
+                      style={{ padding: '6px 10px' }}
                     >
                       <option value="python">Python 3</option>
                       <option value="javascript">JavaScript / Node</option>
@@ -228,10 +228,9 @@ export function AgentsPage({ currentUser }) {
                       fontFamily: 'monospace',
                       fontSize: '0.85rem',
                       padding: '12px',
-                      background: 'var(--bg-primary)',
+                      background: 'var(--bg-subtle)',
                       border: '1px solid var(--border)',
-                      color: '#fff',
-                      borderRadius: '4px',
+                      borderRadius: '6px',
                     }}
                     required
                   />

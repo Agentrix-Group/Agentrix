@@ -6,7 +6,8 @@ export function ReplayViewer({ replayId }) {
   const [replay, setReplay] = useState(null);
   const [currentTick, setCurrentTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const colors = ['#38bdf8', '#f43f5e', '#a855f7', '#eab308'];
+  // Official Blueprint agent colors: Indigo, Mint, Ocre, Coral
+  const colors = ['#6574D9', '#64BFA5', '#E9B760', '#D96C7A'];
 
   useEffect(() => {
     if (replayId) {
@@ -43,8 +44,8 @@ export function ReplayViewer({ replayId }) {
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    // Draw grid
-    ctx.strokeStyle = '#1e293b';
+    // Draw clean grid
+    ctx.strokeStyle = '#e2e8f0';
     ctx.lineWidth = 1;
     for (let i = 0; i <= gridSize; i++) {
       ctx.beginPath();
@@ -108,23 +109,23 @@ export function ReplayViewer({ replayId }) {
             ref={canvasRef}
             width={450}
             height={450}
-            style={{ background: '#090d16', borderRadius: '8px', border: '1px solid var(--border)' }}
+            style={{ background: '#f8fafc', borderRadius: '8px', border: '1px solid var(--border)' }}
           />
           <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
             <button className="btn" onClick={() => setIsPlaying(!isPlaying)}>
               {isPlaying ? 'Pause' : 'Play'}
             </button>
-            <button className="btn" onClick={() => setCurrentTick(Math.max(0, currentTick - 1))}>
+            <button className="btn btn-secondary" onClick={() => setCurrentTick(Math.max(0, currentTick - 1))}>
               Prev
             </button>
-            <button className="btn" onClick={() => setCurrentTick(Math.min((replay?.frames?.length || 1) - 1, currentTick + 1))}>
+            <button className="btn btn-secondary" onClick={() => setCurrentTick(Math.min((replay?.frames?.length || 1) - 1, currentTick + 1))}>
               Next
             </button>
-            <button className="btn" onClick={() => setCurrentTick(0)}>
+            <button className="btn btn-secondary" onClick={() => setCurrentTick(0)}>
               Reset
             </button>
           </div>
-          <div style={{ marginTop: '8px', fontSize: '0.85rem' }}>
+          <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
             Tick: {currentTick} / {(replay?.frames?.length || 1) - 1}
           </div>
         </div>
@@ -134,17 +135,17 @@ export function ReplayViewer({ replayId }) {
           {currentFrame?.state?.players && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
               {Object.entries(currentFrame.state.players).map(([id, p]) => (
-                <div key={id} style={{ background: 'var(--bg-card)', padding: '8px', borderRadius: '6px' }}>
-                  <strong>{id}</strong> - HP: {p.hp} | Energy: {p.energy} | Score: {p.score}
+                <div key={id} style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)', padding: '10px 14px', borderRadius: '6px' }}>
+                  <strong>{id}</strong> — HP: {p.hp} | Energy: {p.energy} | Score: {p.score}
                 </div>
               ))}
             </div>
           )}
 
           <h3>Events</h3>
-          <div style={{ background: 'var(--bg-card)', height: '200px', overflowY: 'auto', padding: '8px', fontSize: '0.85rem', fontFamily: 'monospace', borderRadius: '6px' }}>
+          <div style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)', height: '200px', overflowY: 'auto', padding: '10px 14px', fontSize: '0.85rem', fontFamily: 'monospace', borderRadius: '6px' }}>
             {currentFrame?.events?.map((ev, i) => (
-              <div key={i}>• {ev}</div>
+              <div key={i} style={{ color: 'var(--text-primary)' }}>• {ev}</div>
             ))}
           </div>
         </div>

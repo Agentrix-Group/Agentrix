@@ -45,9 +45,9 @@ export function Navbar({ activeTab, onSelectTab, currentUser, onLogout }) {
               👤 <strong>{currentUser.username}</strong>
             </span>
             <button
-              className="btn"
+              className="btn btn-secondary"
               onClick={onLogout}
-              style={{ padding: '4px 10px', fontSize: '0.8rem', background: '#334155', color: '#fff' }}
+              style={{ padding: '5px 12px', fontSize: '0.8rem' }}
             >
               Sign Out
             </button>

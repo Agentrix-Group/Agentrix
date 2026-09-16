@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
 
 export function AuthPage({ onLoginSuccess }) {
+  const { t } = useTranslation(['auth', 'errors', 'common']);
   const [isRegister, setIsRegister] = useState(false);
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
@@ -9,6 +11,13 @@ export function AuthPage({ onLoginSuccess }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+
+  const resolveErrorMessage = (err) => {
+    if (err?.data?.errorCode && t(`errors:codes.${err.data.errorCode}`) !== `errors:codes.${err.data.errorCode}`) {
+      return t(`errors:codes.${err.data.errorCode}`);
+    }
+    return err.message || t('auth:messages.operationFailed');
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -19,7 +28,7 @@ export function AuthPage({ onLoginSuccess }) {
     try {
       if (isRegister) {
         await ApiService.register(username, email, password);
-        setSuccess('Registration successful! You can now log in.');
+        setSuccess(t('auth:messages.registerSuccess'));
         setIsRegister(false);
       } else {
         const res = await ApiService.login(username, password);
@@ -28,7 +37,7 @@ export function AuthPage({ onLoginSuccess }) {
         }
       }
     } catch (err) {
-      setError(err.message || 'Operation failed');
+      setError(resolveErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -38,12 +47,10 @@ export function AuthPage({ onLoginSuccess }) {
     <div style={{ maxWidth: '420px', margin: '48px auto' }}>
       <div className="card">
         <h2 style={{ textAlign: 'center', marginBottom: '8px' }}>
-          {isRegister ? 'Create Account' : 'Welcome Back'}
+          {isRegister ? t('auth:createAccount') : t('auth:welcomeBack')}
         </h2>
         <p style={{ textAlign: 'center', color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '0.9rem' }}>
-          {isRegister
-            ? 'Join Agentrix to compete in automated bot arenas'
-            : 'Log in with your competitive bot developer account'}
+          {isRegister ? t('auth:joinSubtitle') : t('auth:loginSubtitle')}
         </p>
 
         {error && (
@@ -60,14 +67,14 @@ export function AuthPage({ onLoginSuccess }) {
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div>
             <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Username
+              {t('auth:labels.username')}
             </label>
             <input
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               required
-              placeholder="e.g. mastercoder"
+              placeholder={t('auth:placeholders.username')}
               style={{ width: '100%', padding: '10px 12px' }}
             />
           </div>
@@ -75,14 +82,14 @@ export function AuthPage({ onLoginSuccess }) {
           {isRegister && (
             <div>
               <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Email Address
+                {t('auth:labels.email')}
               </label>
               <input
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
-                placeholder="developer@example.com"
+                placeholder={t('auth:placeholders.email')}
                 style={{ width: '100%', padding: '10px 12px' }}
               />
             </div>
@@ -90,44 +97,44 @@ export function AuthPage({ onLoginSuccess }) {
 
           <div>
             <label style={{ display: 'block', marginBottom: '6px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-              Password
+              {t('auth:labels.password')}
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              placeholder="Min. 6 characters"
+              placeholder={t('auth:placeholders.password')}
               style={{ width: '100%', padding: '10px 12px' }}
             />
           </div>
 
           <button type="submit" className="btn" disabled={loading} style={{ width: '100%', padding: '12px', marginTop: '8px' }}>
-            {loading ? 'Processing...' : isRegister ? 'Register Account' : 'Sign In'}
+            {loading ? t('auth:buttons.processing') : isRegister ? t('auth:buttons.register') : t('auth:buttons.login')}
           </button>
         </form>
 
         <div style={{ textAlign: 'center', marginTop: '20px', fontSize: '0.85rem' }}>
           {isRegister ? (
             <span style={{ color: 'var(--text-secondary)' }}>
-              Already have an account?{' '}
+              {t('auth:links.alreadyHaveAccount')}{' '}
               <a
                 href="#login"
                 onClick={(e) => { e.preventDefault(); setIsRegister(false); setError(''); }}
                 style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: '600' }}
               >
-                Log In
+                {t('auth:links.logIn')}
               </a>
             </span>
           ) : (
             <span style={{ color: 'var(--text-secondary)' }}>
-              Don't have an account yet?{' '}
+              {t('auth:links.dontHaveAccount')}{' '}
               <a
                 href="#register"
                 onClick={(e) => { e.preventDefault(); setIsRegister(true); setError(''); }}
                 style={{ color: 'var(--accent)', textDecoration: 'none', fontWeight: '600' }}
               >
-                Register
+                {t('auth:links.register')}
               </a>
             </span>
           )}

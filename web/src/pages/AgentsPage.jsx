@@ -1,7 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
+import { formatDateTime, formatNumber } from '../i18n/formatters.js';
 
 export function AgentsPage({ currentUser }) {
+  const { t, i18n } = useTranslation(['agents', 'common', 'errors']);
+  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
+
   const [agents, setAgents] = useState([]);
   const [contests, setContests] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
@@ -65,10 +70,10 @@ export function AgentsPage({ currentUser }) {
       });
       setNewAgentName('');
       setNewAgentDesc('');
-      setStatusMsg('Bot created successfully!');
+      setStatusMsg(t('agents:messages.createdSuccess'));
       loadAgents();
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to create bot');
+      setErrorMsg(err.message || t('agents:messages.createError'));
     }
   };
 
@@ -80,11 +85,11 @@ export function AgentsPage({ currentUser }) {
 
     try {
       const res = await ApiService.submitCode(selectedAgent.id, code, language);
-      setStatusMsg(`Code submission v${res.version || 'new'} created successfully!`);
+      setStatusMsg(t('agents:messages.submitSuccess', { version: res.version || 'new' }));
       setCode('');
       ApiService.listSubmissions(selectedAgent.id).then((subs) => setSubmissions(subs || []));
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to submit code');
+      setErrorMsg(err.message || t('agents:messages.submitError'));
     }
   };
 
@@ -95,26 +100,33 @@ export function AgentsPage({ currentUser }) {
 
     try {
       await ApiService.enrollAgent(selectedContestId, selectedAgent.id);
-      setStatusMsg(`Enrolled '${selectedAgent.name}' in contest '${selectedContestId}'!`);
+      setStatusMsg(t('agents:messages.enrollSuccess', {
+        name: selectedAgent.name,
+        contest: selectedContestId,
+      }));
     } catch (err) {
-      setErrorMsg(err.message || 'Failed to enroll agent');
+      setErrorMsg(err.message || t('agents:messages.enrollError'));
     }
   };
 
   if (!currentUser) {
     return (
       <div className="card" style={{ textAlign: 'center', margin: '40px auto', maxWidth: '400px' }}>
-        <h3>Authentication Required</h3>
-        <p style={{ color: 'var(--text-secondary)' }}>Please log in to manage your agents and code submissions.</p>
+        <h3>{t('agents:authRequired.title')}</h3>
+        <p style={{ color: 'var(--text-secondary)' }}>{t('agents:authRequired.description')}</p>
       </div>
     );
   }
 
+  const getStatusText = (status) => {
+    return t(`common:status.${status}`, { defaultValue: status });
+  };
+
   return (
     <div>
-      <h1>My Autonomous Agents</h1>
+      <h1>{t('agents:title')}</h1>
       <p style={{ color: 'var(--text-secondary)' }}>
-        Develop, upload, and enroll competitive bots in arena tournaments.
+        {t('agents:subtitle')}
       </p>
 
       {statusMsg && (
@@ -132,28 +144,28 @@ export function AgentsPage({ currentUser }) {
         {/* Left Column: Create Bot & Bot List */}
         <div>
           <div className="card" style={{ marginBottom: '24px' }}>
-            <h3>Register New Bot</h3>
+            <h3>{t('agents:register.title')}</h3>
             <form onSubmit={handleCreateAgent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <input
                 type="text"
-                placeholder="Bot Name (e.g. HunterAlpha)"
+                placeholder={t('agents:register.namePlaceholder')}
                 value={newAgentName}
                 onChange={(e) => setNewAgentName(e.target.value)}
                 style={{ padding: '8px 12px' }}
                 required
               />
               <textarea
-                placeholder="Description / Strategy notes"
+                placeholder={t('agents:register.descriptionPlaceholder')}
                 value={newAgentDesc}
                 onChange={(e) => setNewAgentDesc(e.target.value)}
                 rows={2}
                 style={{ padding: '8px 12px', resize: 'vertical' }}
               />
-              <button type="submit" className="btn">Create Bot</button>
+              <button type="submit" className="btn">{t('agents:register.submit')}</button>
             </form>
           </div>
 
-          <h3>Your Bots ({agents.length})</h3>
+          <h3>{t('agents:list.titleWithCount', { count: formatNumber(agents.length, currentLang) })}</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {agents.map((ag) => (
               <div
@@ -171,12 +183,12 @@ export function AgentsPage({ currentUser }) {
                   <span className="badge badge-finished">{ag.game_id}</span>
                 </div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  ID: {ag.id.substring(0, 8)}...
+                  {t('agents:list.idLabel', { id: ag.id.substring(0, 8) })}
                 </div>
               </div>
             ))}
             {agents.length === 0 && (
-              <p style={{ color: 'var(--text-secondary)' }}>No bots registered yet. Create one above!</p>
+              <p style={{ color: 'var(--text-secondary)' }}>{t('agents:list.empty')}</p>
             )}
           </div>
         </div>
@@ -198,17 +210,17 @@ export function AgentsPage({ currentUser }) {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <button className="btn" onClick={handleEnroll}>Enroll in Tournament</button>
+                    <button className="btn" onClick={handleEnroll}>{t('agents:details.enroll')}</button>
                   </div>
                 </div>
-                <p style={{ color: 'var(--text-secondary)' }}>{selectedAgent.description || 'No description'}</p>
+                <p style={{ color: 'var(--text-secondary)' }}>{selectedAgent.description || t('agents:details.noDescription')}</p>
               </div>
 
               <div className="card" style={{ marginBottom: '24px' }}>
-                <h3>Upload Code Submission</h3>
+                <h3>{t('agents:submission.uploadTitle')}</h3>
                 <form onSubmit={handleSubmitCode} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>Language:</label>
+                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{t('agents:submission.language')}</label>
                     <select
                       value={language}
                       onChange={(e) => setLanguage(e.target.value)}
@@ -221,7 +233,7 @@ export function AgentsPage({ currentUser }) {
                   </div>
                   <textarea
                     rows={10}
-                    placeholder={`#!/usr/bin/env python3\n# Your agent logic here...\nimport sys, json\nprint(json.dumps({'type': 'ATTACK'}))`}
+                    placeholder={`#!/usr/bin/env python3\n# Agent logic...\nimport sys, json\nprint(json.dumps({'type': 'ATTACK'}))`}
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
                     style={{
@@ -234,21 +246,21 @@ export function AgentsPage({ currentUser }) {
                     }}
                     required
                   />
-                  <button type="submit" className="btn">Publish Code Submission</button>
+                  <button type="submit" className="btn">{t('agents:submission.publish')}</button>
                 </form>
               </div>
 
               <div className="card">
-                <h3>Version History</h3>
+                <h3>{t('agents:submission.history')}</h3>
                 {submissions.length > 0 ? (
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Version</th>
-                        <th>Language</th>
-                        <th>Status</th>
-                        <th>Path</th>
-                        <th>Created</th>
+                        <th>{t('agents:submission.table.version')}</th>
+                        <th>{t('agents:submission.table.language')}</th>
+                        <th>{t('agents:submission.table.status')}</th>
+                        <th>{t('agents:submission.table.path')}</th>
+                        <th>{t('agents:submission.table.created')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -256,20 +268,20 @@ export function AgentsPage({ currentUser }) {
                         <tr key={s.id}>
                           <td><strong>v{s.version}</strong></td>
                           <td>{s.language}</td>
-                          <td><span className="badge badge-finished">{s.status}</span></td>
+                          <td><span className="badge badge-finished">{getStatusText(s.status)}</span></td>
                           <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{s.code_path}</td>
-                          <td style={{ fontSize: '0.8rem' }}>{new Date(s.created_at).toLocaleString()}</td>
+                          <td style={{ fontSize: '0.8rem' }}>{formatDateTime(s.created_at, currentLang)}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 ) : (
-                  <p style={{ color: 'var(--text-secondary)' }}>No code versions uploaded yet.</p>
+                  <p style={{ color: 'var(--text-secondary)' }}>{t('agents:submission.emptyHistory')}</p>
                 )}
               </div>
             </div>
           ) : (
-            <div className="card">Select or create a bot to view details.</div>
+            <div className="card">{t('agents:details.selectPrompt')}</div>
           )}
         </div>
       </div>

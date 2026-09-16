@@ -1,0 +1,15 @@
+{
+  "brand": "Plataforma Agentrix",
+  "home": "Inicio",
+  "agents": "Mis agentes",
+  "matches": "Partidas",
+  "rankings": "Clasificación",
+  "viewer": "Visor de repeticiones",
+  "signOut": "Cerrar sesión",
+  "signIn": "Iniciar sesión / Registrarse",
+  "selectLanguage": "Seleccionar idioma",
+  "languages": {
+    "es": "Español",
+    "en": "English"
+  }
+}

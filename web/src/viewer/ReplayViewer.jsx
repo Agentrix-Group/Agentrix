@@ -1,7 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
+import { formatNumber } from '../i18n/formatters.js';
 
 export function ReplayViewer({ replayId }) {
+  const { t, i18n } = useTranslation(['viewer', 'common']);
+  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
+
   const canvasRef = useRef(null);
   const [replay, setReplay] = useState(null);
   const [currentTick, setCurrentTick] = useState(0);
@@ -95,14 +100,15 @@ export function ReplayViewer({ replayId }) {
   }, [currentTick, replay]);
 
   if (!replayId) {
-    return <div className="card">Select a match to watch its replay.</div>;
+    return <div className="card">{t('viewer:selectPrompt')}</div>;
   }
 
   const currentFrame = replay?.frames?.[currentTick];
+  const totalTicks = (replay?.frames?.length || 1) - 1;
 
   return (
     <div className="card" style={{ maxWidth: '900px', margin: '0 auto' }}>
-      <h2>Match Replay: {replay?.match_id}</h2>
+      <h2>{t('viewer:matchTitle', { matchId: replay?.match_id })}</h2>
       <div style={{ display: 'flex', gap: '20px', marginTop: '16px' }}>
         <div>
           <canvas
@@ -113,36 +119,44 @@ export function ReplayViewer({ replayId }) {
           />
           <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
             <button className="btn" onClick={() => setIsPlaying(!isPlaying)}>
-              {isPlaying ? 'Pause' : 'Play'}
+              {isPlaying ? t('viewer:controls.pause') : t('viewer:controls.play')}
             </button>
             <button className="btn btn-secondary" onClick={() => setCurrentTick(Math.max(0, currentTick - 1))}>
-              Prev
+              {t('viewer:controls.prev')}
             </button>
             <button className="btn btn-secondary" onClick={() => setCurrentTick(Math.min((replay?.frames?.length || 1) - 1, currentTick + 1))}>
-              Next
+              {t('viewer:controls.next')}
             </button>
             <button className="btn btn-secondary" onClick={() => setCurrentTick(0)}>
-              Reset
+              {t('viewer:controls.reset')}
             </button>
           </div>
           <div style={{ marginTop: '8px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-            Tick: {currentTick} / {(replay?.frames?.length || 1) - 1}
+            {t('viewer:tickInfo', {
+              current: formatNumber(currentTick, currentLang),
+              total: formatNumber(totalTicks, currentLang),
+            })}
           </div>
         </div>
 
         <div style={{ flex: 1 }}>
-          <h3>Agents</h3>
+          <h3>{t('viewer:agentsTitle')}</h3>
           {currentFrame?.state?.players && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
               {Object.entries(currentFrame.state.players).map(([id, p]) => (
                 <div key={id} style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)', padding: '10px 14px', borderRadius: '6px' }}>
-                  <strong>{id}</strong> — HP: {p.hp} | Energy: {p.energy} | Score: {p.score}
+                  {t('viewer:agentStats', {
+                    id,
+                    hp: formatNumber(p.hp, currentLang),
+                    energy: formatNumber(p.energy, currentLang),
+                    score: formatNumber(p.score, currentLang),
+                  })}
                 </div>
               ))}
             </div>
           )}
 
-          <h3>Events</h3>
+          <h3>{t('viewer:eventsTitle')}</h3>
           <div style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border)', height: '200px', overflowY: 'auto', padding: '10px 14px', fontSize: '0.85rem', fontFamily: 'monospace', borderRadius: '6px' }}>
             {currentFrame?.events?.map((ev, i) => (
               <div key={i} style={{ color: 'var(--text-primary)' }}>• {ev}</div>

@@ -1,0 +1,17 @@
+{
+  "title": "Visor de repeticiones de partidas",
+  "selectPrompt": "Selecciona una partida para ver su repetición.",
+  "matchTitle": "Repetición de partida: {{matchId}}",
+  "clearSelection": "Limpiar selección",
+  "controls": {
+    "play": "Reproducir",
+    "pause": "Pausar",
+    "prev": "Anterior",
+    "next": "Siguiente",
+    "reset": "Reiniciar"
+  },
+  "tickInfo": "Tick: {{current}} / {{total}}",
+  "agentsTitle": "Agentes",
+  "eventsTitle": "Eventos",
+  "agentStats": "{{id}} — PV: {{hp}} | Energía: {{energy}} | Puntos: {{score}}"
+}

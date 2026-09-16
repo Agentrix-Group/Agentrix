@@ -1,0 +1,17 @@
+{
+  "title": "Match Replay Viewer",
+  "selectPrompt": "Select a match to watch its replay.",
+  "matchTitle": "Match Replay: {{matchId}}",
+  "clearSelection": "Clear Selection",
+  "controls": {
+    "play": "Play",
+    "pause": "Pause",
+    "prev": "Prev",
+    "next": "Next",
+    "reset": "Reset"
+  },
+  "tickInfo": "Tick: {{current}} / {{total}}",
+  "agentsTitle": "Agents",
+  "eventsTitle": "Events",
+  "agentStats": "{{id}} — HP: {{hp}} | Energy: {{energy}} | Score: {{score}}"
+}

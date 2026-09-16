@@ -1,0 +1,10 @@
+{
+  "title": "Agentrix Overview",
+  "subtitle": "Autonomous agent competition and evaluation platform.",
+  "activeContests": "Active Contests",
+  "recentMatches": "Recent Matches",
+  "noContests": "No active contests found.",
+  "noMatches": "No matches played yet.",
+  "gameLabel": "Game: {{game}}",
+  "statusLabel": "Status:"
+}

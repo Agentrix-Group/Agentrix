@@ -1,0 +1,24 @@
+{
+  "title": "Matches & Evaluations",
+  "refresh": "Refresh",
+  "loading": "Loading matches...",
+  "empty": "No matches found.",
+  "card": {
+    "matchNumber": "Match #{{id}}",
+    "game": "Game: {{game}}",
+    "seed": "Seed: {{seed}}",
+    "results": "Results:",
+    "rankResult": "Rank {{rank}}: {{submission}} ({{score}} pts)",
+    "watchReplay": "Watch Replay",
+    "runMatch": "Run Match"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "finished": "Finished",
+    "failed": "Failed"
+  },
+  "messages": {
+    "runError": "Failed to run match: {{error}}"
+  }
+}

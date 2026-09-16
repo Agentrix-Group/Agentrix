@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
 import { MatchCard } from '../components/MatchCard.jsx';
 
 export function MatchesPage({ onWatchReplay }) {
+  const { t } = useTranslation(['matches', 'common']);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -25,19 +27,19 @@ export function MatchesPage({ onWatchReplay }) {
       await ApiService.runMatch(matchId);
       loadMatches();
     } catch (e) {
-      alert(`Failed to run match: ${e.message}`);
+      alert(t('matches:messages.runError', { error: e.message }));
     }
   };
 
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h1>Matches & Evaluations</h1>
-        <button className="btn" onClick={loadMatches}>Refresh</button>
+        <h1>{t('matches:title')}</h1>
+        <button className="btn" onClick={loadMatches}>{t('matches:refresh')}</button>
       </div>
 
       {loading ? (
-        <p>Loading matches...</p>
+        <p>{t('matches:loading')}</p>
       ) : (
         <div className="grid-cards">
           {matches.length > 0 ? (
@@ -50,7 +52,7 @@ export function MatchesPage({ onWatchReplay }) {
               />
             ))
           ) : (
-            <div className="card">No matches found.</div>
+            <div className="card">{t('matches:empty')}</div>
           )}
         </div>
       )}

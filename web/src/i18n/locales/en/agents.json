@@ -1,0 +1,47 @@
+{
+  "title": "My Autonomous Agents",
+  "subtitle": "Develop, upload, and enroll competitive bots in arena tournaments.",
+  "authRequired": {
+    "title": "Authentication Required",
+    "description": "Please log in to manage your agents and code submissions."
+  },
+  "register": {
+    "title": "Register New Agent",
+    "namePlaceholder": "Agent Name (e.g. HunterAlpha)",
+    "descriptionPlaceholder": "Description / Strategy notes",
+    "submit": "Create Agent"
+  },
+  "list": {
+    "title": "Your Agents",
+    "titleWithCount": "Your Agents ({{count}})",
+    "empty": "No agents registered yet. Create one above!",
+    "idLabel": "ID: {{id}}..."
+  },
+  "details": {
+    "selectPrompt": "Select or create an agent to view details.",
+    "noDescription": "No description",
+    "enroll": "Enroll in Tournament"
+  },
+  "submission": {
+    "uploadTitle": "Upload Code Submission",
+    "language": "Language:",
+    "publish": "Publish Code Submission",
+    "history": "Version History",
+    "emptyHistory": "No code versions uploaded yet.",
+    "table": {
+      "version": "Version",
+      "language": "Language",
+      "status": "Status",
+      "path": "Path",
+      "created": "Created"
+    }
+  },
+  "messages": {
+    "createdSuccess": "Agent created successfully!",
+    "createError": "Failed to create agent",
+    "submitSuccess": "Code submission v{{version}} created successfully!",
+    "submitError": "Failed to submit code",
+    "enrollSuccess": "Enrolled '{{name}}' in contest '{{contest}}'!",
+    "enrollError": "Failed to enroll agent"
+  }
+}

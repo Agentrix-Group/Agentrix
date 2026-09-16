@@ -1,0 +1,12 @@
+{
+  "title": "Clasificación del torneo",
+  "empty": "Aún no hay datos de clasificación disponibles.",
+  "table": {
+    "rank": "Puesto",
+    "agent": "Agente",
+    "participant": "Participante",
+    "score": "Puntuación",
+    "matches": "Partidas",
+    "wdl": "V / E / D"
+  }
+}

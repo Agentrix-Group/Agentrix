@@ -1,7 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
+import { formatNumber } from '../i18n/formatters.js';
 
 export function RankingsPage() {
+  const { t, i18n } = useTranslation(['rankings', 'common']);
+  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
   const [rankings, setRankings] = useState([]);
 
   useEffect(() => {
@@ -10,16 +14,16 @@ export function RankingsPage() {
 
   return (
     <div>
-      <h1>Tournament Leaderboard</h1>
+      <h1>{t('rankings:title')}</h1>
       <table className="table">
         <thead>
           <tr>
-            <th>Rank</th>
-            <th>Agent</th>
-            <th>Participant</th>
-            <th>Score</th>
-            <th>Matches</th>
-            <th>W / D / L</th>
+            <th>{t('rankings:table.rank')}</th>
+            <th>{t('rankings:table.agent')}</th>
+            <th>{t('rankings:table.participant')}</th>
+            <th>{t('rankings:table.score')}</th>
+            <th>{t('rankings:table.matches')}</th>
+            <th>{t('rankings:table.wdl')}</th>
           </tr>
         </thead>
         <tbody>
@@ -29,15 +33,17 @@ export function RankingsPage() {
                 <td><strong>#{r.rank}</strong></td>
                 <td>{r.agent_id}</td>
                 <td>{r.participant_id}</td>
-                <td><strong>{r.score}</strong></td>
-                <td>{r.matches_played}</td>
-                <td>{r.wins} / {r.draws} / {r.losses}</td>
+                <td><strong>{formatNumber(r.score, currentLang)}</strong></td>
+                <td>{formatNumber(r.matches_played, currentLang)}</td>
+                <td>
+                  {formatNumber(r.wins, currentLang)} / {formatNumber(r.draws, currentLang)} / {formatNumber(r.losses, currentLang)}
+                </td>
               </tr>
             ))
           ) : (
             <tr>
               <td colSpan="6" style={{ textAlign: 'center', color: 'var(--text-secondary)' }}>
-                No rankings data available yet.
+                {t('rankings:empty')}
               </td>
             </tr>
           )}

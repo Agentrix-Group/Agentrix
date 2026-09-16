@@ -1,0 +1,48 @@
+{
+  "buttons": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "clear": "Limpiar",
+    "refresh": "Actualizar",
+    "close": "Cerrar",
+    "back": "Volver",
+    "reset": "Reiniciar",
+    "create": "Crear",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "view": "Ver",
+    "submit": "Enviar",
+    "processing": "Procesando...",
+    "loading": "Cargando..."
+  },
+  "labels": {
+    "status": "Estado",
+    "version": "Versión",
+    "created": "Fecha de creación",
+    "actions": "Acciones",
+    "id": "Identificador",
+    "name": "Nombre",
+    "description": "Descripción",
+    "game": "Juego",
+    "seed": "Semilla",
+    "score": "Puntuación",
+    "rank": "Puesto",
+    "points": "pts",
+    "language": "Idioma"
+  },
+  "status": {
+    "pending": "Pendiente",
+    "running": "En ejecución",
+    "finished": "Finalizada",
+    "failed": "Fallida",
+    "upcoming": "Próximamente",
+    "draft": "Borrador",
+    "published": "Publicado",
+    "archived": "Archivado"
+  },
+  "messages": {
+    "empty": "No hay elementos para mostrar.",
+    "notFound": "Elemento no encontrado.",
+    "operationFailed": "La operación ha fallado."
+  }
+}

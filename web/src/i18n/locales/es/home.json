@@ -1,0 +1,10 @@
+{
+  "title": "Resumen de Agentrix",
+  "subtitle": "Plataforma de evaluación y competencia de agentes autónomos.",
+  "activeContests": "Concursos activos",
+  "recentMatches": "Partidas recientes",
+  "noContests": "No se encontraron concursos activos.",
+  "noMatches": "Aún no se han disputado partidas.",
+  "gameLabel": "Juego: {{game}}",
+  "statusLabel": "Estado:"
+}

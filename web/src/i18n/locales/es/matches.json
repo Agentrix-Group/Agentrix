@@ -1,0 +1,24 @@
+{
+  "title": "Partidas y evaluaciones",
+  "refresh": "Actualizar",
+  "loading": "Cargando partidas...",
+  "empty": "No se encontraron partidas.",
+  "card": {
+    "matchNumber": "Partida #{{id}}",
+    "game": "Juego: {{game}}",
+    "seed": "Semilla: {{seed}}",
+    "results": "Resultados:",
+    "rankResult": "Puesto {{rank}}: {{submission}} ({{score}} pts)",
+    "watchReplay": "Ver repetición",
+    "runMatch": "Ejecutar partida"
+  },
+  "status": {
+    "pending": "Pendiente",
+    "running": "En ejecución",
+    "finished": "Finalizada",
+    "failed": "Fallida"
+  },
+  "messages": {
+    "runError": "Error al ejecutar la partida: {{error}}"
+  }
+}

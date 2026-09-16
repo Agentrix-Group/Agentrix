@@ -1,0 +1,12 @@
+{
+  "title": "Tournament Leaderboard",
+  "empty": "No rankings data available yet.",
+  "table": {
+    "rank": "Rank",
+    "agent": "Agent",
+    "participant": "Participant",
+    "score": "Score",
+    "matches": "Matches",
+    "wdl": "W / D / L"
+  }
+}

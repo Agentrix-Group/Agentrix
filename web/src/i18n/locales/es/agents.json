@@ -1,0 +1,47 @@
+{
+  "title": "Mis agentes autónomos",
+  "subtitle": "Desarrolla, envía e inscribe agentes competitivos en los torneos de arena.",
+  "authRequired": {
+    "title": "Autenticación requerida",
+    "description": "Inicia sesión para gestionar tus agentes y envíos de código."
+  },
+  "register": {
+    "title": "Registrar nuevo agente",
+    "namePlaceholder": "Nombre del agente (ej. CazadorAlfa)",
+    "descriptionPlaceholder": "Descripción / Notas de estrategia",
+    "submit": "Crear agente"
+  },
+  "list": {
+    "title": "Tus agentes",
+    "titleWithCount": "Tus agentes ({{count}})",
+    "empty": "Aún no tienes agentes registrados. ¡Crea uno arriba!",
+    "idLabel": "ID: {{id}}..."
+  },
+  "details": {
+    "selectPrompt": "Selecciona o crea un agente para ver sus detalles.",
+    "noDescription": "Sin descripción",
+    "enroll": "Inscribir en concurso"
+  },
+  "submission": {
+    "uploadTitle": "Subir envío de código",
+    "language": "Lenguaje:",
+    "publish": "Publicar envío de código",
+    "history": "Historial de versiones",
+    "emptyHistory": "Aún no se han subido versiones de código.",
+    "table": {
+      "version": "Versión",
+      "language": "Lenguaje",
+      "status": "Estado",
+      "path": "Ruta",
+      "created": "Fecha de creación"
+    }
+  },
+  "messages": {
+    "createdSuccess": "¡Agente creado con éxito!",
+    "createError": "Error al crear el agente",
+    "submitSuccess": "¡Envío de código v{{version}} creado con éxito!",
+    "submitError": "Error al enviar el código",
+    "enrollSuccess": "¡'{{name}}' inscrito en el concurso '{{contest}}'!",
+    "enrollError": "Error al inscribir el agente"
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "codes": {
+    "1001": "Invalid request format",
+    "1002": "Required fields are missing",
+    "1003": "Resource not found",
+    "1004": "Resource already exists",
+    "2001": "Invalid credentials provided",
+    "2002": "Access denied: authentication required",
+    "2003": "Insufficient permissions",
+    "3001": "Invalid game action submitted",
+    "3002": "Agent execution timed out",
+    "3003": "Game engine not found",
+    "5001": "Database operation failed",
+    "5002": "Internal server error"
+  },
+  "generic": {
+    "unknown": "An unexpected error occurred",
+    "network": "Network connection error"
+  }
+}

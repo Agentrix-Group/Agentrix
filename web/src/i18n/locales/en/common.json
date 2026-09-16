@@ -1,0 +1,48 @@
+{
+  "buttons": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "refresh": "Refresh",
+    "close": "Close",
+    "back": "Back",
+    "reset": "Reset",
+    "create": "Create",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View",
+    "submit": "Submit",
+    "processing": "Processing...",
+    "loading": "Loading..."
+  },
+  "labels": {
+    "status": "Status",
+    "version": "Version",
+    "created": "Created",
+    "actions": "Actions",
+    "id": "ID",
+    "name": "Name",
+    "description": "Description",
+    "game": "Game",
+    "seed": "Seed",
+    "score": "Score",
+    "rank": "Rank",
+    "points": "pts",
+    "language": "Language"
+  },
+  "status": {
+    "pending": "Pending",
+    "running": "Running",
+    "finished": "Finished",
+    "failed": "Failed",
+    "upcoming": "Upcoming",
+    "draft": "Draft",
+    "published": "Published",
+    "archived": "Archived"
+  },
+  "messages": {
+    "empty": "No items to display.",
+    "notFound": "Item not found.",
+    "operationFailed": "Operation failed."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "codes": {
+    "1001": "Formato de solicitud inválido",
+    "1002": "Faltan campos obligatorios",
+    "1003": "Recurso no encontrado",
+    "1004": "El recurso ya existe",
+    "2001": "Credenciales inválidas",
+    "2002": "Acceso denegado: se requiere autenticación",
+    "2003": "Permisos insuficientes",
+    "3001": "Acción de juego inválida",
+    "3002": "Tiempo de ejecución del agente agotado",
+    "3003": "Motor de juego no encontrado",
+    "5001": "Error en la base de datos",
+    "5002": "Error interno del servidor"
+  },
+  "generic": {
+    "unknown": "Ha ocurrido un error inesperado",
+    "network": "Error de conexión con el servidor"
+  }
+}

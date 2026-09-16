@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Navbar } from './components/Navbar.jsx';
 import { HomePage } from './pages/HomePage.jsx';
 import { MatchesPage } from './pages/MatchesPage.jsx';
@@ -9,6 +10,7 @@ import { ReplayViewer } from './viewer/ReplayViewer.jsx';
 import { ApiService } from './service/apiService.js';
 
 export function App() {
+  const { t } = useTranslation(['viewer', 'common']);
   const [activeTab, setActiveTab] = useState('home');
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedReplayId, setSelectedReplayId] = useState(null);
@@ -66,10 +68,10 @@ export function App() {
         {activeTab === 'viewer' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h1>Match Replay Viewer</h1>
+              <h1>{t('viewer:title')}</h1>
               {selectedReplayId && (
                 <button className="btn" onClick={() => setSelectedReplayId(null)}>
-                  Clear Selection
+                  {t('viewer:clearSelection')}
                 </button>
               )}
             </div>

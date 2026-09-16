@@ -1,0 +1,44 @@
+package repository
+
+import (
+	"context"
+	"testing"
+
+	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/stretchr/testify/require"
+)
+
+func TestAgentsRepositoryDisconnected(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	repo := NewRepository(nil)
+	r.NotNil(repo)
+
+	// ListAgents
+	agents, err := repo.ListAgents(ctx)
+	r.Error(err)
+	r.Nil(agents)
+
+	// ListAgentsByParticipant
+	agentsByPart, err := repo.ListAgentsByParticipant(ctx, "part-1")
+	r.Error(err)
+	r.Nil(agentsByPart)
+
+	// GetAgent
+	agent, err := repo.GetAgent(ctx, "agent-1")
+	r.Error(err)
+	r.Nil(agent)
+
+	// CreateAgent
+	err = repo.CreateAgent(ctx, &model.Agent{Name: "Alpha"})
+	r.Error(err)
+
+	// UpdateAgent
+	err = repo.UpdateAgent(ctx, &model.Agent{Id: "agent-1", Name: "Alpha2"})
+	r.Error(err)
+
+	// ActivateAgent
+	err = repo.ActivateAgent(ctx, "agent-1", false)
+	r.Error(err)
+}

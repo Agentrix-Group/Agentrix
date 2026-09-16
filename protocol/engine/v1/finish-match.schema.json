@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/finish-match.schema.json",
+  "title": "FinishMatchPayload",
+  "description": "Payload enviado por Agentrix para solicitar la finalización prematura o cierre de la partida.",
+  "type": "object",
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "description": "Razón del cierre (ej. 'admin_abort', 'agent_disqualified', 'timeout')."
+    }
+  },
+  "additionalProperties": false
+}

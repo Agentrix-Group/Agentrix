@@ -1,0 +1,15 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "engine_error",
+  "matchId": "m-12345678-abcd",
+  "sequence": 5,
+  "payload": {
+    "code": "ERR_PHYSICS_COLLISION_DIVERGENCE",
+    "message": "Rapier physics solver detected irrecoverable NaN coordinate",
+    "fatal": true,
+    "details": {
+      "tick": 45,
+      "entityId": "player-1"
+    }
+  }
+}

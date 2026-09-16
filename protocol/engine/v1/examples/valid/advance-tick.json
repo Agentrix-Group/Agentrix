@@ -1,0 +1,22 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "advance_tick",
+  "matchId": "m-12345678-abcd",
+  "sequence": 2,
+  "payload": {
+    "tick": 1,
+    "actions": {
+      "bot-alpha": {
+        "status": "valid",
+        "actionType": "MOVE",
+        "payload": {
+          "direction": "RIGHT"
+        }
+      },
+      "bot-beta": {
+        "status": "timeout",
+        "errorDetails": "Bot execution exceeded 200ms limit"
+      }
+    }
+  }
+}

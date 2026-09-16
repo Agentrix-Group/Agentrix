@@ -15,12 +15,6 @@ func TestRegistryBasics(t *testing.T) {
 	r.NotNil(reg)
 	r.Empty(reg.ListManifests())
 
-	// Test default arena-basica engine creation
-	engine, err := reg.CreateEngine("arena-basica")
-	r.NoError(err)
-	r.NotNil(engine)
-	r.Equal("arena-basica", engine.GetManifest().ID)
-
 	// Custom manifest registration
 	manifest := &Manifest{
 		ID:         "custom-game",
@@ -30,62 +24,26 @@ func TestRegistryBasics(t *testing.T) {
 		MaxTicks:   50,
 	}
 	reg.RegisterManifest(manifest)
-	reg.RegisterFactory("custom-game", func(m *Manifest) Engine {
-		return NewArenaBasicaEngine(m)
-	})
 
 	list := reg.ListManifests()
 	r.Len(list, 1)
 	r.Equal("custom-game", list[0].ID)
 
-	customEngine, err := reg.CreateEngine("custom-game")
-	r.NoError(err)
-	r.NotNil(customEngine)
+	retrieved := reg.GetManifest("custom-game")
+	r.NotNil(retrieved)
+	r.Equal("Custom", retrieved.Name)
 
-	// Non-existent engine
-	_, err = reg.CreateEngine("non-existent")
-	r.Error(err)
+	nonExistent := reg.GetManifest("non-existent")
+	r.Nil(nonExistent)
 }
 
-func TestArenaBasicaEngineSimulation(t *testing.T) {
+func TestGetRegistrySingleton(t *testing.T) {
 	r := require.New(t)
 
-	engine := NewArenaBasicaEngine(nil)
-	r.NotNil(engine)
-
-	// Invalid player count
-	_, err := engine.Init([]string{"bot-1"}, 42)
-	r.Error(err)
-
-	// Valid init
-	state, err := engine.Init([]string{"bot-1", "bot-2"}, 42)
-	r.NoError(err)
-	r.NotNil(state)
-	r.Equal(0, state.Tick)
-	r.False(engine.IsOver())
-
-	// Step 1: Shields & Rest
-	state, err = engine.Step(map[string]Action{
-		"bot-1": {Type: ActionShield},
-		"bot-2": {Type: ActionRest},
-	})
-	r.NoError(err)
-	r.Equal(1, state.Tick)
-	r.True(state.Players["bot-1"].Shielded)
-
-	// Step 2: Movement
-	state, err = engine.Step(map[string]Action{
-		"bot-1": {Type: ActionRight},
-		"bot-2": {Type: ActionLeft},
-	})
-	r.NoError(err)
-	r.Equal(2, state.Tick)
-	r.False(state.Players["bot-1"].Shielded) // shields reset next tick
-
-	// Results map
-	results := engine.GetResults()
-	r.Contains(results, "bot-1")
-	r.Contains(results, "bot-2")
+	reg1 := GetRegistry()
+	reg2 := GetRegistry()
+	r.NotNil(reg1)
+	r.Same(reg1, reg2)
 }
 
 func TestLoadGamesFromDir(t *testing.T) {
@@ -114,4 +72,12 @@ max_ticks: 100
 	r.Len(manifests, 1)
 	r.Equal("test-game", manifests[0].ID)
 	r.Equal("Test Game", manifests[0].Name)
+}
+
+func TestLoadGamesFromDir_InvalidDir(t *testing.T) {
+	r := require.New(t)
+
+	reg := NewRegistry()
+	err := reg.LoadGamesFromDir("/path/to/nonexistent/directory")
+	r.Error(err)
 }

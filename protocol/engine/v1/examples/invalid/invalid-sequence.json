@@ -1,0 +1,10 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "advance_tick",
+  "matchId": "m-1234",
+  "sequence": 0,
+  "payload": {
+    "tick": 1,
+    "actions": {}
+  }
+}

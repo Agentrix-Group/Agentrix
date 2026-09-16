@@ -62,19 +62,29 @@ No ejecuta código de participantes.
 
 ### Plano de ejecución
 
+#### Supervisor de ejecución (Worker en Go)
 Responsable de:
+- iniciar y detener el subproceso del motor;
+- iniciar y aislar los procesos no confiables de los agentes;
+- aplicar límites de tiempo, memoria y llamadas a los agentes;
+- enviar percepciones y recibir acciones;
+- validar mensajes estructuralmente;
+- detectar timeout, crash y violaciones del protocolo de los agentes;
+- entregar las acciones válidas al motor;
+- registrar fallos como evidencia técnica;
+- recolectar eventos, hashes y resultados del motor;
+- distinguir fallos del motor de fallos de los agentes.
 
-- reservar trabajos;
-- comprobar digests;
-- preparar sandboxes;
-- iniciar juego y agentes;
-- aplicar límites;
-- coordinar ticks;
-- registrar eventos;
-- clasificar fallos;
-- producir evidencia técnica.
-
-No modifica reglas, inscripciones ni permisos.
+#### Motor de simulación (Rust + Bevy + Rapier)
+Responsable de:
+- mantener el estado autoritativo del mundo;
+- procesar ticks con timestep fijo en modo headless;
+- aplicar reglas de juego físicas y espaciales;
+- resolver físicas y colisiones con Rapier;
+- calcular percepciones por slot;
+- emitir eventos de simulación por tick;
+- calcular el resultado competitivo y hashes de estado deterministas;
+- proporcionar información suficiente para el replay sin ejecutar agentes directamente.
 
 ### Plano de visualización
 
@@ -198,9 +208,18 @@ Los workers de ejecución oficiales operan sobre Linux. Cada agente se inicia:
 
 Los contenedores OCI son empaquetado y aislamiento básico. Antes de producción debe realizarse un ejercicio de escape y considerar una barrera adicional de sandbox para código no confiable.
 
-### ATD-010 — Juego fuera de la API
+### ATD-010 — Motor de juego oficial externo en Rust (Bevy + Rapier)
 
-El motor del juego corre como proceso supervisado separado. Un fallo termina esa ejecución y genera un incidente; no detiene la API. El juego recibe la configuración congelada y solo comunica percepciones, validación de acciones, eventos y final de partida.
+**Estado:** formalizada mediante ADR-001 y DP-003.
+
+El motor de juego corre como un ejecutable externo independiente en Rust (utilizando Bevy para el mundo y los ticks, y Rapier para la física y colisiones espaciales), operando en modo headless y fuera de la API y de la base de datos de Agentrix.
+
+Principios del motor:
+- El motor es autoritativo respecto a la simulación y el resultado competitivo.
+- La comunicación se efectúa mediante el protocolo versionado `agentrix-engine/1` en JSON Lines sobre `stdin` y `stdout` (reservando `stdout` exclusivamente para mensajes de protocolo y `stderr` para logs y diagnóstico).
+- Los agentes participantes no corren dentro del motor; son procesos no confiables supervisados por Agentrix fuera de la simulación.
+- Un fallo del motor termina la ejecución aislada y genera un incidente; no detiene la API ni corrompe el estado de Agentrix.
+- La implementación embebida en Go `ArenaBasicaEngine` fue provisional y queda reemplazada por la abstracción de cliente de subproceso.
 
 ### ATD-011 — Replay autoritativo por eventos
 

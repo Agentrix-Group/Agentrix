@@ -15,7 +15,7 @@ type mockMatchesRepo struct {
 	repository.Repository
 	listMatchesFn          func(ctx context.Context) ([]model.Match, error)
 	listMatchesByContestFn func(ctx context.Context, contestId string) ([]model.Match, error)
-	getMatchFn            func(ctx context.Context, id string) (*model.Match, error)
+	getMatchFn             func(ctx context.Context, id string) (*model.Match, error)
 	createMatchFn          func(ctx context.Context, match *model.Match) error
 	updateMatchFn          func(ctx context.Context, match *model.Match) error
 	activateMatchFn        func(ctx context.Context, id string, isActive bool) error

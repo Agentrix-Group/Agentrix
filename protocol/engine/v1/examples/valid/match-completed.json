@@ -1,0 +1,28 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "match_completed",
+  "matchId": "m-12345678-abcd",
+  "sequence": 4,
+  "payload": {
+    "finalTick": 100,
+    "reason": "victory",
+    "winner": "bot-alpha",
+    "scores": {
+      "bot-alpha": 150,
+      "bot-beta": 30
+    },
+    "rankings": [
+      {
+        "playerId": "bot-alpha",
+        "rank": 1,
+        "score": 150
+      },
+      {
+        "playerId": "bot-beta",
+        "rank": 2,
+        "score": 30
+      }
+    ],
+    "finalStateHash": "final_sim_digest_abcdef0123456789"
+  }
+}

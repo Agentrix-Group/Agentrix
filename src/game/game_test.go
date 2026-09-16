@@ -1,59 +1,94 @@
 package game
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
-func TestArenaBasicaEngine(t *testing.T) {
+func TestManifestSerialization(t *testing.T) {
 	r := require.New(t)
 
-	registry := GetRegistry()
-	engine, err := registry.CreateEngine("arena-basica")
+	manifestYAML := `
+id: arena-basica
+name: Arena Basica
+version: 1.0.0
+description: A grid battle game
+min_players: 2
+max_players: 4
+max_ticks: 100
+grid_width: 10
+grid_height: 10
+binary_path: bin/fake-engine
+settings:
+  initial_hp: "100"
+`
+	var m Manifest
+	err := yaml.Unmarshal([]byte(manifestYAML), &m)
 	r.NoError(err)
-	r.NotNil(engine)
+	r.Equal("arena-basica", m.ID)
+	r.Equal("Arena Basica", m.Name)
+	r.Equal(2, m.MinPlayers)
+	r.Equal(4, m.MaxPlayers)
+	r.Equal(100, m.MaxTicks)
+	r.Equal("bin/fake-engine", m.BinaryPath)
+	r.Equal("100", m.Settings["initial_hp"])
 
-	players := []string{"bot1", "bot2"}
-	state, err := engine.Init(players, 12345)
+	jsonBytes, err := json.Marshal(m)
 	r.NoError(err)
-	r.NotNil(state)
-	r.Equal(0, state.Tick)
-	r.False(state.Done)
-	r.Equal(2, len(state.Players))
-	r.Equal(100, state.Players["bot1"].HP)
-	r.Equal(100, state.Players["bot2"].HP)
+	r.Contains(string(jsonBytes), `"id":"arena-basica"`)
+}
 
-	// Step 1: Move bot1 Down, bot2 Up
-	actions := map[string]Action{
-		"bot1": {Type: ActionDown},
-		"bot2": {Type: ActionUp},
+func TestActionTypes(t *testing.T) {
+	r := require.New(t)
+
+	r.Equal(ActionType("UP"), ActionUp)
+	r.Equal(ActionType("DOWN"), ActionDown)
+	r.Equal(ActionType("LEFT"), ActionLeft)
+	r.Equal(ActionType("RIGHT"), ActionRight)
+	r.Equal(ActionType("ATTACK"), ActionAttack)
+	r.Equal(ActionType("SHIELD"), ActionShield)
+	r.Equal(ActionType("REST"), ActionRest)
+
+	act := Action{
+		Type: ActionAttack,
+		Payload: map[string]interface{}{
+			"target": "bot-2",
+		},
 	}
-	nextState, err := engine.Step(actions)
+	bytes, err := json.Marshal(act)
 	r.NoError(err)
-	r.Equal(1, nextState.Tick)
-	r.Equal(2, nextState.Players["bot1"].Y) // Spawned at (1,1), moving down -> (1,2)
+	r.Contains(string(bytes), `"type":"ATTACK"`)
+}
 
-	// Step 2: Rest & Shield
-	actions = map[string]Action{
-		"bot1": {Type: ActionShield},
-		"bot2": {Type: ActionRest},
+func TestGameStateSerialization(t *testing.T) {
+	r := require.New(t)
+
+	state := GameState{
+		Tick:       1,
+		GridWidth:  10,
+		GridHeight: 10,
+		Players: map[string]*PlayerState{
+			"bot-1": {
+				ID:       "bot-1",
+				X:        1,
+				Y:        1,
+				HP:       100,
+				MaxHP:    100,
+				Energy:   100,
+				Shielded: false,
+				Alive:    true,
+				Score:    0,
+			},
+		},
+		Events: []string{"Game started"},
+		Done:   false,
 	}
-	nextState, err = engine.Step(actions)
+
+	bytes, err := json.Marshal(state)
 	r.NoError(err)
-	r.True(nextState.Players["bot1"].Shielded)
-	r.Equal(90, nextState.Players["bot1"].Energy) // 100 - 10
-
-	// Step 3: Run full game until termination
-	for !engine.IsOver() {
-		acts := map[string]Action{
-			"bot1": {Type: ActionAttack},
-			"bot2": {Type: ActionAttack},
-		}
-		_, _ = engine.Step(acts)
-	}
-
-	r.True(engine.IsOver())
-	results := engine.GetResults()
-	r.NotEmpty(results)
+	r.Contains(string(bytes), `"tick":1`)
+	r.Contains(string(bytes), `"bot-1"`)
 }

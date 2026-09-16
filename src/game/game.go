@@ -50,14 +50,6 @@ type Manifest struct {
 	MaxTicks    int               `yaml:"max_ticks" json:"max_ticks"`
 	GridWidth   int               `yaml:"grid_width" json:"grid_width"`
 	GridHeight  int               `yaml:"grid_height" json:"grid_height"`
+	BinaryPath  string            `yaml:"binary_path,omitempty" json:"binary_path,omitempty"`
 	Settings    map[string]string `yaml:"settings,omitempty" json:"settings,omitempty"`
-}
-
-type Engine interface {
-	Init(players []string, seed int64) (*GameState, error)
-	Step(actions map[string]Action) (*GameState, error)
-	GetState() *GameState
-	IsOver() bool
-	GetResults() map[string]int
-	GetManifest() *Manifest
 }

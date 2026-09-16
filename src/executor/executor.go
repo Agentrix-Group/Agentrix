@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/connection"
+	"github.com/F4nk1/Agentrix/src/engine"
 	"github.com/F4nk1/Agentrix/src/game"
 	"github.com/F4nk1/Agentrix/src/model"
 	"github.com/F4nk1/Agentrix/src/service"
@@ -21,18 +23,56 @@ type MatchExecutor interface {
 	Execute(ctx context.Context, job *connection.MatchJob) error
 }
 
-type matchExecutor struct {
-	svc     service.Service
-	sandbox Sandbox
+// EngineClientFactory instantiates an EngineClient connected to the simulation engine.
+type EngineClientFactory func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error)
+
+// DefaultEngineClientFactory starts an engine subprocess based on configuration or standard paths.
+func DefaultEngineClientFactory(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+	execPath := os.Getenv("AGENTRIX_ENGINE_BIN")
+	if execPath == "" {
+		if manifest := game.GetRegistry().GetManifest(job.GameId); manifest != nil && manifest.BinaryPath != "" {
+			execPath = manifest.BinaryPath
+		}
+	}
+	if execPath == "" {
+		if _, err := os.Stat("bin/agentrix-engine"); err == nil {
+			execPath = "bin/agentrix-engine"
+		} else if _, err := os.Stat("bin/fake-engine"); err == nil {
+			execPath = "bin/fake-engine"
+		} else {
+			return nil, errors.New("no engine binary found (checked AGENTRIX_ENGINE_BIN, bin/agentrix-engine, bin/fake-engine)")
+		}
+	}
+
+	client := engine.NewSubprocessClient()
+	err := client.Start(ctx, engine.StartConfig{
+		BinaryPath:       execPath,
+		HandshakeTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start engine subprocess: %w", err)
+	}
+	return client, nil
 }
 
-func NewMatchExecutor(svc service.Service, sandbox Sandbox) MatchExecutor {
+type matchExecutor struct {
+	svc           service.Service
+	sandbox       Sandbox
+	engineFactory EngineClientFactory
+}
+
+func NewMatchExecutor(svc service.Service, sandbox Sandbox, engineFactory ...EngineClientFactory) MatchExecutor {
 	if sandbox == nil {
 		sandbox = NewSandbox(500 * time.Millisecond)
 	}
+	factory := DefaultEngineClientFactory
+	if len(engineFactory) > 0 && engineFactory[0] != nil {
+		factory = engineFactory[0]
+	}
 	return &matchExecutor{
-		svc:     svc,
-		sandbox: sandbox,
+		svc:           svc,
+		sandbox:       sandbox,
+		engineFactory: factory,
 	}
 }
 
@@ -78,15 +118,6 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		}
 	}
 
-	engine, err := game.GetRegistry().CreateEngine(job.GameId)
-	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.create.failed", "El juego no pudo iniciarse",
-			tracer.Origin(tracer.OriginGame), tracer.Err(err))
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		return err
-	}
-
 	var playerIDs []string
 	subMap := make(map[string]*model.Submission)
 	for _, sub := range submissions {
@@ -94,9 +125,38 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		subMap[sub.Id] = sub
 	}
 
-	state, err := engine.Init(playerIDs, job.Seed)
+	// Start engine subprocess client
+	engineClient, err := e.engineFactory(ctx, job)
 	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.initialize.failed", "El juego rechazó la configuración inicial",
+		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.create.failed", "El motor de juego no pudo iniciarse",
+			tracer.Origin(tracer.OriginGame), tracer.Err(err))
+		match.Status = common.MatchStatusFailed
+		_ = e.svc.UpdateMatch(ctx, match)
+		return err
+	}
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = engineClient.Close(closeCtx)
+	}()
+
+	maxTicks := 100
+	if manifest := game.GetRegistry().GetManifest(job.GameId); manifest != nil && manifest.MaxTicks > 0 {
+		maxTicks = manifest.MaxTicks
+	}
+
+	initReq := engine.InitializeMatchRequest{
+		MatchID:         job.MatchId,
+		GameID:          job.GameId,
+		Seed:            job.Seed,
+		FixedTimestepMs: 50,
+		MaxTicks:        maxTicks,
+		Players:         playerIDs,
+	}
+
+	initRes, err := engineClient.InitializeMatch(ctx, initReq)
+	if err != nil {
+		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.initialize.failed", "El motor de juego rechazó la inicialización",
 			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
@@ -110,16 +170,24 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	resultFailures := 0
 
 	// Record initial frame
-	initialStateMap, _ := structToMap(state)
 	replayFrames = append(replayFrames, model.ReplayFrame{
 		Tick:   0,
-		Events: state.Events,
-		State:  initialStateMap,
+		Events: initRes.Events,
+		State: map[string]interface{}{
+			"stateHash":   initRes.StateHash,
+			"perceptions": initRes.Perceptions,
+		},
 	})
 
-	// Run game simulation loop
-	for !engine.IsOver() {
-		actions := make(map[string]game.Action)
+	currentPerceptions := initRes.Perceptions
+	isOver := false
+	winner := ""
+	currentTick := 1
+
+	// Run simulation loop over EngineClient IPC
+	for !isOver && currentTick <= maxTicks {
+		actions := make(map[string]engine.PlayerActionInput)
+		actionMapForReplay := make(map[string]interface{})
 
 		for _, pID := range playerIDs {
 			sub := subMap[pID]
@@ -128,49 +196,81 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 				codePath = sub.CodePath
 			}
 
-			action, err := e.sandbox.ExecuteTurn(ctx, codePath, state, pID)
+			perception := currentPerceptions[pID]
+			action, err := e.sandbox.ExecuteTurnWithPerception(ctx, codePath, perception, pID)
 			if err != nil {
 				recordAgentIssue(agentIssues, pID, err)
-				action = game.Action{Type: game.ActionRest}
+				actions[pID] = engine.PlayerActionInput{
+					Status:     engine.ActionStatusTimeout,
+					ActionType: "REST",
+				}
+				actionMapForReplay[pID] = "REST"
+			} else {
+				actions[pID] = engine.PlayerActionInput{
+					Status:     engine.ActionStatusValid,
+					ActionType: string(action.Type),
+					Payload:    action.Payload,
+				}
+				actionMapForReplay[pID] = action.Type
 			}
-			actions[pID] = action
 		}
 
-		state, err = engine.Step(actions)
+		tickRes, err := engineClient.AdvanceTick(ctx, engine.AdvanceTickRequest{
+			Tick:    currentTick,
+			Actions: actions,
+		})
 		if err != nil {
 			executionErr = err
-			tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.tick.failed", "El juego falló durante la partida",
-				tracer.Origin(tracer.OriginGame), tracer.Int("tick", state.Tick), tracer.Err(err))
+			tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.tick.failed", "El motor falló durante el avance de tick",
+				tracer.Origin(tracer.OriginGame), tracer.Int("tick", currentTick), tracer.Err(err))
 			break
 		}
 
-		stateMap, _ := structToMap(state)
-		actionMap := make(map[string]interface{})
-		for pID, act := range actions {
-			actionMap[pID] = act.Type
+		frameState := map[string]interface{}{
+			"stateHash":   tickRes.StateHash,
+			"publicState": tickRes.PublicState,
 		}
-
 		replayFrames = append(replayFrames, model.ReplayFrame{
-			Tick:    state.Tick,
-			Events:  state.Events,
-			State:   stateMap,
-			Actions: actionMap,
+			Tick:    tickRes.Tick,
+			Events:  tickRes.Events,
+			State:   frameState,
+			Actions: actionMapForReplay,
 		})
+
+		currentPerceptions = tickRes.Perceptions
+		isOver = tickRes.IsOver
+		if tickRes.Winner != "" {
+			winner = tickRes.Winner
+		}
+		currentTick++
 	}
 
-	// Collect final results
-	scores := engine.GetResults()
-	type rankedScore struct {
-		SubID string
-		Score int
+	finishReason := "time_limit"
+	if executionErr != nil {
+		finishReason = "aborted"
+	} else if winner != "" {
+		finishReason = "victory"
 	}
-	var rankedList []rankedScore
-	for subID, sc := range scores {
-		rankedList = append(rankedList, rankedScore{SubID: subID, Score: sc})
+
+	matchRes, err := engineClient.FinishMatch(ctx, finishReason)
+	var scores map[string]int
+	var rankings []engine.PlayerRank
+	finalWinner := winner
+	if err == nil && matchRes != nil {
+		scores = matchRes.Scores
+		rankings = matchRes.Rankings
+		if matchRes.Winner != "" {
+			finalWinner = matchRes.Winner
+		}
+	} else {
+		if executionErr == nil {
+			executionErr = err
+		}
+		scores = make(map[string]int)
+		for _, pID := range playerIDs {
+			scores[pID] = 0
+		}
 	}
-	sort.Slice(rankedList, func(i, j int) bool {
-		return rankedList[i].Score > rankedList[j].Score
-	})
 
 	// Save match replay
 	replayID := uuid.New().String()
@@ -179,9 +279,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		MatchId:  job.MatchId,
 		Seed:     job.Seed,
 		Players:  playerIDs,
-		MaxTicks: engine.GetManifest().MaxTicks,
+		MaxTicks: maxTicks,
 		Frames:   replayFrames,
-		Winner:   state.Winner,
+		Winner:   finalWinner,
 		Scores:   scores,
 	}
 
@@ -195,21 +295,43 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	}
 
+	// Build rankings list if not supplied by engine
+	if len(rankings) == 0 {
+		type rankedScore struct {
+			SubID string
+			Score int
+		}
+		var rankedList []rankedScore
+		for subID, sc := range scores {
+			rankedList = append(rankedList, rankedScore{SubID: subID, Score: sc})
+		}
+		sort.Slice(rankedList, func(i, j int) bool {
+			return rankedList[i].Score > rankedList[j].Score
+		})
+		for idx, item := range rankedList {
+			rankings = append(rankings, engine.PlayerRank{
+				PlayerID: item.SubID,
+				Rank:     idx + 1,
+				Score:    item.Score,
+			})
+		}
+	}
+
 	// Save individual results
-	for rankIdx, item := range rankedList {
+	for _, item := range rankings {
 		status := "finished"
-		if item.Score <= 0 {
+		if item.Score <= 0 && len(rankings) > 1 {
 			status = "eliminated"
 		}
 
 		res := &model.Result{
 			Id:           uuid.New().String(),
 			MatchId:      job.MatchId,
-			SubmissionId: item.SubID,
+			SubmissionId: item.PlayerID,
 			Score:        item.Score,
-			Rank:         rankIdx + 1,
+			Rank:         item.Rank,
 			Status:       status,
-			Details:      fmt.Sprintf("Score: %d, Rank: %d", item.Score, rankIdx+1),
+			Details:      fmt.Sprintf("Score: %d, Rank: %d", item.Score, item.Rank),
 			CreatedAt:    time.Now().UTC(),
 		}
 		if err := e.svc.CreateResult(ctx, res); err != nil {
@@ -222,9 +344,13 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			tracer.Origin(tracer.OriginInfrastructure), tracer.Int("failed_results", resultFailures))
 	}
 
-	// Mark match finished
+	// Mark match status
 	now := time.Now().UTC()
-	match.Status = common.MatchStatusFinished
+	if executionErr != nil {
+		match.Status = common.MatchStatusFailed
+	} else {
+		match.Status = common.MatchStatusFinished
+	}
 	match.ReplayId = replayID
 	match.FinishedAt = &now
 	if err := e.svc.UpdateMatch(ctx, match); err != nil {
@@ -234,7 +360,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	}
 
 	// Update rankings for contest if contest is set
-	if job.ContestId != "" {
+	if job.ContestId != "" && executionErr == nil {
 		if _, err := e.svc.CalculateRankings(ctx, job.ContestId); err != nil {
 			persistenceFailures++
 			tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "rankings.update.failed", "No se pudo actualizar la clasificación",
@@ -244,7 +370,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 	logAgentIssueSummaries(ctx, agentIssues)
 	completionFields := []tracer.Field{
-		tracer.String("winner_id", state.Winner),
+		tracer.String("winner_id", finalWinner),
 		tracer.Int("ticks", len(replayFrames)),
 		tracer.Duration("elapsed", time.Since(startedAt)),
 	}

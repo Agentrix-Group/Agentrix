@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/engine-error.schema.json",
+  "title": "EngineErrorPayload",
+  "description": "Payload emitido por el motor ante un fallo interno o violación de protocolo.",
+  "type": "object",
+  "required": [
+    "code",
+    "message",
+    "fatal"
+  ],
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Código de error estructurado del motor (ej. 'ERR_INVALID_SEQUENCE', 'ERR_PHYSICS_FAILURE')."
+    },
+    "message": {
+      "type": "string",
+      "description": "Descripción humana redactada del error."
+    },
+    "fatal": {
+      "type": "boolean",
+      "description": "Indica si el error aborta irrevocablemente la partida actual."
+    },
+    "details": {
+      "type": "object",
+      "description": "Contexto diagnóstico adicional sanitizado.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

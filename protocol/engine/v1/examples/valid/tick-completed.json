@@ -1,0 +1,42 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "tick_completed",
+  "matchId": "m-12345678-abcd",
+  "sequence": 3,
+  "payload": {
+    "tick": 1,
+    "events": [
+      "bot-alpha moved to (2,1)",
+      "bot-beta timed out and remained idle"
+    ],
+    "stateHash": "h1_tick_hash_987654",
+    "isOver": false,
+    "publicState": {
+      "tick": 1,
+      "players": {
+        "bot-alpha": {
+          "alive": true,
+          "hp": 100,
+          "score": 0
+        },
+        "bot-beta": {
+          "alive": true,
+          "hp": 100,
+          "score": 0
+        }
+      }
+    },
+    "perceptions": {
+      "bot-alpha": {
+        "tick": 1,
+        "x": 2,
+        "y": 1
+      },
+      "bot-beta": {
+        "tick": 1,
+        "x": 8,
+        "y": 8
+      }
+    }
+  }
+}

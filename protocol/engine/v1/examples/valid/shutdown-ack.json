@@ -1,0 +1,9 @@
+{
+  "protocolVersion": "agentrix-engine/1",
+  "type": "shutdown_ack",
+  "matchId": "",
+  "sequence": 5,
+  "payload": {
+    "status": "ok"
+  }
+}

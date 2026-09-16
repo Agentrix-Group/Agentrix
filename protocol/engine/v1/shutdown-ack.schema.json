@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/shutdown-ack.schema.json",
+  "title": "ShutdownAckPayload",
+  "description": "Payload emitido por el motor antes de cerrar su ejecución acusando recibo de shutdown.",
+  "type": "object",
+  "required": [
+    "status"
+  ],
+  "properties": {
+    "status": {
+      "type": "string",
+      "const": "ok"
+    }
+  },
+  "additionalProperties": false
+}

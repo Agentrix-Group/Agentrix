@@ -13,7 +13,7 @@ type mockAgentsRepo struct {
 	repository.Repository
 	listAgentsFn              func(ctx context.Context) ([]model.Agent, error)
 	listAgentsByParticipantFn func(ctx context.Context, participantId string) ([]model.Agent, error)
-	getAgentFn               func(ctx context.Context, id string) (*model.Agent, error)
+	getAgentFn                func(ctx context.Context, id string) (*model.Agent, error)
 	createAgentFn             func(ctx context.Context, agent *model.Agent) error
 	updateAgentFn             func(ctx context.Context, agent *model.Agent) error
 	activateAgentFn           func(ctx context.Context, id string, isActive bool) error

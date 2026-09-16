@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/advance-tick.schema.json",
+  "title": "AdvanceTickPayload",
+  "description": "Payload enviado por Agentrix hacia el motor para avanzar la simulación un tick entregando las acciones evaluadas.",
+  "type": "object",
+  "required": [
+    "tick",
+    "actions"
+  ],
+  "properties": {
+    "tick": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Número de tick correlativo esperado para esta iteración."
+    },
+    "actions": {
+      "type": "object",
+      "description": "Mapa de participanteId a su acción o estado de ejecución.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "timeout",
+              "invalid_output",
+              "crashed",
+              "disqualified"
+            ],
+            "description": "Estado estricto de la evaluación del agente en este tick."
+          },
+          "actionType": {
+            "type": "string",
+            "description": "Identificador de la acción semántica enviada por el bot (ej. 'MOVE', 'ATTACK'). Requerido si status es 'valid'."
+          },
+          "payload": {
+            "type": "object",
+            "description": "Parámetros de la acción suministrados por el agente.",
+            "additionalProperties": true
+          },
+          "errorDetails": {
+            "type": "string",
+            "description": "Detalles diagnósticos redactados cuando status != 'valid'."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

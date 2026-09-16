@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/envelope.schema.json",
+  "title": "AgentrixEngineEnvelope",
+  "description": "Sobre estándar obligatorio para todos los mensajes del protocolo agentrix-engine/1.",
+  "type": "object",
+  "required": [
+    "protocolVersion",
+    "type",
+    "matchId",
+    "sequence",
+    "payload"
+  ],
+  "properties": {
+    "protocolVersion": {
+      "type": "string",
+      "const": "agentrix-engine/1",
+      "description": "Versión fija del protocolo de integración."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "initialize_match",
+        "advance_tick",
+        "finish_match",
+        "shutdown",
+        "engine_ready",
+        "match_initialized",
+        "tick_completed",
+        "match_completed",
+        "engine_error",
+        "shutdown_ack"
+      ],
+      "description": "Tipo semántico del mensaje."
+    },
+    "matchId": {
+      "type": "string",
+      "description": "Identificador de la partida. Puede ser vacío únicamente antes de inicializar la partida o en el handshake general."
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Número de secuencia monotónico estricto (comienza en 1)."
+    },
+    "payload": {
+      "type": "object",
+      "description": "Cuerpo tipado según el campo 'type'."
+    }
+  },
+  "additionalProperties": false
+}

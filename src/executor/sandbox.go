@@ -43,6 +43,7 @@ type SlotPerception struct {
 
 type Sandbox interface {
 	ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error)
+	ExecuteTurnWithPerception(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error)
 	FilterPerception(state *game.GameState, playerID string) SlotPerception
 }
 
@@ -98,6 +99,11 @@ func (s *agentSandbox) FilterPerception(state *game.GameState, playerID string) 
 }
 
 func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
+	perception := s.FilterPerception(state, playerID)
+	return s.ExecuteTurnWithPerception(ctx, codePath, perception, playerID)
+}
+
+func (s *agentSandbox) ExecuteTurnWithPerception(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error) {
 	// If no code path is configured, attribute failure and take neutral REST action
 	if codePath == "" {
 		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: executable not configured", ErrAgentUnavailable)
@@ -107,9 +113,6 @@ func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *
 	if _, err := os.Stat(codePath); err != nil {
 		return game.Action{Type: game.ActionRest}, fmt.Errorf("%w: %v", ErrAgentUnavailable, err)
 	}
-
-	// Filter perception by slot
-	perception := s.FilterPerception(state, playerID)
 
 	// Execute isolated process with timeout
 	action, err := s.runProcess(ctx, codePath, perception, playerID)
@@ -127,7 +130,7 @@ func (s *agentSandbox) ExecuteTurn(ctx context.Context, codePath string, state *
 	}
 }
 
-func (s *agentSandbox) runProcess(ctx context.Context, scriptPath string, perception SlotPerception, playerID string) (game.Action, error) {
+func (s *agentSandbox) runProcess(ctx context.Context, scriptPath string, perception interface{}, playerID string) (game.Action, error) {
 	callCtx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 

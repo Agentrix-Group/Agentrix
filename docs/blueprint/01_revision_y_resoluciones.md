@@ -113,6 +113,12 @@ Esta decisión reemplaza la estructura por capacidades que aparecía en la prime
 
 Esta decisión no cambia el alcance ni las respuestas AR-001 a AR-111; únicamente fija la identidad del mismo sistema.
 
+### DP-003 — Motor de juego oficial externo en Rust (Bevy + Rapier)
+
+**Estado:** decidida el 2026-09-15 (ADR-001).
+
+**Decisión:** el motor de juego oficial es un ejecutable externo e independiente escrito en Rust con Bevy y Rapier que corre en modo headless. Agentrix (en Go) conserva el plano de control, supervisión, cola y persistencia. La simulación y los resultados son autoritativos del motor. La comunicación inicial se realiza mediante el protocolo versionado `agentrix-engine/1` sobre `stdin/stdout` (JSON Lines). Los agentes no corren dentro del motor ni el motor accede a la base de datos de Agentrix. La implementación previa `ArenaBasicaEngine` en Go queda retirada por ser provisional.
+
 ## 4. Parámetros configurables, no decisiones de arquitectura
 
 Las respuestas delegan varios valores al comité. Se modelarán como configuración del concurso, categoría o juego:

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/connection"
@@ -71,7 +72,27 @@ type mockSandbox struct {
 	executeTurnFn               func(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error)
 	executeTurnWithPerceptionFn func(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error)
 	filterPerceptionFn          func(state *game.GameState, playerID string) SlotPerception
+	startSessionFn              func(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error)
 }
+
+// mockBotSession bridges the session-based interface to
+// mockSandbox.executeTurnWithPerceptionFn, so existing tests written
+// against the old per-call sandbox API keep exercising the same
+// expectations without needing to know about persistent sessions.
+type mockBotSession struct {
+	sandbox *mockSandbox
+	players map[string]string
+}
+
+func (s *mockBotSession) ExecuteTurn(ctx context.Context, tick int, playerID string, perception interface{}) engine.PlayerActionInput {
+	action, err := s.sandbox.ExecuteTurnWithPerception(ctx, s.players[playerID], perception, playerID)
+	if err != nil {
+		return engine.PlayerActionInput{Status: engine.ActionStatusTimeout, ErrorDetails: err.Error()}
+	}
+	return engine.PlayerActionInput{Status: engine.ActionStatusValid, ActionType: string(action.Type), Payload: action.Payload}
+}
+
+func (s *mockBotSession) Close(ctx context.Context, winner string, reason string) {}
 
 func (m *mockSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
 	if m.executeTurnFn != nil {
@@ -92,6 +113,13 @@ func (m *mockSandbox) FilterPerception(state *game.GameState, playerID string) S
 		return m.filterPerceptionFn(state, playerID)
 	}
 	return SlotPerception{}
+}
+
+func (m *mockSandbox) StartSession(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error) {
+	if m.startSessionFn != nil {
+		return m.startSessionFn(ctx, matchID, players, seed, timeout)
+	}
+	return &mockBotSession{sandbox: m, players: players}, nil
 }
 
 type mockEngineClient struct {

@@ -45,6 +45,16 @@ type Sandbox interface {
 	ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error)
 	ExecuteTurnWithPerception(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error)
 	FilterPerception(state *game.GameState, playerID string) SlotPerception
+
+	// StartSession launches one persistent bot process per player for the
+	// duration of a match and returns a BotSession to drive per-tick turns
+	// through it. See bot_session.go -- this replaces the old
+	// per-tick-per-bot process spawn (ExecuteTurn/ExecuteTurnWithPerception
+	// still exist and still spawn one-shot processes; they remain useful
+	// for validating a single bot's turn outside of a live match, e.g. a
+	// standalone "test my submission" flow, but the live match loop in
+	// executor.go now uses StartSession instead).
+	StartSession(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error)
 }
 
 type agentSandbox struct {

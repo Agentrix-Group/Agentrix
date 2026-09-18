@@ -171,10 +171,23 @@ func TestExecuteTurn_ValidBotExecution(t *testing.T) {
 	ctx := context.Background()
 	sandbox := NewSandbox(2 * time.Second)
 
-	scriptPath := "../../games/arena-basica/examples/bot_hunter.py"
-	if _, err := os.Stat(scriptPath); os.IsNotExist(err) {
-		scriptPath = "games/arena-basica/examples/bot_hunter.py"
-	}
+	// A dedicated one-shot-argv fixture, not games/arena-basica/examples/
+	// bot_hunter.py: that reference bot now speaks the persistent
+	// stdin/stdout protocol (see bot_session.go), since it's what a real
+	// match actually drives it with. ExecuteTurn/ExecuteTurnWithPerception
+	// still spawn a single process per call reading playerID+state from
+	// argv (useful for a standalone "validate this submission" check
+	// outside of a live match), so this test needs a script that speaks
+	// that older, still-supported dialect specifically.
+	tmpDir := t.TempDir()
+	scriptPath := filepath.Join(tmpDir, "one_shot_bot.py")
+	err := os.WriteFile(scriptPath, []byte(`import sys, json
+player_id = sys.argv[1]
+state = json.loads(sys.argv[2])
+me = state.get("players", {}).get(player_id, {})
+print(json.dumps({"type": "ATTACK" if me.get("energy", 0) >= 15 else "REST"}))
+`), 0755)
+	r.NoError(err)
 
 	state := &game.GameState{
 		Tick:       1,

@@ -179,6 +179,25 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		},
 	})
 
+	// One persistent bot process per player for the whole match, instead
+	// of a fresh process per tick per bot (RF-044/ATD-007-style: the
+	// process is started once, handshakes once, and is reused every tick
+	// until the match ends or it dies/times out/misbehaves).
+	codePaths := make(map[string]string, len(playerIDs))
+	for _, pID := range playerIDs {
+		if sub := subMap[pID]; sub != nil {
+			codePaths[pID] = sub.CodePath
+		}
+	}
+	botSession, err := e.sandbox.StartSession(ctx, job.MatchId, codePaths, job.Seed, 0)
+	if err != nil {
+		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "agent.session.failed", "No se pudo iniciar la sesión de bots",
+			tracer.Origin(tracer.OriginAgent), tracer.Err(err))
+		match.Status = common.MatchStatusFailed
+		_ = e.svc.UpdateMatch(ctx, match)
+		return err
+	}
+
 	currentPerceptions := initRes.Perceptions
 	isOver := false
 	winner := ""
@@ -190,28 +209,15 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		actionMapForReplay := make(map[string]interface{})
 
 		for _, pID := range playerIDs {
-			sub := subMap[pID]
-			codePath := ""
-			if sub != nil {
-				codePath = sub.CodePath
-			}
-
 			perception := currentPerceptions[pID]
-			action, err := e.sandbox.ExecuteTurnWithPerception(ctx, codePath, perception, pID)
-			if err != nil {
-				recordAgentIssue(agentIssues, pID, err)
-				actions[pID] = engine.PlayerActionInput{
-					Status:     engine.ActionStatusTimeout,
-					ActionType: "REST",
-				}
+			input := botSession.ExecuteTurn(ctx, currentTick, pID, perception)
+			actions[pID] = input
+
+			if input.Status != engine.ActionStatusValid {
+				recordAgentIssue(agentIssues, pID, statusToAgentError(input.Status))
 				actionMapForReplay[pID] = "REST"
 			} else {
-				actions[pID] = engine.PlayerActionInput{
-					Status:     engine.ActionStatusValid,
-					ActionType: string(action.Type),
-					Payload:    action.Payload,
-				}
-				actionMapForReplay[pID] = action.Type
+				actionMapForReplay[pID] = input.ActionType
 			}
 		}
 
@@ -251,6 +257,8 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	} else if winner != "" {
 		finishReason = "victory"
 	}
+
+	botSession.Close(ctx, winner, finishReason)
 
 	matchRes, err := engineClient.FinishMatch(ctx, finishReason)
 	var scores map[string]int
@@ -389,6 +397,27 @@ type agentIssueSummary struct {
 	invalidActions int
 	unavailable    int
 	execution      int
+}
+
+// statusToAgentError maps a BotSession.ExecuteTurn status back to one of
+// the sentinel errors recordAgentIssue already classifies by, so the
+// per-match agent incident summary keeps working unchanged after switching
+// the live loop from ExecuteTurnWithPerception (which returned an error) to
+// BotSession.ExecuteTurn (which returns a status string and never an
+// error, per RF-044 -- a failed agent turn is not a platform error).
+func statusToAgentError(status string) error {
+	switch status {
+	case engine.ActionStatusTimeout:
+		return ErrAgentTimeout
+	case engine.ActionStatusInvalidOutput:
+		return ErrAgentInvalidAction
+	case engine.ActionStatusCrashed:
+		return ErrAgentExecution
+	case engine.ActionStatusDisqualified:
+		return ErrAgentUnavailable
+	default:
+		return ErrAgentExecution
+	}
 }
 
 func recordAgentIssue(summaries map[string]*agentIssueSummary, playerID string, err error) {

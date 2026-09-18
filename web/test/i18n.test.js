@@ -60,19 +60,19 @@ describe('i18n Infrastructure & Resolution', () => {
 
   it('translates main titles and navigation in Spanish and English', async () => {
     await i18n.changeLanguage('es');
-    expect(i18n.t('navigation:brand')).toBe('Plataforma Agentrix');
+    expect(i18n.t('navigation:brand')).toBe('Agentrix');
     expect(i18n.t('navigation:agents')).toBe('Mis agentes');
     expect(i18n.t('navigation:matches')).toBe('Partidas');
     expect(i18n.t('navigation:rankings')).toBe('Clasificación');
-    expect(i18n.t('home:title')).toBe('Resumen de Agentrix');
+    expect(i18n.t('home:contestsTitle')).toBe('Concursos publicados');
     expect(i18n.t('rankings:title')).toBe('Clasificación del torneo');
 
     await i18n.changeLanguage('en');
-    expect(i18n.t('navigation:brand')).toBe('Agentrix Platform');
+    expect(i18n.t('navigation:brand')).toBe('Agentrix');
     expect(i18n.t('navigation:agents')).toBe('My Agents');
     expect(i18n.t('navigation:matches')).toBe('Matches');
     expect(i18n.t('navigation:rankings')).toBe('Leaderboard');
-    expect(i18n.t('home:title')).toBe('Agentrix Overview');
+    expect(i18n.t('home:contestsTitle')).toBe('Published contests');
     expect(i18n.t('rankings:title')).toBe('Tournament Leaderboard');
   });
 

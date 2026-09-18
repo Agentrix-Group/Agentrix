@@ -104,20 +104,28 @@ La navegación se genera desde capacidades. Inicio público, concurso y directo 
 - amigable para estudiantes;
 - suficientemente sobria para una universidad.
 
-### Paleta base propuesta
+### Paleta base aprobada para el primer corte público
+
+José Daniel eligió la opción **celeste y arena** el 2026-09-18. Reemplaza la propuesta inicial con primario índigo `#6574D9`; no modifica el dominio ni los significados de estado.
 
 | Uso | Color | Motivo |
 | --- | --- | --- |
-| Fondo | #F7F8FC | Superficie luminosa y descansada |
+| Fondo | #F6FAFD | Superficie luminosa y descansada |
 | Superficie | #FFFFFF | Jerarquía limpia |
-| Texto principal | #243047 | Contraste sin negro absoluto |
-| Primario | #6574D9 | Acción y marca |
+| Texto principal | #233947 | Contraste sin negro absoluto |
+| Primario | #346D8C | Acción y marca |
+| Primario suave | #E1F0F7 | Superficies y selección |
+| Arena suave | #F7EFDB | Acento cálido de fondo |
 | Secundario | #64BFA5 | Progreso y éxito |
 | Advertencia | #E9B760 | Atención sin estridencia |
 | Peligro | #D96C7A | Fallos y acciones destructivas |
 | Información | #62A8D8 | Estados informativos |
 
-La paleta es una resolución visual derivada de AR-073 y AR-075; puede cambiar sin afectar el dominio. Los colores nunca comunican significado por sí solos.
+La paleta es una resolución visual derivada de AR-073 y AR-075. Los colores nunca comunican significado por sí solos. El texto y los controles deben conservar contraste suficiente sobre los fondos claros.
+
+### Iconos del primer corte público
+
+Se usa Lucide con trazos simples y tamaños consistentes para navegación, fechas y estados. Las acciones principales conservan una etiqueta de texto; los iconos decorativos se ocultan a tecnologías asistivas.
 
 ### Tipografía
 
@@ -223,4 +231,3 @@ Estados obligatorios por pantalla:
 | Sin permiso | destino seguro sin revelar datos protegidos |
 | Interrumpido | qué se conservó y si habrá reintento |
 | Éxito | objeto creado o cambiado y próximo paso |
-

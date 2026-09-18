@@ -132,7 +132,7 @@ La etapa de diseño está lista para convertirse en código cuando:
 - [ ] Los experimentos de aislamiento y replay tienen criterios de aceptación.
 - [ ] La estructura propuesta del repositorio resulta navegable.
 - [ ] No se crea ninguna carpeta o abstracción solo por una necesidad futura.
-- [ ] Definir el próximo corte antes de abrir una rama. Etapa 0 y el flujo público de concursos están aplazados por ahora.
+- [x] Primer corte de interfaz pública para consultar concursos definido y aprobado por José Daniel el 2026-09-18. Etapa 0 y los cambios de backend de producción permanecen aplazados.
 
 ## 7. Cambios durante la implementación
 

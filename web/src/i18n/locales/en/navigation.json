@@ -1,12 +1,15 @@
 {
-  "brand": "Agentrix Platform",
+  "brand": "Agentrix",
+  "mainNavigation": "Main navigation",
+  "openMenu": "Open menu",
+  "closeMenu": "Close menu",
   "home": "Dashboard",
   "agents": "My Agents",
   "matches": "Matches",
   "rankings": "Leaderboard",
   "viewer": "Replay Viewer",
   "signOut": "Sign Out",
-  "signIn": "Sign In / Register",
+  "signIn": "Sign in",
   "selectLanguage": "Select language",
   "languages": {
     "es": "Español",

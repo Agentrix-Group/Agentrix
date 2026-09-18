@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
 import { MatchCard } from '../components/MatchCard.jsx';
 
-export function MatchesPage({ onWatchReplay }) {
+export function MatchesPage({ onWatchReplay, currentUser }) {
   const { t } = useTranslation(['matches', 'common']);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +49,7 @@ export function MatchesPage({ onWatchReplay }) {
                 match={m}
                 onWatchReplay={onWatchReplay}
                 onTriggerRun={handleTriggerRun}
+                canRun={currentUser?.role_id === 'admin'}
               />
             ))
           ) : (

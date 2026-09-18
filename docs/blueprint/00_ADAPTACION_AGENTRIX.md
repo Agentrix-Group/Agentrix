@@ -1,5 +1,7 @@
 # Adaptación del blueprint al repositorio Agentrix
 
+> La auditoría de este documento corresponde al 2026-09-13 y se conserva como evidencia histórica. Para el primer corte público aprobado el 2026-09-18, el repositorio ya monta React, usa `pgx` para PostgreSQL y aplica la paleta celeste y arena en la interfaz pública. Las filas históricas siguientes no describen por sí solas el estado vigente de esas áreas.
+
 ## 1. Nombre definitivo
 
 **Agentrix** es el nombre único y definitivo del producto y del repositorio según DP-002. Los contratos, documentos, módulos y textos nuevos deben usar únicamente este nombre.
@@ -159,4 +161,4 @@ El flujo candidato se documenta, pero queda aplazado hasta que José Daniel auto
 
 ## 9. Estado de implementación
 
-Por decisión de José Daniel, esta revisión solo documenta lo que ya existe y corrige el blueprint. Etapa 0, Etapa 1 y el flujo público de concursos quedan aplazados por ahora. PostgreSQL sigue siendo la dirección de persistencia; no se adaptará el código hasta aprobar un corte específico.
+En la revisión del 2026-09-13, José Daniel aplazó Etapa 0, Etapa 1 y el flujo público de concursos. El 2026-09-18 aprobó el primer corte de **interfaz pública** para consultar concursos mediante el endpoint existente. Esa aprobación no autoriza una nueva implementación de backend de producción, la Etapa 0, la Etapa 1 ni cambios adicionales de persistencia.

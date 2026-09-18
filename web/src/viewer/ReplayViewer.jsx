@@ -11,8 +11,8 @@ export function ReplayViewer({ replayId }) {
   const [replay, setReplay] = useState(null);
   const [currentTick, setCurrentTick] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  // Official Blueprint agent colors: Indigo, Mint, Ocre, Coral
-  const colors = ['#6574D9', '#64BFA5', '#E9B760', '#D96C7A'];
+  // Distinct player colors on the approved light blue palette.
+  const colors = ['#346D8C', '#64BFA5', '#E9B760', '#D96C7A'];
 
   useEffect(() => {
     if (replayId) {

@@ -17,13 +17,16 @@ describe('Localized React Components Rendering', () => {
   it('renders Navbar in Spanish by default', () => {
     render(<Navbar activeTab="home" onSelectTab={() => {}} currentUser={null} onLogout={() => {}} />);
 
-    expect(screen.getByText('Plataforma Agentrix')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Agentrix' })).toBeDefined();
     expect(screen.getByText('Inicio')).toBeDefined();
-    expect(screen.getByText('Mis agentes')).toBeDefined();
+    expect(screen.queryByText('Mis agentes')).toBeNull();
     expect(screen.getByText('Partidas')).toBeDefined();
     expect(screen.getByText('Clasificación')).toBeDefined();
-    expect(screen.getByText('Visor de repeticiones')).toBeDefined();
-    expect(screen.getByText('Iniciar sesión / Registrarse')).toBeDefined();
+    expect(screen.queryByText('Visor de repeticiones')).toBeNull();
+    expect(screen.getByText('Ingresar')).toBeDefined();
+    const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
+    fireEvent.click(menuButton);
+    expect(screen.getByRole('button', { name: 'Cerrar menú' }).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('switches Navbar language to English via the language selector', async () => {
@@ -32,13 +35,13 @@ describe('Localized React Components Rendering', () => {
     const select = screen.getByLabelText('Seleccionar idioma');
     fireEvent.change(select, { target: { value: 'en' } });
 
-    expect(screen.getByText('Agentrix Platform')).toBeDefined();
+    expect(screen.getByRole('button', { name: 'Agentrix' })).toBeDefined();
     expect(screen.getByText('Dashboard')).toBeDefined();
-    expect(screen.getByText('My Agents')).toBeDefined();
+    expect(screen.queryByText('My Agents')).toBeNull();
     expect(screen.getByText('Matches')).toBeDefined();
     expect(screen.getByText('Leaderboard')).toBeDefined();
-    expect(screen.getByText('Replay Viewer')).toBeDefined();
-    expect(screen.getByText('Sign In / Register')).toBeDefined();
+    expect(screen.queryByText('Replay Viewer')).toBeNull();
+    expect(screen.getByText('Sign in')).toBeDefined();
   });
 
   it('renders MatchCard with localized status and attributes in Spanish and English', async () => {
@@ -75,6 +78,18 @@ describe('Localized React Components Rendering', () => {
     expect(screen.getByText(/Game: arena-basica/)).toBeDefined();
     expect(screen.getByText(/Rank 1: sub-alpha/)).toBeDefined();
     expect(screen.getByText('Watch Replay')).toBeDefined();
+  });
+
+  it('does not offer match execution in the public match card', () => {
+    render(
+      <MatchCard
+        match={{ id: 'match-1', status: 'pending', game_id: 'arena-basica', seed: 42 }}
+        onWatchReplay={() => {}}
+        onTriggerRun={() => {}}
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: 'Ejecutar partida' })).toBeNull();
   });
 
   it('renders RankingsPage table headers localized in Spanish and English', async () => {

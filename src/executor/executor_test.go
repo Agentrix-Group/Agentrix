@@ -435,3 +435,19 @@ func TestRecordAgentIssue(t *testing.T) {
 	r.Equal(1, summary.unavailable)
 	r.Equal(1, summary.execution)
 }
+
+func TestFallbackBotForGame(t *testing.T) {
+	r := require.New(t)
+
+	bot0 := fallbackBotForGame("starfighter", 0)
+	r.Equal("games/starfighter/examples/bot_hunter.py", bot0)
+
+	bot1 := fallbackBotForGame("starfighter", 1)
+	r.Equal("games/starfighter/examples/bot_evasive.py", bot1)
+
+	botArena := fallbackBotForGame("arena-basica", 0)
+	r.Equal("games/arena-basica/examples/bot_hunter.py", botArena)
+
+	botUnknown := fallbackBotForGame("non-existent-game", 0)
+	r.Equal("games/arena-basica/examples/bot_hunter.py", botUnknown)
+}

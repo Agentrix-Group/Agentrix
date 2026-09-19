@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -93,10 +95,16 @@ func interpreterFor(codePath string) *exec.Cmd {
 	// invoked directly as an executable. This replaces the previous
 	// hardcoded `exec.Command("python3", scriptPath, ...)` that made any
 	// non-Python bot impossible.
-	if strings.HasSuffix(codePath, ".py") {
-		return exec.Command("python3", codePath)
+	resolved := codePath
+	if _, err := os.Stat(resolved); err != nil {
+		if _, err := os.Stat(filepath.Join("../..", resolved)); err == nil {
+			resolved = filepath.Join("../..", resolved)
+		}
 	}
-	return exec.Command(codePath)
+	if strings.HasSuffix(resolved, ".py") {
+		return exec.Command("python3", resolved)
+	}
+	return exec.Command(resolved)
 }
 
 func startBotProcess(playerID, codePath string) (*botProcess, error) {
@@ -170,6 +178,63 @@ func (p *botProcess) recvWithTimeout(timeout time.Duration) (string, bool) {
 	case <-time.After(timeout):
 		return "", false
 	}
+}
+
+func (p *botProcess) drain() {
+	for {
+		select {
+		case <-p.lines:
+		default:
+			return
+		}
+	}
+}
+
+func extractPerceptionTick(perception interface{}) (int, bool) {
+	if pMap, ok := perception.(map[string]interface{}); ok {
+		if tVal, exists := pMap["tick"]; exists {
+			switch v := tVal.(type) {
+			case float64:
+				return int(v), true
+			case int:
+				return v, true
+			case int64:
+				return int(v), true
+			case json.Number:
+				if n, err := v.Int64(); err == nil {
+					return int(n), true
+				}
+			}
+		}
+	}
+	return 0, false
+}
+
+func isValidTick(msgTick, expectedTick int, perception interface{}) bool {
+	if msgTick == expectedTick {
+		return true
+	}
+	if pTick, ok := extractPerceptionTick(perception); ok && msgTick == pTick {
+		return true
+	}
+	// Initial tick boundary: executor asks for tick 1 to advance state from initial tick 0
+	if expectedTick == 1 && msgTick == 0 {
+		return true
+	}
+	return false
+}
+
+func isStaleTick(msgTick, expectedTick int, perception interface{}) bool {
+	// Tick 0 when expectedTick is 1 is the valid initial tick boundary, not stale.
+	if expectedTick == 1 && msgTick == 0 {
+		return false
+	}
+	if pTick, ok := extractPerceptionTick(perception); ok {
+		if msgTick < pTick {
+			return true
+		}
+	}
+	return msgTick < expectedTick
 }
 
 func (p *botProcess) disconnect() {
@@ -270,6 +335,9 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		}
 	}
 
+	// Drain any unconsumed stale output before sending this tick's perception
+	proc.drain()
+
 	if err := proc.send(botOutgoing{
 		Type:            "perception",
 		ProtocolVersion: BotProtocolVersion,
@@ -283,30 +351,50 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: err.Error()}
 	}
 
-	line, ok := proc.recvWithTimeout(s.timeout)
-	if !ok {
-		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.timeout", "Timeout esperando la acción del bot",
-			tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
-		return engine.PlayerActionInput{Status: engine.ActionStatusTimeout}
-	}
+	deadline := time.Now().Add(s.timeout)
+	for {
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.timeout", "Timeout esperando la acción del bot",
+				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
+			return engine.PlayerActionInput{Status: engine.ActionStatusTimeout}
+		}
 
-	var msg botIncoming
-	if err := json.Unmarshal([]byte(line), &msg); err != nil || msg.Type != "action" {
-		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.invalid_output", "El bot devolvió una respuesta inválida",
-			tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
-		return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "malformed or unexpected message"}
-	}
-	if msg.Tick != tick {
-		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.tick_mismatch", "El bot respondió a un tick distinto del pedido",
-			tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
-		return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "tick mismatch"}
-	}
+		line, ok := proc.recvWithTimeout(remaining)
+		if !ok {
+			if !proc.connected {
+				return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: "bot process disconnected"}
+			}
+			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.timeout", "Timeout esperando la acción del bot",
+				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
+			return engine.PlayerActionInput{Status: engine.ActionStatusTimeout}
+		}
 
-	actionType, _ := msg.Action["type"].(string)
-	return engine.PlayerActionInput{
-		Status:     engine.ActionStatusValid,
-		ActionType: actionType,
-		Payload:    msg.Action,
+		var msg botIncoming
+		if err := json.Unmarshal([]byte(line), &msg); err != nil || msg.Type != "action" {
+			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.invalid_output", "El bot devolvió una respuesta inválida",
+				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
+			return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "malformed or unexpected message"}
+		}
+
+		if isStaleTick(msg.Tick, tick, perception) {
+			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.stale_tick_discarded", "Descartando respuesta tardía de tick anterior",
+				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("got_tick", msg.Tick), tracer.Int("expected_tick", tick))
+			continue
+		}
+
+		if !isValidTick(msg.Tick, tick, perception) {
+			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.tick_mismatch", "El bot respondió a un tick distinto del pedido",
+				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
+			return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "tick mismatch"}
+		}
+
+		actionType, _ := msg.Action["type"].(string)
+		return engine.PlayerActionInput{
+			Status:     engine.ActionStatusValid,
+			ActionType: actionType,
+			Payload:    msg.Action,
+		}
 	}
 }
 

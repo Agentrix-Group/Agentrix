@@ -15,7 +15,7 @@ DB_NAME ?= agentrix
 
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-all agentrix-setup db-setup db-status db-reset db-seed \
-        build build-all lint test test-race coverage run clean \
+        build build-all build-engine lint test test-race coverage run clean \
         web-install web-build web-dev
 
 # Show available targets
@@ -42,6 +42,7 @@ help:
 	@echo "  Compilation & Execution:"
 	@echo "    make build          - Lint, test, and compile Go server (bin/agentrix)"
 	@echo "    make build-all      - Compile both backend binary and frontend web bundle"
+	@echo "    make build-engine   - Build Starfighter Rust engine (bin/starfighter-engine)"
 	@echo "    make run            - Run Go server directly"
 	@echo "    make clean          - Remove binaries, test artifacts, coverage, and dist"
 	@echo ""
@@ -100,6 +101,12 @@ build: lint test
 # Fullstack build (backend binary + frontend production bundle)
 build-all: build web-build
 	@echo "Fullstack build complete (backend + frontend)!"
+
+# Starfighter Rust engine build
+ENGINE_SRC ?= ../agentrix_engine
+build-engine:
+	@echo "Building Starfighter Rust engine..."
+	@./script/build_engine.sh $(ENGINE_SRC) $(BUILD_DIR)/starfighter-engine
 
 # Lint the code
 lint:

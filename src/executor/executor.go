@@ -76,6 +76,36 @@ func NewMatchExecutor(svc service.Service, sandbox Sandbox, engineFactory ...Eng
 	}
 }
 
+func fileExists(path string) bool {
+	if _, err := os.Stat(path); err == nil {
+		return true
+	}
+	if _, err := os.Stat("../../" + path); err == nil {
+		return true
+	}
+	return false
+}
+
+// fallbackBotForGame returns a game-compatible reference bot script path.
+func fallbackBotForGame(gameID string, index int) string {
+	switch gameID {
+	case "starfighter":
+		if index%2 == 1 && fileExists("games/starfighter/examples/bot_evasive.py") {
+			return "games/starfighter/examples/bot_evasive.py"
+		}
+		if fileExists("games/starfighter/examples/bot_hunter.py") {
+			return "games/starfighter/examples/bot_hunter.py"
+		}
+		return "games/starfighter/examples/bot_random.py"
+	default:
+		candidate := fmt.Sprintf("games/%s/examples/bot_hunter.py", gameID)
+		if fileExists(candidate) {
+			return candidate
+		}
+		return "games/arena-basica/examples/bot_hunter.py"
+	}
+}
+
 func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) error {
 	startedAt := time.Now()
 	ctx = tracer.WithMatchID(ctx, job.MatchId)
@@ -110,7 +140,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 				Id:       fmt.Sprintf("bot-ref-%d", i+1),
 				AgentId:  fmt.Sprintf("reference-agent-%d", i+1),
 				Language: "python",
-				CodePath: "games/arena-basica/examples/bot_hunter.py",
+				CodePath: fallbackBotForGame(job.GameId, i),
 				Status:   common.SubmissionStatusReady,
 				Active:   true,
 			}

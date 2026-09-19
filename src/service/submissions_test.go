@@ -70,6 +70,10 @@ func (m *mockArtifactStore) OpenWriter(ctx context.Context, subpath string) (io.
 	return nil, "", errors.New("not implemented by submission tests")
 }
 
+func (m *mockArtifactStore) Move(ctx context.Context, sourceSubpath, targetSubpath string) error {
+	return nil
+}
+
 type mockSubmissionRepo struct {
 	repository.Repository
 	getAgentFn               func(ctx context.Context, id string) (*model.Agent, error)

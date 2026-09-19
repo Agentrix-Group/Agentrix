@@ -10,6 +10,7 @@ type Manifest struct {
 	MaxTicks        int               `yaml:"max_ticks" json:"max_ticks"`
 	BinaryPath      string            `yaml:"binary_path,omitempty" json:"binary_path,omitempty"`
 	FixedTimestepMs int               `yaml:"fixed_timestep_ms,omitempty" json:"fixed_timestep_ms,omitempty"`
+	TickHz          float64           `yaml:"tick_hz,omitempty" json:"tick_hz,omitempty"`
 	ReferenceAgents []ReferenceAgent  `yaml:"reference_agents,omitempty" json:"reference_agents,omitempty"`
 	Settings        map[string]string `yaml:"settings,omitempty" json:"settings,omitempty"`
 }

@@ -33,6 +33,11 @@
       "minimum": 1,
       "description": "Duración de cada tick en milisegundos."
     },
+    "tickHz": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "Frecuencia de simulación exacta en hercios (ej. 60.0)."
+    },
     "maxTicks": {
       "type": "integer",
       "minimum": 1,

@@ -76,25 +76,20 @@ Los ejemplos válidos e inválidos están en [`examples/`](./examples/).
 
 ## Determinismo y frecuencia
 
-El objetivo aceptado es una simulación de **60 Hz exactos**. La representación
-actual `fixedTimestepMs` solo admite milisegundos enteros y el manifiesto aún
-usa `17`; por tanto, la configuración y el contrato deben migrar a una
-representación exacta antes de certificar ese objetivo. Véase
-[`docs/roadmap/current.md`](../../../docs/roadmap/current.md).
+La simulación opera a **60 Hz exactos** (`1.0 / tick_hz` de paso manual en Bevy)
+utilizando el campo `tickHz: 60.0` en `initialize_match` (con fallback de
+compatibilidad a `fixedTimestepMs`). Véase
+[`docs/decisions/0005-protocol-state-machine-and-exact-timestep.md`](../../../docs/decisions/0005-protocol-state-machine-and-exact-timestep.md).
 
 Con la misma versión del motor, arquitectura compatible, semilla,
-configuración y secuencia de acciones, se espera la misma secuencia de estados,
-eventos, resultados y `stateHash`. La certificación cruzada y el núcleo
-compartido de simulación siguen pendientes.
+configuración y secuencia de acciones, se obtiene idéntica secuencia de estados,
+eventos, resultados y `stateHash`.
 
-## Brechas conocidas de la implementación
+## Validación y ciclo de vida
 
-- El motor Rust todavía no valida de forma exhaustiva `protocolVersion`,
-  `sequence`, `matchId` y `gameId` en cada transición.
-- Los esquemas existen, pero no todos se validan automáticamente en tiempo de
-  ejecución.
-- No hay negociación de versión ni compatibilidad retroactiva.
-- El límite de logs y salida total del proceso no está endurecido.
-- El objetivo de 60 Hz exactos no está representado todavía por el contrato.
-
-Estas brechas son trabajo pendiente, no garantías implícitas del protocolo.
+El protocolo implementa validación bilateral estricta:
+- Rust y Go validan `protocolVersion` en cada sobre.
+- Rust y Go validan secuencia monotónica estricta por emisor (`ERR_INVALID_SEQUENCE`).
+- Rust y Go validan consistencia de `matchId` a lo largo de toda la sesión (`ERR_MATCH_ID_MISMATCH`).
+- Rust y Go aplican máquinas de estado formales para transiciones de ciclo de vida (`Ready` -> `Initialized` -> `Running` -> `Finished` -> `Shutdown`).
+- Los errores son tipados mediante sobres `engine_error` con códigos estructurados (`ERR_INVALID_SEQUENCE`, `ERR_INCOMPATIBLE_VERSION`, `ERR_MATCH_ID_MISMATCH`, `ERR_INVALID_STATE`).

@@ -1,0 +1,15 @@
+# Build stage
+FROM golang:1.24-bookworm AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -mod=readonly -ldflags="-s -w" -o /agentrix-api ./cmd/api
+
+# Final runtime stage
+FROM gcr.io/distroless/static-debian12
+WORKDIR /app
+COPY --from=builder /agentrix-api /agentrix-api
+COPY games ./games
+EXPOSE 8080
+ENTRYPOINT ["/agentrix-api"]

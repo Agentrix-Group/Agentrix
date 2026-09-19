@@ -17,6 +17,16 @@ type ArtifactStore interface {
 	GetPath(subpath string) string
 	Delete(ctx context.Context, subpath string) error
 	OpenWriter(ctx context.Context, subpath string) (io.WriteCloser, string, error)
+	Move(ctx context.Context, sourceSubpath, targetSubpath string) error
+}
+
+func (s *artifactStore) Move(ctx context.Context, sourceSubpath, targetSubpath string) error {
+	src := s.GetPath(sourceSubpath)
+	dst := s.GetPath(targetSubpath)
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	return os.Rename(src, dst)
 }
 
 func (s *artifactStore) OpenWriter(ctx context.Context, subpath string) (io.WriteCloser, string, error) {

@@ -76,3 +76,42 @@ func TestInMemoryJobQueue(t *testing.T) {
 	_, err = q.Dequeue(timeoutCtx)
 	r.Error(err)
 }
+
+func TestQueueLeaseRenewalAndFencingToken(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	q := NewJobQueue(5)
+	job := &MatchJob{
+		JobId:         "job-fencing-1",
+		MatchId:       "match-fencing-1",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"sub-1", "sub-2"},
+		Seed:          42,
+	}
+
+	r.NoError(q.Enqueue(ctx, job))
+	dequeued, err := q.Dequeue(ctx)
+	r.NoError(err)
+	r.NotNil(dequeued)
+	r.NotEmpty(dequeued.RunId, "run_id must be generated upon enqueue or dequeue")
+	r.Greater(dequeued.FencingToken, int64(0), "fencing token must be positive")
+	r.False(dequeued.LeaseUntil.IsZero(), "lease_until must be set")
+
+	// Valid lease renewal succeeds
+	r.NoError(q.RenewLease(ctx, dequeued))
+
+	// Invalid fencing token is rejected on lease renewal
+	staleJob := *dequeued
+	staleJob.FencingToken = 99999
+	r.Error(q.RenewLease(ctx, &staleJob), "lease renewal with invalid fencing token must fail")
+
+	// Invalid fencing token is rejected on complete
+	r.Error(q.Complete(ctx, &staleJob), "completion with invalid fencing token must fail")
+
+	// Valid completion succeeds
+	r.NoError(q.Complete(ctx, dequeued))
+
+	// Second completion of already-completed job fails
+	r.Error(q.Complete(ctx, dequeued), "second completion must fail")
+}

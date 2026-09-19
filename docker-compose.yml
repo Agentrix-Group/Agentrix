@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: agentrix
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: agentrix_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./script/database/00_init_postgresql.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
+      - ./script/database/01_contests_postgresql.sql:/docker-entrypoint-initdb.d/01_contests.sql:ro
+      - ./script/database/02_match_jobs_postgresql.sql:/docker-entrypoint-initdb.d/02_match_jobs.sql:ro
+      - ./script/database/03_match_runs_postgresql.sql:/docker-entrypoint-initdb.d/03_match_runs.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d agentrix"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8080:8080"
+    environment:
+      MODE: dev
+      PORT: "8080"
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: agentrix_dev_password
+      DB_NAME: agentrix
+      DB_SSLMODE: disable
+      ARTIFACTS_DIR: /app/artifacts
+    volumes:
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    environment:
+      MODE: dev
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: agentrix_dev_password
+      DB_NAME: agentrix
+      DB_SSLMODE: disable
+      ARTIFACTS_DIR: /app/artifacts
+    volumes:
+      - artifacts_data:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  artifacts_data:

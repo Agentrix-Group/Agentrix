@@ -63,10 +63,40 @@ func (p *WorkerPool) Start(ctx context.Context) {
 						jobCtx = tracer.WithMatchID(jobCtx, job.MatchId)
 						jobCtx = tracer.WithAttempt(jobCtx, job.Attempt)
 						tracer.DebugEvent(jobCtx, tracer.ScopeWorker, "worker.job.reserved", "Trabajo reservado", tracer.Int("worker", workerID))
-						if err := p.executor.Execute(jobCtx, job); err != nil {
+
+						// Lease renewal heartbeat: renew periodically (every 30s for 2-minute lease);
+						// if renewal fails, cancel execution context immediately to prevent split-brain.
+						execCtx, cancelExec := context.WithCancel(jobCtx)
+						heartbeatDone := make(chan struct{})
+
+						go func(j *connection.MatchJob) {
+							ticker := time.NewTicker(30 * time.Second)
+							defer ticker.Stop()
+							for {
+								select {
+								case <-heartbeatDone:
+									return
+								case <-execCtx.Done():
+									return
+								case <-ticker.C:
+									if err := p.queue.RenewLease(workerCtx, j); err != nil {
+										tracer.RecordLeaseLoss()
+										tracer.WarnEvent(jobCtx, tracer.ScopeQueue, "worker.lease.lost", "Lease perdido o revocado; cancelando ejecución", tracer.Err(err))
+										cancelExec()
+										return
+									}
+								}
+							}
+						}(job)
+
+						execErr := p.executor.Execute(execCtx, job)
+						close(heartbeatDone)
+						cancelExec()
+
+						if execErr != nil {
 							tracer.WarnEvent(jobCtx, tracer.ScopeWorker, "worker.job.retry", "La partida falló y será reintentada",
-								tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-							if retryErr := p.queue.Retry(workerCtx, job, err); retryErr != nil {
+								tracer.Origin(tracer.OriginInfrastructure), tracer.Err(execErr))
+							if retryErr := p.queue.Retry(workerCtx, job, execErr); retryErr != nil {
 								tracer.ErrorEvent(jobCtx, tracer.ScopeQueue, "worker.job.retry_failed", "No se pudo reprogramar la partida",
 									tracer.Origin(tracer.OriginInfrastructure), tracer.Err(retryErr))
 							}

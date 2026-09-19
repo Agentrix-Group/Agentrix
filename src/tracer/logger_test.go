@@ -173,3 +173,23 @@ func installTestLogger(t *testing.T, config Config) *bytes.Buffer {
 	})
 	return buffer
 }
+
+func TestOperationalMetrics(t *testing.T) {
+	r := require.New(t)
+
+	initial := GetMetricsSnapshot()
+
+	RecordLeaseRenewal()
+	RecordLeaseRenewal()
+	RecordLeaseLoss()
+	RecordSandboxSpawn()
+	RecordSandboxDisqualification()
+	RecordSandboxTimeout()
+
+	current := GetMetricsSnapshot()
+	r.Equal(initial.LeaseRenewals+2, current.LeaseRenewals)
+	r.Equal(initial.LeaseLosses+1, current.LeaseLosses)
+	r.Equal(initial.SandboxSpawns+1, current.SandboxSpawns)
+	r.Equal(initial.SandboxDisqualifications+1, current.SandboxDisqualifications)
+	r.Equal(initial.SandboxTimeouts+1, current.SandboxTimeouts)
+}

@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/F4nk1/Agentrix/src/config"
 	"github.com/F4nk1/Agentrix/src/connection"
@@ -24,9 +27,31 @@ func main() {
 		Color:  cfg.Logging.Color,
 	})
 	defer tracer.Sync()
+	role := os.Getenv("AGENTRIX_ROLE")
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "api", "worker", "all":
+			role = os.Args[1]
+		}
+	}
+	if role == "" {
+		role = "all"
+	}
+
 	tracer.InfoEvent(ctx, tracer.ScopeSystem, "system.starting", "Agentrix iniciando",
 		tracer.String("mode", cfg.Mode),
+		tracer.String("role", role),
 	)
+
+	// Fail-closed checks in production
+	if cfg.Mode != config.ModeDev && (role == "worker" || role == "all") {
+		bwrap := &executor.BubblewrapRuntime{}
+		podman := &executor.PodmanRuntime{}
+		if !bwrap.IsAvailable() && !podman.IsAvailable() {
+			tracer.FatalEvent(ctx, tracer.ScopeWorker, "sandbox.unavailable", "En producción, el worker requiere Bubblewrap o Podman instalado",
+				tracer.Origin(tracer.OriginPlatform))
+		}
+	}
 
 	// Initialize Artifact Store
 	artifacts, err := connection.NewArtifactStore(ctx, cfg)
@@ -36,16 +61,22 @@ func main() {
 	}
 	tracer.InfoEvent(ctx, tracer.ScopeArtifact, "artifact.ready", "Almacén de artefactos disponible")
 
-	// Load Game Registry
-	registry := game.GetRegistry()
-	if err := registry.LoadGamesFromDir("./games"); err != nil {
-		tracer.FatalEvent(ctx, tracer.ScopeSystem, "starfighter.unavailable", "No se pudo cargar el manifiesto de Starfighter",
-			tracer.Origin(tracer.OriginGame), tracer.Err(err))
+	// Load Game Registry (required for worker)
+	if role == "worker" || role == "all" {
+		registry := game.GetRegistry()
+		if err := registry.LoadGamesFromDir("./games"); err != nil {
+			tracer.FatalEvent(ctx, tracer.ScopeSystem, "starfighter.unavailable", "No se pudo cargar el manifiesto de Starfighter",
+				tracer.Origin(tracer.OriginGame), tracer.Err(err))
+		}
 	}
 
 	// Initialize Database Connection
 	conn, err := connection.NewConnection(ctx, cfg)
 	if err != nil {
+		if cfg.Mode != config.ModeDev {
+			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "database.required", "En producción, se requiere PostgreSQL configurado y disponible",
+				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		}
 		tracer.WarnEvent(ctx, tracer.ScopeDatabase, "database.unavailable", "Sin conexión; Agentrix continúa en modo degradado",
 			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	} else {
@@ -64,6 +95,9 @@ func main() {
 		}
 	}
 	if queue == nil {
+		if cfg.Mode != config.ModeDev {
+			tracer.FatalEvent(ctx, tracer.ScopeQueue, "queue.required", "En producción, se requiere la cola autoritativa en PostgreSQL")
+		}
 		queue = connection.NewJobQueue(100)
 	}
 	defer queue.Close()
@@ -73,13 +107,25 @@ func main() {
 	sandbox := executor.NewSandbox(0)
 	svc := service.NewService(repo, artifacts, queue, sandbox)
 
-	// Setup Match Executor Worker Pool
-	matchExecutor := executor.NewMatchExecutor(svc, sandbox)
-	workerPool := executor.NewWorkerPool(queue, matchExecutor, 2)
-	workerPool.Start(ctx)
-	defer workerPool.Stop()
+	// Setup Match Executor Worker Pool (only for worker or all)
+	if role == "worker" || role == "all" {
+		matchExecutor := executor.NewMatchExecutor(svc, sandbox)
+		workerPool := executor.NewWorkerPool(queue, matchExecutor, 2)
+		workerPool.Start(ctx)
+		defer workerPool.Stop()
+		tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.pool.started", "Worker pool activo")
 
-	// Initialize HTTP Server
+		if role == "worker" {
+			// Worker only: wait for termination signal
+			sigChan := make(chan os.Signal, 1)
+			signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+			<-sigChan
+			tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.stopping", "Deteniendo worker...")
+			return
+		}
+	}
+
+	// Initialize HTTP Server (for api or all)
 	srv := server.NewServer(svc)
 
 	serverHost := fmt.Sprintf(":%s", cfg.Server.Port)

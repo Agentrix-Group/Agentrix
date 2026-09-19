@@ -40,13 +40,15 @@ Cada sobre incluye `protocolVersion`, `type`, `matchId`, `sequence` y `payload`.
 | Go limita línea y stderr del motor | Implementado |
 | Worker valida tick de percepciones y acciones | Implementado |
 | Rust valida campos de `WireAction` | Implementado |
-| Rust valida `protocolVersion` de comandos | No implementado |
-| Rust valida secuencia de comandos | No implementado |
-| Ambos extremos validan `matchId` contra la sesión | No implementado |
+| Rust valida `protocolVersion` de comandos | Implementado |
+| Rust valida secuencia monotónica de comandos | Implementado |
+| Ambos extremos validan `matchId` contra la sesión | Implementado |
+| Ambos extremos aplican máquina de estados de ciclo de vida | Implementado |
+| Timestep exacto a 60 Hz (`tickHz` / `1.0 / tick_hz`) | Implementado |
 | Runtime valida cada payload contra los JSON Schema | No implementado |
 | `engineDigest` se entrega y persiste | No implementado |
 
-Deserializar un campo no demuestra que fue comprobado. La certificación del MVP requiere pruebas negativas bilaterales para versión, secuencia, partida, tipos, campos requeridos, tamaños y orden del ciclo de vida.
+Deserializar un campo no demuestra que fue comprobado. La certificación del MVP requiere pruebas negativas bilaterales para versión, secuencia, partida, tipos, campos requeridos, tamaños y orden del ciclo de vida (véase ADR-0005).
 
 ## Evolución
 

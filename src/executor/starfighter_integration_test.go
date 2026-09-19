@@ -2,8 +2,11 @@ package executor
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
+	"sort"
 	"testing"
 	"time"
 
@@ -300,6 +303,89 @@ for line in sys.stdin:
 	r.Equal(1, document.Result.FinalTick)
 }
 
+func TestStarfighterIntegration_DoubleTimeoutDisqualifiesBothWithNoWinner(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+	gamesDir := resolveTestPath("games")
+	r.NoError(game.GetRegistry().LoadGamesFromDir(gamesDir))
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest)
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
+	manifest.MaxTicks = 50
+
+	slowBot := filepath.Join(t.TempDir(), "slow_bot_all.py")
+	r.NoError(os.WriteFile(slowBot, []byte(`import json, sys, time
+json.loads(sys.stdin.readline())
+for line in sys.stdin:
+    message = json.loads(line)
+    if message["type"] == "end":
+        break
+    time.sleep(2)
+`), 0o600))
+	replayPath := filepath.Join(t.TempDir(), "double_timeout.ndjson")
+	var savedResults []*model.Result
+
+	mockSvc := &mockExecutorService{
+		getMatchFn: func(context.Context, string) (*model.Match, error) {
+			return &model.Match{Id: "match-double-timeout", GameId: "starfighter", Status: common.MatchStatusPending}, nil
+		},
+		getSubmissionFn: func(_ context.Context, id string) (*model.Submission, error) {
+			return &model.Submission{Id: id, AgentId: id, Language: "python", CodePath: slowBot, Status: common.SubmissionStatusReady, Active: true}, nil
+		},
+		openReplayFn: func(_ context.Context, _ *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
+		},
+		createResultFn: func(_ context.Context, res *model.Result) error {
+			savedResults = append(savedResults, res)
+			return nil
+		},
+	}
+
+	exec := NewMatchExecutor(mockSvc, NewSandbox(300*time.Millisecond), func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{BinaryPath: engineBin, HandshakeTimeout: 5 * time.Second})
+		return client, err
+	})
+
+	job := &connection.MatchJob{
+		JobId:         "job-double-timeout",
+		MatchId:       "match-double-timeout",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"slow-1", "slow-2"},
+		Seed:          123,
+	}
+
+	r.NoError(exec.Execute(ctx, job))
+
+	replayFile, err := os.Open(replayPath)
+	r.NoError(err)
+	defer replayFile.Close()
+	document, err := replaystream.DecodeNDJSON(replayFile)
+	r.NoError(err)
+	r.Equal("timeout", document.Result.Reason)
+	r.Empty(document.Result.Winner, "no winner should be declared when both bots timeout simultaneously")
+	r.Equal(1, document.Result.FinalTick)
+
+	// Verify both results were saved with tied rank 1 and score 0
+	r.Equal(2, len(savedResults))
+	for _, res := range savedResults {
+		r.Equal(1, res.Rank, "both players must be tied at rank 1")
+		r.Equal(0, res.Score, "score must be 0 for disqualified bots")
+	}
+}
+
+
 func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *testing.T) {
 	r := require.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -436,3 +522,124 @@ func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *test
 	}
 }
 
+func TestStarfighterIntegration_100MatchesDurationAndMemoryMetrics(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping 100 matches metrics test in short mode")
+	}
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+
+	botHunter := resolveTestPath("games/starfighter/examples/bot_hunter.py")
+	botEvasive := resolveTestPath("games/starfighter/examples/bot_evasive.py")
+
+	gamesDir := resolveTestPath("games")
+	_ = game.GetRegistry().LoadGamesFromDir(gamesDir)
+
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest)
+	prevTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = prevTicks }()
+	manifest.BinaryPath = engineBin
+	manifest.MaxTicks = 5
+
+	const matchCount = 100
+	durations := make([]time.Duration, matchCount)
+	var peakAlloc uint64
+	var peakSys uint64
+
+	sandbox := NewSandbox(2 * time.Second)
+	engineFactory := func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{
+			BinaryPath:       engineBin,
+			HandshakeTimeout: 5 * time.Second,
+		})
+		return client, err
+	}
+
+	tempDir := t.TempDir()
+
+	for i := 0; i < matchCount; i++ {
+		matchID := fmt.Sprintf("match-baseline-%03d", i)
+		replayPath := filepath.Join(tempDir, matchID+".ndjson")
+		mockSvc := &mockExecutorService{
+			getMatchFn: func(ctx context.Context, id string) (*model.Match, error) {
+				return &model.Match{Id: id, GameId: "starfighter", Status: common.MatchStatusPending}, nil
+			},
+			updateMatchFn: func(ctx context.Context, match *model.Match) error {
+				return nil
+			},
+			getSubmissionFn: func(ctx context.Context, id string) (*model.Submission, error) {
+				codePath := botHunter
+				if id == "sub-2" {
+					codePath = botEvasive
+				}
+				return &model.Submission{
+					Id: id, AgentId: id + "-agent", Language: "python", CodePath: codePath, Status: common.SubmissionStatusReady, Active: true,
+				}, nil
+			},
+			openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+				file, err := os.Create(replayPath)
+				if err != nil {
+					return nil, err
+				}
+				replay.FilePath = replayPath
+				return replaystream.NewStreamWriter(file, metadata)
+			},
+			createResultFn: func(ctx context.Context, res *model.Result) error {
+				return nil
+			},
+		}
+
+		exec := NewMatchExecutor(mockSvc, sandbox, engineFactory)
+		job := &connection.MatchJob{
+			JobId:         fmt.Sprintf("job-baseline-%03d", i),
+			Attempt:       1,
+			MatchId:       matchID,
+			GameId:        "starfighter",
+			SubmissionIds: []string{"sub-1", "sub-2"},
+			Seed:          int64(1000 + i),
+		}
+
+		start := time.Now()
+		err := exec.Execute(ctx, job)
+		durations[i] = time.Since(start)
+		r.NoError(err, "match %d execution must succeed", i)
+
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		if m.Alloc > peakAlloc {
+			peakAlloc = m.Alloc
+		}
+		if m.Sys > peakSys {
+			peakSys = m.Sys
+		}
+		_ = os.Remove(replayPath)
+	}
+
+	sort.Slice(durations, func(i, j int) bool {
+		return durations[i] < durations[j]
+	})
+
+	p50 := durations[matchCount*50/100]
+	p95 := durations[matchCount*95/100]
+	p99 := durations[matchCount*99/100]
+	minDur := durations[0]
+	maxDur := durations[matchCount-1]
+
+	t.Logf("=== 100 MATCHES BASELINE METRICS ===")
+	t.Logf("Matches: %d", matchCount)
+	t.Logf("Min duration: %v", minDur)
+	t.Logf("p50 duration: %v", p50)
+	t.Logf("p95 duration: %v", p95)
+	t.Logf("p99 duration: %v", p99)
+	t.Logf("Max duration: %v", maxDur)
+	t.Logf("Peak Alloc: %.2f MB", float64(peakAlloc)/(1024*1024))
+	t.Logf("Peak Sys: %.2f MB", float64(peakSys)/(1024*1024))
+}

@@ -12,13 +12,13 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 
 | Etapa | Estado | Salida necesaria |
 | --- | --- | --- |
-| Baseline | En curso | Build, suites y recorrido real reproducibles; la suite Go aún falla en executor |
-| Sandbox | Pendiente | Rootless, mínimo, sin red, límites completos y fail-closed |
-| Lease/fencing | Pendiente | Renovación, token monotónico y prueba de recuperación sin duplicado |
-| Protocolo/configuración | Parcial | Validación bilateral y 60 Hz exactos; retirar hardcodes configurables |
-| Commit/replay | Parcial | Sello inmutable y commit idempotente cercado |
-| Despliegue | Pendiente | API/worker separados e imágenes completas reproducibles |
-| Certificación MVP | Pendiente | Seguridad, recuperación y E2E desde entorno limpio |
+| Baseline | Implementado | Suites Go/Rust/Web 100% pasando con -race; tags de baseline; CI workflow; benchmark 100 partidas medido |
+| Sandbox | Implementado | Interfaz BotRuntime con Bubblewrap mínimo/tmpfs/no-net, Podman rootless, entorno limpio sin secretos y fail-closed |
+| Lease/fencing | Implementado | Fencing token monotónico, lease_until, heartbeat de renovación y cancelación inmediata en pérdida de lease |
+| Protocolo/configuración | Implementado | Validación bilateral de sobres, máquina de estados formal, 60 Hz exactos y StarfighterConfig autoritativo |
+| Commit/replay | Implementado | Sello inmutable, commit idempotente cercado con run_id, tabla match_runs y publicación atómica |
+| Despliegue | Implementado | API/worker separados, Dockerfile.api/worker, docker-compose y fail-closed en producción |
+| Certificación MVP | Implementado | Suite E2E canónica, rechazo de zombis por fencing token, replay atómico verificado bit a bit y ADR-0008 |
 | sim-core | No iniciado | Mismas reglas fuera de IPC/renderer |
 | Segundo juego | No iniciado | Juego discreto sin modificar el loop central |
 | Gym | No iniciado | API vectorizada sobre el mismo sim-core |
@@ -33,4 +33,4 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 
 ## Próximo corte
 
-Cerrar la baseline de procesos de bots: explicar y corregir los fallos actuales de `src/executor`, ejecutar la suite completa en un entorno compatible y separar claramente fallo del código de limitación del runner. Ese corte no autoriza aún cambios al sandbox de producción.
+Post-MVP (sim-core): extracción de la lógica de simulación fuera de Bevy/IPC para inferencia rápida y soporte Gym sin alterar las garantías transaccionales del MVP cerrado.

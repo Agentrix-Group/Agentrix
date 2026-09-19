@@ -74,10 +74,17 @@ type Service interface {
 	GetRanking(ctx context.Context, id string) (*model.Ranking, error)
 	CalculateRankings(ctx context.Context, contestId string) ([]model.Ranking, error)
 
+	// Match execution runs & atomic commits
+	CommitMatchResult(ctx context.Context, commit model.MatchResultCommit) error
+	CreateMatchRun(ctx context.Context, run *model.MatchRun) error
+	GetMatchRun(ctx context.Context, id string) (*model.MatchRun, error)
+
 	// Replays
 	GetReplay(ctx context.Context, id string) (*model.Replay, error)
 	OpenReplay(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error)
 	StreamReplay(ctx context.Context, id string) ([]byte, error)
+	PublishReplay(ctx context.Context, replayID string) (*model.Replay, error)
+	DiscardReplay(ctx context.Context, replayID string) error
 }
 
 type service struct {

@@ -6,6 +6,12 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | --- | --- | --- |
 | [0001](0001-external-rust-engine.md) | superseded | Motor externo Rust; la parte que fijaba Rapier fue sustituida |
 | [0002](0002-starfighter-avian-mvp.md) | accepted | Starfighter con Avian para el MVP y ruta condicionada hacia sim-core/Gym/Rapier |
+| [0003](0003-isolation-runtime-and-storage.md) | accepted | Runtime de aislamiento Podman rootless (fail-closed) y almacenamiento S3/MinIO |
+| [0004](0004-execution-identity-and-disqualification-policy.md) | accepted | Identidad de ejecución (run_id, digests) y resolución simétrica de descalificación |
+| [0005](0005-protocol-state-machine-and-exact-timestep.md) | accepted | Máquina de estados bilateral en el protocolo IPC y simulación exacta a 60 Hz |
+| [0006](0006-transactional-match-commit-and-atomic-replay.md) | accepted | Commit transaccional de partidas, tabla match_runs y publicación atómica de replay |
+| [0007](0007-separated-api-and-worker-roles-and-reproducible-containers.md) | accepted | Separación de roles de API y Worker y contenedores reproducibles |
+| [0008](0008-mvp-canonical-certification-and-baseline-closure.md) | accepted | Certificación canónica del MVP y cierre formal del baseline |
 
 ## Decisiones vigentes resumidas
 

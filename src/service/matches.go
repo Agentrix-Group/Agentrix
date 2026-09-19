@@ -7,6 +7,7 @@ import (
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/connection"
 	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/F4nk1/Agentrix/src/repository"
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
@@ -124,4 +125,41 @@ func (s *service) UpdateMatch(ctx context.Context, match *model.Match) error {
 
 func (s *service) ActivateMatch(ctx context.Context, id string, isActive bool) error {
 	return s.repo.ActivateMatch(ctx, id, isActive)
+}
+
+func (s *service) CommitMatchResult(ctx context.Context, commit model.MatchResultCommit) error {
+	if committer, ok := s.repo.(repository.MatchCommitter); ok {
+		return committer.CommitMatchResult(ctx, commit)
+	}
+
+	// Fallback for mock repositories without transactional commit
+	match, err := s.repo.GetMatch(ctx, commit.MatchID)
+	if err != nil {
+		return err
+	}
+	match.Status = commit.Status
+	match.ReplayId = commit.ReplayID
+	match.FinishedAt = &commit.FinishedAt
+	if err := s.repo.UpdateMatch(ctx, match); err != nil {
+		return err
+	}
+	for _, res := range commit.Results {
+		rCopy := res
+		_ = s.repo.CreateResult(ctx, &rCopy)
+	}
+	return nil
+}
+
+func (s *service) CreateMatchRun(ctx context.Context, run *model.MatchRun) error {
+	if runRepo, ok := s.repo.(repository.MatchRunRepository); ok {
+		return runRepo.CreateMatchRun(ctx, run)
+	}
+	return nil
+}
+
+func (s *service) GetMatchRun(ctx context.Context, id string) (*model.MatchRun, error) {
+	if runRepo, ok := s.repo.(repository.MatchRunRepository); ok {
+		return runRepo.GetMatchRun(ctx, id)
+	}
+	return nil, nil
 }

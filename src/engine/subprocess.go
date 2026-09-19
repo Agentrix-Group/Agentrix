@@ -38,6 +38,18 @@ func (b *limitedBuffer) String() string {
 	return b.buf.String()
 }
 
+// ClientLifecycleState tracks the supervisor engine client lifecycle.
+type ClientLifecycleState int
+
+const (
+	ClientStateCreated ClientLifecycleState = iota
+	ClientStateStarted
+	ClientStateInitialized
+	ClientStateRunning
+	ClientStateFinished
+	ClientStateClosed
+)
+
 type subprocessClient struct {
 	mu              sync.Mutex
 	cfg             StartConfig
@@ -48,8 +60,7 @@ type subprocessClient struct {
 	sendSeq         uint64
 	expectedRecvSeq uint64
 	matchID         string
-	started         bool
-	closed          bool
+	lifecycle       ClientLifecycleState
 }
 
 // NewSubprocessClient creates a new unstarted EngineClient.
@@ -61,7 +72,7 @@ func (c *subprocessClient) Start(ctx context.Context, cfg StartConfig) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.started {
+	if c.lifecycle != ClientStateCreated {
 		return fmt.Errorf("engine already started")
 	}
 
@@ -130,7 +141,6 @@ func (c *subprocessClient) Start(ctx context.Context, cfg StartConfig) error {
 
 	c.sendSeq = 1
 	c.expectedRecvSeq = 1
-	c.started = true
 
 	// Wait for engine_ready message with timeout
 	handshakeCtx, cancel := context.WithTimeout(ctx, cfg.HandshakeTimeout)
@@ -147,6 +157,7 @@ func (c *subprocessClient) Start(ctx context.Context, cfg StartConfig) error {
 		return fmt.Errorf("%w: expected %s, got %s", ErrUnexpectedMessageType, TypeEngineReady, env.Type)
 	}
 
+	c.lifecycle = ClientStateStarted
 	return nil
 }
 
@@ -154,10 +165,10 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.started || c.closed {
+	if c.lifecycle == ClientStateCreated || c.lifecycle == ClientStateClosed {
 		return nil, ErrEngineNotStarted
 	}
-	if c.matchID != "" {
+	if c.lifecycle != ClientStateStarted {
 		return nil, ErrMatchAlreadyStarted
 	}
 
@@ -186,6 +197,11 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 		return nil, fmt.Errorf("failed to decode match_initialized payload: %w", err)
 	}
 
+	if result.MatchID != req.MatchID {
+		return nil, fmt.Errorf("%w: payload matchId %s does not match requested %s", ErrMatchIDMismatch, result.MatchID, req.MatchID)
+	}
+
+	c.lifecycle = ClientStateInitialized
 	return &result, nil
 }
 
@@ -193,11 +209,14 @@ func (c *subprocessClient) AdvanceTick(ctx context.Context, req AdvanceTickReque
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.started || c.closed {
+	if c.lifecycle == ClientStateCreated || c.lifecycle == ClientStateClosed {
 		return nil, ErrEngineNotStarted
 	}
-	if c.matchID == "" {
-		return nil, ErrMatchNotInitialized
+	if c.lifecycle != ClientStateInitialized && c.lifecycle != ClientStateRunning {
+		if c.lifecycle == ClientStateStarted {
+			return nil, ErrMatchNotInitialized
+		}
+		return nil, ErrInvalidLifecycleTransition
 	}
 
 	payloadMap, err := toMap(req)
@@ -225,6 +244,9 @@ func (c *subprocessClient) AdvanceTick(ctx context.Context, req AdvanceTickReque
 
 	if env.Type == TypeMatchCompleted {
 		result.IsOver = true
+		c.lifecycle = ClientStateFinished
+	} else {
+		c.lifecycle = ClientStateRunning
 	}
 
 	return &result, nil
@@ -234,11 +256,14 @@ func (c *subprocessClient) FinishMatch(ctx context.Context, reason string) (*Mat
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.started || c.closed {
+	if c.lifecycle == ClientStateCreated || c.lifecycle == ClientStateClosed {
 		return nil, ErrEngineNotStarted
 	}
-	if c.matchID == "" {
+	if c.lifecycle == ClientStateStarted {
 		return nil, ErrMatchNotInitialized
+	}
+	if c.lifecycle != ClientStateInitialized && c.lifecycle != ClientStateRunning {
+		return nil, ErrInvalidLifecycleTransition
 	}
 
 	payloadMap := map[string]interface{}{
@@ -263,6 +288,7 @@ func (c *subprocessClient) FinishMatch(ctx context.Context, reason string) (*Mat
 		return nil, fmt.Errorf("failed to decode match_completed payload: %w", err)
 	}
 
+	c.lifecycle = ClientStateFinished
 	return &result, nil
 }
 
@@ -270,10 +296,10 @@ func (c *subprocessClient) Close(ctx context.Context) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if !c.started || c.closed {
+	if c.lifecycle == ClientStateClosed || c.lifecycle == ClientStateCreated {
 		return nil
 	}
-	c.closed = true
+	c.lifecycle = ClientStateClosed
 
 	// Send shutdown command
 	_ = c.writeEnvelopeInternal(TypeShutdown, "", map[string]interface{}{
@@ -410,6 +436,10 @@ func (c *subprocessClient) readEnvelopeInternal(ctx context.Context) (*Envelope,
 			var engineErr EngineDeclaredError
 			_ = fromMap(env.Payload, &engineErr)
 			return nil, &engineErr
+		}
+
+		if c.matchID != "" && env.MatchID != "" && env.MatchID != c.matchID {
+			return nil, fmt.Errorf("%w: expected matchId %s, got %s", ErrMatchIDMismatch, c.matchID, env.MatchID)
 		}
 
 		return &env, nil

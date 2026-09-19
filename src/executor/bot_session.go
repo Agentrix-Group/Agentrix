@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +50,7 @@ type botIncoming struct {
 
 type botProcess struct {
 	playerID        string
+	proc            BotProcess
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
 	lines           chan string
@@ -61,85 +61,44 @@ type botProcess struct {
 }
 
 func IsRootlessSandboxAvailable() bool {
-	if os.Getenv("AGENTRIX_DISABLE_SANDBOX") == "1" {
-		return false
-	}
-	_, err := exec.LookPath("bwrap")
-	return err == nil
+	rt := &BubblewrapRuntime{}
+	return rt.IsAvailable()
 }
 
-func pythonCommand(codePath string) (*exec.Cmd, error) {
-	resolved := codePath
-	if _, err := os.Stat(resolved); err != nil {
-		candidate := filepath.Join("../..", resolved)
-		if _, candidateErr := os.Stat(candidate); candidateErr != nil {
-			return nil, fmt.Errorf("python bot not found: %s", codePath)
-		}
-		resolved = candidate
-	}
-	if !strings.EqualFold(filepath.Ext(resolved), ".py") {
-		return nil, fmt.Errorf("unsupported bot artifact %q: Agentrix MVP accepts only Python .py files", codePath)
+func startBotProcess(playerID, codePath string, runtime ...BotRuntime) (*botProcess, error) {
+	var rt BotRuntime
+	if len(runtime) > 0 && runtime[0] != nil {
+		rt = runtime[0]
+	} else {
+		rt = DefaultBotRuntime()
 	}
 
-	absPath, err := filepath.Abs(resolved)
-	if err != nil {
-		absPath = resolved
-	}
-
-	if IsRootlessSandboxAvailable() {
-		// Rootless OCI isolation using bubblewrap:
-		// --die-with-parent: Prevents orphaned processes
-		// --ro-bind / /: Read-only filesystem
-		// --unshare-net: Network unreachable
-		// --dev /dev: Minimal devices
-		// --proc /proc: Isolated proc namespace
-		args := []string{
-			"--die-with-parent",
-			"--ro-bind", "/", "/",
-			"--unshare-net",
-			"--dev", "/dev",
-			"--proc", "/proc",
-			"python3", absPath,
-		}
-		return exec.Command("bwrap", args...), nil
-	}
-
-	return exec.Command("python3", resolved), nil
-}
-
-func startBotProcess(playerID, codePath string) (*botProcess, error) {
-	cmd, err := pythonCommand(codePath)
+	botProc, err := rt.Spawn(context.Background(), BotRuntimeConfig{
+		PlayerID: playerID,
+		CodePath: codePath,
+	})
 	if err != nil {
 		return nil, err
-	}
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdin pipe: %w", err)
-	}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stdout pipe: %w", err)
-	}
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		return nil, fmt.Errorf("stderr pipe: %w", err)
-	}
-	if err := cmd.Start(); err != nil {
-		return nil, fmt.Errorf("start: %w", err)
 	}
 
 	lines := make(chan string)
 	go func() {
 		defer close(lines)
-		scanner := bufio.NewScanner(stdout)
+		scanner := bufio.NewScanner(botProc.Stdout())
 		scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 		for scanner.Scan() {
 			lines <- scanner.Text()
 		}
 	}()
-	go func() { _, _ = io.Copy(io.Discard, stderr) }()
+	go func() { _, _ = io.Copy(io.Discard, botProc.Stderr()) }()
 
-	return &botProcess{playerID: playerID, cmd: cmd, stdin: stdin, lines: lines, connected: true}, nil
+	return &botProcess{
+		playerID:  playerID,
+		proc:      botProc,
+		stdin:     botProc.Stdin(),
+		lines:     lines,
+		connected: true,
+	}, nil
 }
 
 func (p *botProcess) send(msg botOutgoing) error {
@@ -180,7 +139,10 @@ func (p *botProcess) disconnect() {
 		if p.stdin != nil {
 			_ = p.stdin.Close()
 		}
-		if p.cmd != nil && p.cmd.Process != nil {
+		if p.proc != nil {
+			_ = p.proc.Kill()
+			_ = p.proc.Wait()
+		} else if p.cmd != nil && p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
 			_ = p.cmd.Wait()
 		}
@@ -190,6 +152,7 @@ func (p *botProcess) disconnect() {
 func (p *botProcess) disqualify(reason string) {
 	p.disqualified = true
 	p.disqualifyCause = reason
+	tracer.RecordSandboxDisqualification()
 	p.disconnect()
 }
 
@@ -246,7 +209,7 @@ func (s *agentSandbox) StartSession(ctx context.Context, matchID string, players
 	}
 	session := &botSession{matchID: matchID, timeout: timeout, processes: make(map[string]*botProcess, len(players))}
 	for playerID, codePath := range players {
-		proc, err := startBotProcess(playerID, codePath)
+		proc, err := startBotProcess(playerID, codePath, s.runtime)
 		if err != nil {
 			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.session.start_failed", "No se pudo iniciar el proceso Python del bot",
 				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Err(err))
@@ -292,6 +255,7 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 	line, outcome := proc.recv(ctx, s.timeout)
 	switch outcome {
 	case "timeout":
+		tracer.RecordSandboxTimeout()
 		proc.disqualify("timeout")
 		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.disqualified_timeout", "El bot excedió el tiempo y fue terminado",
 			tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))

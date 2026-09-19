@@ -11,6 +11,7 @@ var (
 	ErrAgentTimeout       = errors.New("agent timeout")
 	ErrAgentExecution     = errors.New("agent execution failed")
 	ErrAgentInvalidAction = errors.New("agent action invalid")
+	ErrSandboxUnavailable = errors.New("sandbox runtime unavailable (fail-closed)")
 )
 
 type Sandbox interface {
@@ -20,11 +21,18 @@ type Sandbox interface {
 
 type agentSandbox struct {
 	timeout time.Duration
+	runtime BotRuntime
 }
 
-func NewSandbox(timeout time.Duration) Sandbox {
+func NewSandbox(timeout time.Duration, runtime ...BotRuntime) Sandbox {
 	if timeout <= 0 {
 		timeout = 500 * time.Millisecond
 	}
-	return &agentSandbox{timeout: timeout}
+	var rt BotRuntime
+	if len(runtime) > 0 && runtime[0] != nil {
+		rt = runtime[0]
+	} else {
+		rt = DefaultBotRuntime()
+	}
+	return &agentSandbox{timeout: timeout, runtime: rt}
 }

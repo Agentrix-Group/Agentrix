@@ -14,6 +14,7 @@ import (
 	"github.com/F4nk1/Agentrix/src/game"
 	"github.com/F4nk1/Agentrix/src/model"
 	replaystream "github.com/F4nk1/Agentrix/src/replay"
+	"github.com/F4nk1/Agentrix/src/repository"
 	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/stretchr/testify/require"
 )
@@ -36,6 +37,9 @@ type mockExecutorService struct {
 	openReplayFn        func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error)
 	createResultFn      func(ctx context.Context, res *model.Result) error
 	calculateRankingsFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
+	commitMatchResultFn func(ctx context.Context, commit model.MatchResultCommit) error
+	publishReplayFn     func(ctx context.Context, replayID string) (*model.Replay, error)
+	discardReplayFn     func(ctx context.Context, replayID string) error
 }
 
 func (m *mockExecutorService) GetMatch(ctx context.Context, id string) (*model.Match, error) {
@@ -50,6 +54,44 @@ func (m *mockExecutorService) UpdateMatch(ctx context.Context, match *model.Matc
 		return m.updateMatchFn(ctx, match)
 	}
 	return nil
+}
+
+func (m *mockExecutorService) CommitMatchResult(ctx context.Context, commit model.MatchResultCommit) error {
+	if m.commitMatchResultFn != nil {
+		return m.commitMatchResultFn(ctx, commit)
+	}
+	if m.updateMatchFn != nil {
+		_ = m.updateMatchFn(ctx, &model.Match{Id: commit.MatchID, Status: commit.Status, ReplayId: commit.ReplayID, FinishedAt: &commit.FinishedAt})
+	}
+	if m.createResultFn != nil {
+		for _, res := range commit.Results {
+			rCopy := res
+			_ = m.createResultFn(ctx, &rCopy)
+		}
+	}
+	return nil
+}
+
+func (m *mockExecutorService) PublishReplay(ctx context.Context, replayID string) (*model.Replay, error) {
+	if m.publishReplayFn != nil {
+		return m.publishReplayFn(ctx, replayID)
+	}
+	return &model.Replay{Id: replayID}, nil
+}
+
+func (m *mockExecutorService) DiscardReplay(ctx context.Context, replayID string) error {
+	if m.discardReplayFn != nil {
+		return m.discardReplayFn(ctx, replayID)
+	}
+	return nil
+}
+
+func (m *mockExecutorService) CreateMatchRun(ctx context.Context, run *model.MatchRun) error {
+	return nil
+}
+
+func (m *mockExecutorService) GetMatchRun(ctx context.Context, id string) (*model.MatchRun, error) {
+	return nil, nil
 }
 
 func (m *mockExecutorService) GetSubmission(ctx context.Context, id string) (*model.Submission, error) {
@@ -485,5 +527,149 @@ func TestResolveAgentFallback(t *testing.T) {
 	_, err = ResolveAgentFallback(tmpDir, 0)
 	r.Error(err)
 	r.Contains(err.Error(), "no declara agentes de referencia")
+}
+
+func TestExecutor_CommitFailureDiscardsReplay(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	var discardedReplayID string
+	var publishedReplayID string
+	updatedStatuses := make([]string, 0)
+
+	mockSvc := &mockExecutorService{
+		updateMatchFn: func(ctx context.Context, match *model.Match) error {
+			updatedStatuses = append(updatedStatuses, match.Status)
+			return nil
+		},
+		commitMatchResultFn: func(ctx context.Context, commit model.MatchResultCommit) error {
+			return repository.ErrFencingTokenMismatch
+		},
+		discardReplayFn: func(ctx context.Context, replayID string) error {
+			discardedReplayID = replayID
+			return nil
+		},
+		publishReplayFn: func(ctx context.Context, replayID string) (*model.Replay, error) {
+			publishedReplayID = replayID
+			return &model.Replay{Id: replayID}, nil
+		},
+	}
+
+	mockSb := &mockSandbox{}
+	mockEng := &mockEngineClient{}
+
+	exec := NewMatchExecutor(mockSvc, mockSb, func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		return mockEng, nil
+	})
+
+	job := &connection.MatchJob{
+		JobId:         "job-commit-fail",
+		Attempt:       1,
+		MatchId:       "match-commit-fail",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"sub-1", "sub-2"},
+		Seed:          42,
+		FencingToken:  1,
+	}
+
+	err := exec.Execute(ctx, job)
+	r.Error(err)
+	r.ErrorIs(err, repository.ErrFencingTokenMismatch)
+
+	// Replay must be discarded and NOT published
+	r.NotEmpty(discardedReplayID, "discardReplay must be called on commit failure")
+	r.Empty(publishedReplayID, "publishReplay must NOT be called on commit failure")
+	r.Contains(updatedStatuses, common.MatchStatusFailed)
+}
+
+func TestZombieWorkerCommitRejected(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	// State tracking simulated database state for fencing
+	var activeFencingToken int64 = 2 // Another worker already re-reserved job with token 2
+	var committed bool
+
+	commitFn := func(ctx context.Context, commit model.MatchResultCommit) error {
+		if committed {
+			return repository.ErrMatchAlreadyCommitted
+		}
+		if commit.FencingToken < activeFencingToken {
+			return repository.ErrFencingTokenMismatch
+		}
+		committed = true
+		return nil
+	}
+
+	var discarded1, discarded2 bool
+	var published1, published2 bool
+
+	// Worker 1 is a zombie executing with stale token 1
+	mockSvc1 := &mockExecutorService{
+		commitMatchResultFn: commitFn,
+		discardReplayFn: func(ctx context.Context, replayID string) error {
+			discarded1 = true
+			return nil
+		},
+		publishReplayFn: func(ctx context.Context, replayID string) (*model.Replay, error) {
+			published1 = true
+			return &model.Replay{Id: replayID}, nil
+		},
+	}
+
+	// Worker 2 is the legitimate worker executing with active token 2
+	mockSvc2 := &mockExecutorService{
+		commitMatchResultFn: commitFn,
+		discardReplayFn: func(ctx context.Context, replayID string) error {
+			discarded2 = true
+			return nil
+		},
+		publishReplayFn: func(ctx context.Context, replayID string) (*model.Replay, error) {
+			published2 = true
+			return &model.Replay{Id: replayID}, nil
+		},
+	}
+
+	mockSb := &mockSandbox{}
+	exec1 := NewMatchExecutor(mockSvc1, mockSb, func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		return &mockEngineClient{}, nil
+	})
+	exec2 := NewMatchExecutor(mockSvc2, mockSb, func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		return &mockEngineClient{}, nil
+	})
+
+	// 1. Worker 1 finishes late and tries to commit with stale fencing token 1
+	jobZombie := &connection.MatchJob{
+		JobId:         "job-zombie",
+		MatchId:       "match-zombie",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"sub-1", "sub-2"},
+		Seed:          42,
+		FencingToken:  1, // Stale!
+	}
+	err1 := exec1.Execute(ctx, jobZombie)
+	r.Error(err1)
+	r.ErrorIs(err1, repository.ErrFencingTokenMismatch)
+	r.True(discarded1, "Zombie worker's temporary replay must be discarded")
+	r.False(published1, "Zombie worker's replay must NOT be published")
+
+	// 2. Worker 2 finishes with active fencing token 2
+	jobLegit := &connection.MatchJob{
+		JobId:         "job-zombie",
+		MatchId:       "match-zombie",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"sub-1", "sub-2"},
+		Seed:          42,
+		FencingToken:  2, // Matches active token!
+	}
+	err2 := exec2.Execute(ctx, jobLegit)
+	r.NoError(err2)
+	r.False(discarded2)
+	r.True(published2, "Legitimate worker's replay must be published")
+
+	// 3. Attempting duplicate commit on already committed match
+	err3 := exec2.Execute(ctx, jobLegit)
+	r.Error(err3)
+	r.ErrorIs(err3, repository.ErrMatchAlreadyCommitted)
 }
 

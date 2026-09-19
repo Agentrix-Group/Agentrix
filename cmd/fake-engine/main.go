@@ -127,6 +127,9 @@ func main() {
 			_ = json.Unmarshal(reqBytes, &req)
 
 			matchID = req.MatchID
+			if *mode == "mismatch_match_id" {
+				matchID = "m-unexpected-fake-id"
+			}
 			seed = req.Seed
 			maxTicks = req.MaxTicks
 			if maxTicks <= 0 {

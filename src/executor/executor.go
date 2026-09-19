@@ -2,11 +2,15 @@ package executor
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/common"
@@ -187,20 +191,30 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	if manifest.MaxTicks > 0 {
 		maxTicks = manifest.MaxTicks
 	}
+	tickHz := 60.0
+	if manifest.TickHz > 0 {
+		tickHz = manifest.TickHz
+	} else if hzStr, ok := manifest.Settings["tick_hz"]; ok {
+		if parsed, err := strconv.ParseFloat(hzStr, 64); err == nil && parsed > 0 {
+			tickHz = parsed
+		}
+	}
 	fixedTimestepMs := manifest.FixedTimestepMs
 	if fixedTimestepMs <= 0 {
 		fixedTimestepMs = 17
 	}
-	config := make(map[string]interface{}, len(manifest.Settings))
+	config := make(map[string]interface{}, len(manifest.Settings)+1)
 	for key, value := range manifest.Settings {
 		config[key] = value
 	}
+	config["tick_hz"] = tickHz
 
 	initReq := engine.InitializeMatchRequest{
 		MatchID:         job.MatchId,
 		GameID:          job.GameId,
 		Seed:            job.Seed,
 		FixedTimestepMs: fixedTimestepMs,
+		TickHz:          tickHz,
 		MaxTicks:        maxTicks,
 		Players:         playerIDs,
 		Config:          config,
@@ -228,7 +242,6 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	agentIssues := make(map[string]*agentIssueSummary)
 	var executionErr error
 	persistenceFailures := 0
-	resultFailures := 0
 
 	replayID := uuid.New().String()
 	replayRecord := &model.Replay{Id: replayID, MatchId: job.MatchId}
@@ -332,6 +345,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		botSession.Close(ctx, "", "execution_error")
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		_ = e.svc.DiscardReplay(ctx, replayID)
 		logAgentIssueSummaries(ctx, agentIssues)
 		return executionErr
 	}
@@ -394,12 +408,15 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		return fmt.Errorf("seal authoritative replay: %w", err)
 	}
 	replayRecord.DurationTicks = replayWriter.FrameCount()
+	replayFinalPath := replayRecord.FilePath
 	if replayRecord.FilePath != "" && replaystream.IsZstdAvailable() {
 		if zstPath, err := replaystream.CompressZstd(ctx, replayRecord.FilePath); err == nil {
+			replayFinalPath = zstPath
 			tracer.InfoEvent(ctx, tracer.ScopeReplay, "replay.compressed", "Replay comprimido con Zstandard",
 				tracer.String("zst_path", zstPath))
 		}
 	}
+	replaySHA, replaySize := computeFileDigestAndSize(replayFinalPath)
 
 	// Build rankings list if not supplied by engine
 	if len(rankings) == 0 {
@@ -423,14 +440,14 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		}
 	}
 
-	// Save individual results
+	now := time.Now().UTC()
+	resultsList := make([]model.Result, 0, len(rankings))
 	for _, item := range rankings {
 		status := "finished"
 		if item.Score <= 0 && len(rankings) > 1 {
 			status = "eliminated"
 		}
-
-		res := &model.Result{
+		resultsList = append(resultsList, model.Result{
 			Id:           uuid.New().String(),
 			MatchId:      job.MatchId,
 			SubmissionId: item.PlayerID,
@@ -438,28 +455,46 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			Rank:         item.Rank,
 			Status:       status,
 			Details:      fmt.Sprintf("Score: %d, Rank: %d", item.Score, item.Rank),
-			CreatedAt:    time.Now().UTC(),
-		}
-		if err := e.svc.CreateResult(ctx, res); err != nil {
-			persistenceFailures++
-			resultFailures++
-		}
-	}
-	if resultFailures > 0 {
-		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "results.save.failed", "No se pudieron guardar todos los resultados",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Int("failed_results", resultFailures))
+			CreatedAt:    now,
+		})
 	}
 
-	// Mark match status
-	now := time.Now().UTC()
+	commit := model.MatchResultCommit{
+		MatchID:           job.MatchId,
+		RunID:             job.RunId,
+		WorkerID:          "worker",
+		FencingToken:      job.FencingToken,
+		Status:            common.MatchStatusFinished,
+		TerminationReason: finishReason,
+		FinalTick:         currentTick,
+		FinalStateHash:    lastStateHash,
+		ReplayID:          replayID,
+		ReplaySHA256:      replaySHA,
+		ReplaySizeBytes:   replaySize,
+		ReplayPath:        replayFinalPath,
+		FinishedAt:        now,
+		Results:           resultsList,
+	}
+
+	if err := e.svc.CommitMatchResult(ctx, commit); err != nil {
+		persistenceFailures++
+		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.commit.failed", "No se pudo realizar el commit cercado de la partida",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		_ = e.svc.DiscardReplay(ctx, replayID)
+		match.Status = common.MatchStatusFailed
+		_ = e.svc.UpdateMatch(ctx, match)
+		return fmt.Errorf("commit match result: %w", err)
+	}
+
+	// Replay is published atomically only after DB commit succeeds
+	if _, pubErr := e.svc.PublishReplay(ctx, replayID); pubErr != nil {
+		tracer.WarnEvent(ctx, tracer.ScopeReplay, "replay.publish.failed", "No se pudo mover el replay a su ruta canónica",
+			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(pubErr))
+	}
+
 	match.Status = common.MatchStatusFinished
 	match.ReplayId = replayID
 	match.FinishedAt = &now
-	if err := e.svc.UpdateMatch(ctx, match); err != nil {
-		persistenceFailures++
-		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.finish.failed", "No se pudo guardar el estado final de la partida",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-	}
 
 	// Update rankings for contest if contest is set
 	if job.ContestId != "" {
@@ -556,4 +591,21 @@ func structToMap(obj interface{}) (map[string]interface{}, error) {
 	var res map[string]interface{}
 	err = json.Unmarshal(bytes, &res)
 	return res, err
+}
+
+func computeFileDigestAndSize(path string) (string, int64) {
+	if path == "" {
+		return "", 0
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return "", 0
+	}
+	defer f.Close()
+	h := sha256.New()
+	size, err := io.Copy(h, f)
+	if err != nil {
+		return "", 0
+	}
+	return hex.EncodeToString(h.Sum(nil)), size
 }

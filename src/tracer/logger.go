@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unicode"
 
@@ -528,4 +529,52 @@ func nonNilContext(ctx context.Context) context.Context {
 func isTerminal(file *os.File) bool {
 	info, err := file.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0
+}
+
+type OperationalMetrics struct {
+	LeaseRenewals            atomic.Int64
+	LeaseLosses              atomic.Int64
+	SandboxSpawns            atomic.Int64
+	SandboxDisqualifications atomic.Int64
+	SandboxTimeouts          atomic.Int64
+}
+
+var GlobalMetrics OperationalMetrics
+
+func RecordLeaseRenewal() {
+	GlobalMetrics.LeaseRenewals.Add(1)
+}
+
+func RecordLeaseLoss() {
+	GlobalMetrics.LeaseLosses.Add(1)
+}
+
+func RecordSandboxSpawn() {
+	GlobalMetrics.SandboxSpawns.Add(1)
+}
+
+func RecordSandboxDisqualification() {
+	GlobalMetrics.SandboxDisqualifications.Add(1)
+}
+
+func RecordSandboxTimeout() {
+	GlobalMetrics.SandboxTimeouts.Add(1)
+}
+
+type MetricsSnapshot struct {
+	LeaseRenewals            int64 `json:"lease_renewals"`
+	LeaseLosses              int64 `json:"lease_losses"`
+	SandboxSpawns            int64 `json:"sandbox_spawns"`
+	SandboxDisqualifications int64 `json:"sandbox_disqualifications"`
+	SandboxTimeouts          int64 `json:"sandbox_timeouts"`
+}
+
+func GetMetricsSnapshot() MetricsSnapshot {
+	return MetricsSnapshot{
+		LeaseRenewals:            GlobalMetrics.LeaseRenewals.Load(),
+		LeaseLosses:              GlobalMetrics.LeaseLosses.Load(),
+		SandboxSpawns:            GlobalMetrics.SandboxSpawns.Load(),
+		SandboxDisqualifications: GlobalMetrics.SandboxDisqualifications.Load(),
+		SandboxTimeouts:          GlobalMetrics.SandboxTimeouts.Load(),
+	}
 }

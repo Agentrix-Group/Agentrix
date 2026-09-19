@@ -277,3 +277,94 @@ func TestDeterminism_FakeEngine(t *testing.T) {
 	hashDiff, _ := runSimulation(99999, actions)
 	r.NotEqual(hash1, hashDiff, "Different seeds must produce different state hashes")
 }
+
+func TestSubprocess_MatchIDMismatch(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	client := NewSubprocessClient()
+	err := client.Start(ctx, StartConfig{
+		BinaryPath: fakeEngineBinary,
+		Args:       []string{"--mode=mismatch_match_id"},
+	})
+	r.NoError(err)
+	defer client.Close(ctx)
+
+	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
+		MatchID: "m-expected",
+		GameID:  "starfighter",
+		Players: []string{"b1"},
+	})
+	r.Error(err)
+	r.ErrorIs(err, ErrMatchIDMismatch)
+}
+
+func TestSubprocess_LifecycleTransitions(t *testing.T) {
+	r := require.New(t)
+	ctx := context.Background()
+
+	client := NewSubprocessClient()
+
+	// 1. AdvanceTick before Start -> error
+	_, err := client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 0})
+	r.ErrorIs(err, ErrEngineNotStarted)
+
+	// Start engine
+	err = client.Start(ctx, StartConfig{
+		BinaryPath: fakeEngineBinary,
+		Args:       []string{"--mode=normal"},
+	})
+	r.NoError(err)
+	defer client.Close(ctx)
+
+	// 2. AdvanceTick before InitializeMatch -> error
+	_, err = client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 0})
+	r.ErrorIs(err, ErrMatchNotInitialized)
+
+	// 3. FinishMatch before InitializeMatch -> error
+	_, err = client.FinishMatch(ctx, "premature")
+	r.ErrorIs(err, ErrMatchNotInitialized)
+
+	// Initialize
+	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
+		MatchID:         "m-lifecycle",
+		GameID:          "starfighter",
+		Seed:            1,
+		FixedTimestepMs: 50,
+		MaxTicks:        10,
+		Players:         []string{"b1"},
+	})
+	r.NoError(err)
+
+	// 4. Initialize again -> ErrMatchAlreadyStarted
+	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
+		MatchID:         "m-lifecycle",
+		GameID:          "starfighter",
+		Seed:            1,
+		FixedTimestepMs: 50,
+		MaxTicks:        10,
+		Players:         []string{"b1"},
+	})
+	r.ErrorIs(err, ErrMatchAlreadyStarted)
+
+	// 5. AdvanceTick works
+	_, err = client.AdvanceTick(ctx, AdvanceTickRequest{
+		Tick: 0,
+		Actions: map[string]PlayerActionInput{
+			"b1": {Status: ActionStatusValid, Payload: json.RawMessage(`{}`)},
+		},
+	})
+	r.NoError(err)
+
+	// 6. FinishMatch works
+	_, err = client.FinishMatch(ctx, "normal")
+	r.NoError(err)
+
+	// 7. AdvanceTick after FinishMatch -> ErrInvalidLifecycleTransition
+	_, err = client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 1})
+	r.ErrorIs(err, ErrInvalidLifecycleTransition)
+
+	// 8. FinishMatch after FinishMatch -> ErrInvalidLifecycleTransition
+	_, err = client.FinishMatch(ctx, "duplicate")
+	r.ErrorIs(err, ErrInvalidLifecycleTransition)
+}

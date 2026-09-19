@@ -51,17 +51,18 @@ export function App() {
         onSelectTab={setActiveTab}
         currentUser={currentUser}
         onLogout={handleLogout}
+        hasReplay={Boolean(selectedReplayId)}
       />
 
       <main className="main-content">
         {activeTab === 'home' && (
-          <HomePage onWatchReplay={handleWatchReplay} />
+          <HomePage />
         )}
         {activeTab === 'agents' && (
           <AgentsPage currentUser={currentUser} />
         )}
         {activeTab === 'matches' && (
-          <MatchesPage onWatchReplay={handleWatchReplay} canRun={Boolean(currentUser)} />
+          <MatchesPage onWatchReplay={handleWatchReplay} currentUser={currentUser} />
         )}
         {activeTab === 'rankings' && (
           <RankingsPage />

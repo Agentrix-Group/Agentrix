@@ -4,7 +4,7 @@ import { RefreshCw } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { MatchCard } from '../components/MatchCard.jsx';
 
-export function MatchesPage({ onWatchReplay, canRun }) {
+export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
   const { t } = useTranslation(['matches', 'common']);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +49,8 @@ export function MatchesPage({ onWatchReplay, canRun }) {
                 key={m.id}
                 match={m}
                 onWatchReplay={onWatchReplay}
-                onTriggerRun={canRun ? handleTriggerRun : undefined}
+                onTriggerRun={handleTriggerRun}
+                canRun={canRun !== undefined ? canRun : (currentUser?.role_id === 'admin')}
               />
             ))
           ) : (

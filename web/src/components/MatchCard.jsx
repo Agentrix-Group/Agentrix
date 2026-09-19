@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Play, ScanEye } from 'lucide-react';
 import { formatNumber } from '../i18n/formatters.js';
 
-export function MatchCard({ match, onWatchReplay, onTriggerRun }) {
+export function MatchCard({ match, onWatchReplay, onTriggerRun, canRun = false }) {
   const { t, i18n } = useTranslation(['matches', 'common']);
   const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
 
@@ -51,7 +51,7 @@ export function MatchCard({ match, onWatchReplay, onTriggerRun }) {
             <ScanEye size={17} aria-hidden="true" /> {t('matches:card.watchReplay')}
           </button>
         )}
-        {match.status === 'pending' && typeof onTriggerRun === 'function' && (
+        {canRun && match.status === 'pending' && typeof onTriggerRun === 'function' && (
           <button className="btn" onClick={() => onTriggerRun(match.id)}>
             <Play size={17} aria-hidden="true" /> {t('matches:card.runMatch')}
           </button>

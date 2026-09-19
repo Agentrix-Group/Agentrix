@@ -1,5 +1,7 @@
 # Adaptación del blueprint al repositorio Agentrix
 
+> La auditoría de este documento corresponde al 2026-09-13 y se conserva como evidencia histórica. Para el primer corte público aprobado el 2026-09-18, el repositorio ya monta React, usa `pgx` para PostgreSQL y aplica la paleta celeste y arena en la interfaz pública. Las filas históricas siguientes no describen por sí solas el estado vigente de esas áreas.
+
 ## 1. Nombre definitivo
 
 **Agentrix** es el nombre único y definitivo del producto y del repositorio según DP-002. Los contratos, documentos, módulos y textos nuevos deben usar únicamente este nombre.
@@ -159,18 +161,18 @@ El flujo candidato se documenta, pero queda aplazado hasta que José Daniel auto
 
 ## 9. Estado de implementación
 
-Por decisión de José Daniel, esta revisión solo documenta lo que ya existe y corrige el blueprint. Etapa 0, Etapa 1 y el flujo público de concursos quedan aplazados por ahora. PostgreSQL sigue siendo la dirección de persistencia; no se adaptará el código hasta aprobar un corte específico.
+En la revisión del 2026-09-13, José Daniel aplazó Etapa 0, Etapa 1 y el flujo público de concursos. El 2026-09-18 aprobó el primer corte de interfaz pública para consultar concursos mediante el endpoint existente. PostgreSQL sigue siendo la dirección de persistencia aprobada.
 
 ## 10. Actualización posterior: corte vertical Starfighter
 
-El contenido de las secciones 2 a 5 conserva el diagnóstico histórico del prototipo observado el 2026-09-13. El estado activo cambió por DP-004, decidida el 2026-09-18:
+El contenido de las secciones 2 a 5 conserva el diagnóstico histórico del prototipo observado el 2026-09-13. El estado activo consolidó el MVP de Starfighter:
 
 - Arena Básica y su visor de cuadrícula fueron retirados;
 - Starfighter es el único juego activo y usa el motor Rust con Bevy y Avian2D;
 - los agentes admitidos son paquetes ZIP de Python con `agentrix.json` y `bot.py`;
 - la sesión de bot usa `init`, `perception`, `action` y `end`, con tick 0 estricto y terminación por timeout;
-- el replay autoritativo se escribe en streaming NDJSON desde snapshots públicos del motor;
+- el replay autoritativo se escribe en streaming NDJSON desde snapshots públicos del motor y compresión Zstandard;
 - la cola persistente de partidas usa PostgreSQL y `FOR UPDATE SKIP LOCKED`;
-- la web React ofrece el flujo público y un visor Canvas 2D claro y responsive.
+- la web React ofrece el flujo público y un visor Canvas 2D claro, accesible y responsive.
 
 Esta actualización reemplaza las afirmaciones de estado del diagnóstico inicial para el corte MVP; no altera su valor como evidencia histórica del prototipo que fue revisado.

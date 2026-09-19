@@ -6,10 +6,10 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/F4nk1/Agentrix/src/common"
-	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/service"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/common"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/service"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
 

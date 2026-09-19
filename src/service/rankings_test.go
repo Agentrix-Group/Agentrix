@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/stretchr/testify/require"
 )
 

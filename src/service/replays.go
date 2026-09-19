@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/model"
-	replaystream "github.com/F4nk1/Agentrix/src/replay"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	replaystream "github.com/Agentrix-Group/Agentrix/src/replay"
 	"github.com/google/uuid"
 )
 

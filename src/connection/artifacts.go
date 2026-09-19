@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/F4nk1/Agentrix/src/config"
+	"github.com/Agentrix-Group/Agentrix/src/config"
 )
 
 type ArtifactStore interface {

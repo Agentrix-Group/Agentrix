@@ -3,7 +3,7 @@ package server
 import (
 	"errors"
 
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 func validateParticipant(p *model.Participant) error {

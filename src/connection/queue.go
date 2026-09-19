@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 

@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/common"
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/model"
-	"github.com/F4nk1/Agentrix/src/repository"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/common"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 

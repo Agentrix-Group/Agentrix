@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/engine"
+	"github.com/Agentrix-Group/Agentrix/src/engine"
 	"github.com/stretchr/testify/require"
 )
 

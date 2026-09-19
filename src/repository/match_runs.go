@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 // MatchCommitter handles fenced atomic commits of match results.

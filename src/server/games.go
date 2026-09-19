@@ -4,8 +4,8 @@ import (
 	"database/sql"
 	"net/http"
 
-	"github.com/F4nk1/Agentrix/src/common"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/common"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
 

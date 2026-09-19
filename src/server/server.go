@@ -7,8 +7,8 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
 
-	"github.com/F4nk1/Agentrix/src/auth"
-	"github.com/F4nk1/Agentrix/src/service"
+	"github.com/Agentrix-Group/Agentrix/src/auth"
+	"github.com/Agentrix-Group/Agentrix/src/service"
 )
 
 type Server struct {

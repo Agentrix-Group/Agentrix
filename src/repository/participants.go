@@ -5,8 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 type Repository interface {

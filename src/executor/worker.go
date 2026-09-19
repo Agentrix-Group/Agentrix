@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
 type WorkerPool struct {

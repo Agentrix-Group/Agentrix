@@ -13,8 +13,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/engine"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/engine"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
 const BotProtocolVersion = "1.0"

@@ -7,7 +7,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 type StreamWriter interface {

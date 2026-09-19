@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/common"
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/engine"
-	"github.com/F4nk1/Agentrix/src/game"
-	"github.com/F4nk1/Agentrix/src/model"
-	replaystream "github.com/F4nk1/Agentrix/src/replay"
-	"github.com/F4nk1/Agentrix/src/repository"
-	"github.com/F4nk1/Agentrix/src/service"
+	"github.com/Agentrix-Group/Agentrix/src/common"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/engine"
+	"github.com/Agentrix-Group/Agentrix/src/game"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	replaystream "github.com/Agentrix-Group/Agentrix/src/replay"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/service"
 	"github.com/stretchr/testify/require"
 )
 

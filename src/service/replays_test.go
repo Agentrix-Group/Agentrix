@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/config"
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/config"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/stretchr/testify/require"
 )
 

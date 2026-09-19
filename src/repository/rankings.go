@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 func (r *repository) ListRankings(ctx context.Context) ([]model.Ranking, error) {

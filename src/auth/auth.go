@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/golang-jwt/jwt/v5"
 )
 

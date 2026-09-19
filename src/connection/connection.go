@@ -7,7 +7,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/F4nk1/Agentrix/src/config"
+	"github.com/Agentrix-Group/Agentrix/src/config"
 )
 
 type Connection struct {

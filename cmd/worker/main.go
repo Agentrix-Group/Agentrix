@@ -6,13 +6,13 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/F4nk1/Agentrix/src/config"
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/executor"
-	"github.com/F4nk1/Agentrix/src/game"
-	"github.com/F4nk1/Agentrix/src/repository"
-	"github.com/F4nk1/Agentrix/src/service"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/config"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/executor"
+	"github.com/Agentrix-Group/Agentrix/src/game"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/service"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
 func main() {

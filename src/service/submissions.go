@@ -13,8 +13,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/common"
-	"github.com/F4nk1/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/common"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/google/uuid"
 )
 

@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/F4nk1/Agentrix/src/config"
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/executor"
-	"github.com/F4nk1/Agentrix/src/repository"
-	"github.com/F4nk1/Agentrix/src/server"
-	"github.com/F4nk1/Agentrix/src/service"
-	"github.com/F4nk1/Agentrix/src/tracer"
+	"github.com/Agentrix-Group/Agentrix/src/config"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/executor"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/server"
+	"github.com/Agentrix-Group/Agentrix/src/service"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
 func main() {

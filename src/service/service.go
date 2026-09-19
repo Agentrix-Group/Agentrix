@@ -3,10 +3,10 @@ package service
 import (
 	"context"
 
-	"github.com/F4nk1/Agentrix/src/connection"
-	"github.com/F4nk1/Agentrix/src/model"
-	replaystream "github.com/F4nk1/Agentrix/src/replay"
-	"github.com/F4nk1/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/model"
+	replaystream "github.com/Agentrix-Group/Agentrix/src/replay"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 )
 
 type Service interface {

@@ -1,4 +1,4 @@
-module github.com/F4nk1/Agentrix
+module github.com/Agentrix-Group/Agentrix
 
 go 1.25.0
 

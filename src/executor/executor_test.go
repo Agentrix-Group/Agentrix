@@ -446,12 +446,44 @@ func TestReferenceBotsComeFromStarfighterManifest(t *testing.T) {
 
 	bot0, err := referenceBot(manifest, 0)
 	r.NoError(err)
-	r.Equal("games/starfighter/examples/bot_hunter.py", bot0)
+	r.Contains(bot0, "bot_hunter.py")
 
 	bot1, err := referenceBot(manifest, 1)
 	r.NoError(err)
-	r.Equal("games/starfighter/examples/bot_evasive.py", bot1)
+	r.Contains(bot1, "bot_evasive.py")
 
 	_, err = referenceBot(&game.Manifest{ID: "other"}, 0)
 	r.Error(err)
 }
+
+func TestResolveAgentFallback(t *testing.T) {
+	r := require.New(t)
+
+	// Valid resolution for starfighter
+	bot0, err := ResolveAgentFallback("games/starfighter", 0)
+	r.NoError(err)
+	r.Contains(bot0, "bot_hunter.py")
+
+	bot1, err := ResolveAgentFallback("games/starfighter", 1)
+	r.NoError(err)
+	r.Contains(bot1, "bot_evasive.py")
+
+	// Circular slot wrapping
+	bot2, err := ResolveAgentFallback("games/starfighter", 2)
+	r.NoError(err)
+	r.Equal(bot0, bot2)
+
+	// Non-existent directory
+	_, err = ResolveAgentFallback("games/non_existent", 0)
+	r.Error(err)
+	r.Contains(err.Error(), "no se pudo leer manifest")
+
+	// Manifest with no reference agents
+	tmpDir := t.TempDir()
+	emptyManifest := "id: empty_game\nversion: 1.0.0\n"
+	r.NoError(os.WriteFile(tmpDir+"/manifest.yaml", []byte(emptyManifest), 0o644))
+	_, err = ResolveAgentFallback(tmpDir, 0)
+	r.Error(err)
+	r.Contains(err.Error(), "no declara agentes de referencia")
+}
+

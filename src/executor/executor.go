@@ -84,14 +84,7 @@ func referenceBot(manifest *game.Manifest, index int) (string, error) {
 	if manifest == nil || manifest.ID != "starfighter" {
 		return "", errors.New("starfighter manifest is not loaded")
 	}
-	if len(manifest.ReferenceAgents) == 0 {
-		return "", errors.New("starfighter manifest has no reference_agents")
-	}
-	path := manifest.ReferenceAgents[index%len(manifest.ReferenceAgents)].Path
-	if !fileExists(path) {
-		return "", fmt.Errorf("reference agent does not exist: %s", path)
-	}
-	return path, nil
+	return ResolveAgentFallback("games/starfighter", index)
 }
 
 func validatePerceptions(perceptions map[string]json.RawMessage, players []string, expectedTick int) error {

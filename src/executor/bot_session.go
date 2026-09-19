@@ -28,20 +28,25 @@ type BotSession interface {
 type botOutgoing struct {
 	Type            string          `json:"type"`
 	ProtocolVersion string          `json:"protocol_version,omitempty"`
+	Protocol        string          `json:"protocol,omitempty"`
 	MatchID         string          `json:"match_id,omitempty"`
 	PlayerID        string          `json:"player_id,omitempty"`
+	GameID          string          `json:"game_id,omitempty"`
 	Seed            int64           `json:"seed,omitempty"`
 	TimeoutMs       int64           `json:"timeout_ms,omitempty"`
 	Tick            *int            `json:"tick,omitempty"`
 	Perception      json.RawMessage `json:"perception,omitempty"`
+	Data            json.RawMessage `json:"data,omitempty"`
 	Winner          string          `json:"winner,omitempty"`
+	WinnerID        string          `json:"winnerId,omitempty"`
 	Reason          string          `json:"reason,omitempty"`
 }
 
 type botIncoming struct {
 	Type   string          `json:"type"`
 	Tick   *int            `json:"tick"`
-	Action json.RawMessage `json:"action"`
+	Action json.RawMessage `json:"action,omitempty"`
+	Data   json.RawMessage `json:"data,omitempty"`
 }
 
 type botProcess struct {
@@ -217,8 +222,8 @@ func (s *agentSandbox) StartSession(ctx context.Context, matchID string, players
 			continue
 		}
 		if err := proc.send(botOutgoing{
-			Type: "init", ProtocolVersion: BotProtocolVersion, MatchID: matchID,
-			PlayerID: playerID, Seed: seed, TimeoutMs: timeout.Milliseconds(),
+			Type: "init", ProtocolVersion: BotProtocolVersion, Protocol: "agentrix-bot/1", MatchID: matchID,
+			PlayerID: playerID, GameID: "starfighter", Seed: seed, TimeoutMs: timeout.Milliseconds(),
 		}); err != nil {
 			proc.disconnect()
 			session.processes[playerID] = &botProcess{playerID: playerID}
@@ -246,7 +251,7 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 	requestedTick := tick
 	if err := proc.send(botOutgoing{
 		Type: "perception", MatchID: s.matchID, PlayerID: playerID,
-		Tick: &requestedTick, Perception: perception,
+		Tick: &requestedTick, Perception: perception, Data: perception,
 	}); err != nil {
 		proc.disconnect()
 		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: err.Error()}
@@ -268,7 +273,15 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 	}
 
 	var msg botIncoming
-	if err := json.Unmarshal([]byte(line), &msg); err != nil || msg.Type != "action" || msg.Tick == nil || !isJSONObject(msg.Action) {
+	if err := json.Unmarshal([]byte(line), &msg); err != nil || msg.Type != "action" || msg.Tick == nil {
+		proc.disqualify("invalid_output")
+		return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "malformed or unexpected message"}
+	}
+	actionPayload := msg.Action
+	if len(actionPayload) == 0 && len(msg.Data) > 0 {
+		actionPayload = msg.Data
+	}
+	if !isJSONObject(actionPayload) {
 		proc.disqualify("invalid_output")
 		return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: "malformed or unexpected message"}
 	}
@@ -276,7 +289,7 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		proc.disqualify("tick_mismatch")
 		return engine.PlayerActionInput{Status: engine.ActionStatusInvalidOutput, ErrorDetails: fmt.Sprintf("tick mismatch: got %d, expected %d", *msg.Tick, tick)}
 	}
-	return engine.PlayerActionInput{Status: engine.ActionStatusValid, Payload: append(json.RawMessage(nil), msg.Action...)}
+	return engine.PlayerActionInput{Status: engine.ActionStatusValid, Payload: append(json.RawMessage(nil), actionPayload...)}
 }
 
 func isJSONObject(raw json.RawMessage) bool {

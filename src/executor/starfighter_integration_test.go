@@ -299,3 +299,130 @@ for line in sys.stdin:
 	r.Equal("hunter", document.Result.Winner)
 	r.Equal(1, document.Result.FinalTick)
 }
+
+func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+
+	botHunter := resolveTestPath("games/starfighter/examples/bot_hunter.py")
+	botEvasive := resolveTestPath("games/starfighter/examples/bot_evasive.py")
+	r.FileExists(botHunter, "bot_hunter.py must exist")
+	r.FileExists(botEvasive, "bot_evasive.py must exist")
+
+	gamesDir := resolveTestPath("games")
+	_ = game.GetRegistry().LoadGamesFromDir(gamesDir)
+
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest, "starfighter manifest must be loaded")
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
+	manifest.BinaryPath = engineBin
+	// Configure exactly 50 continuous ticks as mandated by Phase 1
+	manifest.MaxTicks = 50
+
+	replayPath := filepath.Join(t.TempDir(), "50_ticks_authoritative.ndjson")
+	resultsCreated := 0
+	updatedStatuses := make([]string, 0)
+
+	mockSvc := &mockExecutorService{
+		getMatchFn: func(ctx context.Context, id string) (*model.Match, error) {
+			return &model.Match{
+				Id:     id,
+				GameId: "starfighter",
+				Status: common.MatchStatusPending,
+			}, nil
+		},
+		updateMatchFn: func(ctx context.Context, match *model.Match) error {
+			updatedStatuses = append(updatedStatuses, match.Status)
+			return nil
+		},
+		getSubmissionFn: func(ctx context.Context, id string) (*model.Submission, error) {
+			codePath := botHunter
+			if id == "sub-evasive" {
+				codePath = botEvasive
+			}
+			return &model.Submission{
+				Id:       id,
+				AgentId:  id + "-agent",
+				Language: "python",
+				CodePath: codePath,
+				Status:   common.SubmissionStatusReady,
+				Active:   true,
+			}, nil
+		},
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
+		},
+		createResultFn: func(ctx context.Context, res *model.Result) error {
+			resultsCreated++
+			return nil
+		},
+	}
+
+	sandbox := NewSandbox(3 * time.Second)
+	engineFactory := func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{
+			BinaryPath:       engineBin,
+			HandshakeTimeout: 5 * time.Second,
+		})
+		return client, err
+	}
+
+	exec := NewMatchExecutor(mockSvc, sandbox, engineFactory)
+	r.NotNil(exec)
+
+	job := &connection.MatchJob{
+		JobId:         "job-starfighter-50-ticks",
+		Attempt:       1,
+		MatchId:       "match-starfighter-50-ticks",
+		GameId:        "starfighter",
+		SubmissionIds: []string{"sub-hunter", "sub-evasive"},
+		Seed:          2026,
+	}
+
+	start := time.Now()
+	err := exec.Execute(ctx, job)
+	r.NoError(err, "match execution for 50 continuous ticks must succeed without error")
+	elapsed := time.Since(start)
+	t.Logf("Simulated 50 continuous ticks in %v", elapsed)
+
+	// Status and persistence checks
+	r.Contains(updatedStatuses, common.MatchStatusRunning)
+	r.Contains(updatedStatuses, common.MatchStatusFinished)
+	r.Equal(2, resultsCreated, "both player results must be created")
+
+	replayFile, err := os.Open(replayPath)
+	r.NoError(err)
+	defer replayFile.Close()
+	document, err := replaystream.DecodeNDJSON(replayFile)
+	r.NoError(err, "50-tick match must produce a valid sealed NDJSON replay")
+	r.Equal("starfighter", document.Metadata.GameID)
+	r.Equal(17, document.Metadata.FixedTimestepMs)
+	r.NotNil(document.Result, "result footer must be present")
+	r.Equal(document.Result.FinalStateHash, document.Snapshots[len(document.Snapshots)-1].StateHash)
+
+	// Expect 51 snapshots (tick 0 through tick 50)
+	r.Equal(51, len(document.Snapshots), "must have exactly 51 replay snapshots (tick 0 to 50)")
+
+	// Strictly verify sequential tick ordering and non-empty state hashes and snapshots
+	for expectedTick := 0; expectedTick <= 50; expectedTick++ {
+		frame := document.Snapshots[expectedTick]
+		r.Equal(expectedTick, frame.Tick, "tick index must match sequentially without gaps or desync")
+		r.NotEmpty(frame.StateHash, "state hash must be populated for tick %d", expectedTick)
+		r.NotEmpty(frame.PublicSnapshot, "public snapshot must be present for tick %d", expectedTick)
+	}
+
+	r.Equal(50, document.Result.FinalTick, "final tick must be 50")
+}
+

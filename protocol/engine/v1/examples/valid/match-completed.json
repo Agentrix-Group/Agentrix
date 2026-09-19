@@ -5,7 +5,7 @@
   "sequence": 4,
   "payload": {
     "finalTick": 100,
-    "reason": "victory",
+    "reason": "eliminated",
     "winner": "bot-alpha",
     "scores": {
       "bot-alpha": 150,

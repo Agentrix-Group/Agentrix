@@ -3,15 +3,25 @@
   "selectPrompt": "Selecciona una partida para ver su repetición.",
   "matchTitle": "Repetición de partida: {{matchId}}",
   "clearSelection": "Limpiar selección",
+  "loading": "Preparando la repetición autoritativa…",
+  "loadError": "No se pudo cargar esta repetición.",
+  "authoritative": "Snapshots públicos emitidos por el motor oficial",
+  "result": "Resultado",
+  "draw": "Empate",
   "controls": {
     "play": "Reproducir",
     "pause": "Pausar",
     "prev": "Anterior",
     "next": "Siguiente",
-    "reset": "Reiniciar"
+    "reset": "Reiniciar",
+    "speed": "Velocidad",
+    "timeline": "Línea de tiempo"
   },
   "tickInfo": "Tick: {{current}} / {{total}}",
   "agentsTitle": "Agentes",
   "eventsTitle": "Eventos",
-  "agentStats": "{{id}} — PV: {{hp}} | Energía: {{energy}} | Puntos: {{score}}"
+  "agentStats": "{{id}} — PV: {{hp}} | Energía: {{energy}} | Puntos: {{score}}",
+  "health": "Vida: {{value}}",
+  "shieldActive": "Escudo activo",
+  "noEvents": "Sin eventos públicos en este tick."
 }

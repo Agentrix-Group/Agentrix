@@ -228,14 +228,14 @@ func TestEnrollAgent(t *testing.T) {
 
 	openContest := &model.Contest{
 		Id:     "contest-1",
-		GameId: "arena-basica",
+		GameId: "starfighter",
 		State:  model.ContestStateRegistrationOpen,
 		Active: true,
 	}
 
 	finishedContest := &model.Contest{
 		Id:     "contest-2",
-		GameId: "arena-basica",
+		GameId: "starfighter",
 		State:  model.ContestStateFinished,
 		Active: true,
 	}
@@ -243,7 +243,7 @@ func TestEnrollAgent(t *testing.T) {
 	validAgent := &model.Agent{
 		Id:            "agent-1",
 		ParticipantId: "part-1",
-		GameId:        "arena-basica",
+		GameId:        "starfighter",
 		Active:        true,
 	}
 

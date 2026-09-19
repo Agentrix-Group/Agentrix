@@ -15,7 +15,7 @@ func TestRegistryBasics(t *testing.T) {
 	r.NotNil(reg)
 	r.Empty(reg.ListManifests())
 
-	// Custom manifest registration
+	// The MVP registry ignores generic game manifests.
 	manifest := &Manifest{
 		ID:         "custom-game",
 		Name:       "Custom",
@@ -24,14 +24,18 @@ func TestRegistryBasics(t *testing.T) {
 		MaxTicks:   50,
 	}
 	reg.RegisterManifest(manifest)
+	r.Empty(reg.ListManifests())
 
+	manifest.ID = "starfighter"
+	manifest.Name = "Starfighter Arena"
+	reg.RegisterManifest(manifest)
 	list := reg.ListManifests()
 	r.Len(list, 1)
-	r.Equal("custom-game", list[0].ID)
+	r.Equal("starfighter", list[0].ID)
 
-	retrieved := reg.GetManifest("custom-game")
+	retrieved := reg.GetManifest("starfighter")
 	r.NotNil(retrieved)
-	r.Equal("Custom", retrieved.Name)
+	r.Equal("Starfighter Arena", retrieved.Name)
 
 	nonExistent := reg.GetManifest("non-existent")
 	r.Nil(nonExistent)
@@ -50,16 +54,21 @@ func TestLoadGamesFromDir(t *testing.T) {
 	r := require.New(t)
 
 	tempDir := t.TempDir()
-	gameDir := filepath.Join(tempDir, "test-game")
+	gameDir := filepath.Join(tempDir, "starfighter")
 	err := os.MkdirAll(gameDir, 0755)
 	r.NoError(err)
 
 	manifestYAML := `
-id: test-game
-name: Test Game
+id: starfighter
+name: Starfighter Arena
 min_players: 2
-max_players: 4
+max_players: 2
 max_ticks: 100
+fixed_timestep_ms: 17
+binary_path: bin/starfighter-engine
+reference_agents:
+  - id: hunter
+    path: games/starfighter/examples/bot_hunter.py
 `
 	err = os.WriteFile(filepath.Join(gameDir, "manifest.yaml"), []byte(manifestYAML), 0644)
 	r.NoError(err)
@@ -70,8 +79,8 @@ max_ticks: 100
 
 	manifests := reg.ListManifests()
 	r.Len(manifests, 1)
-	r.Equal("test-game", manifests[0].ID)
-	r.Equal("Test Game", manifests[0].Name)
+	r.Equal("starfighter", manifests[0].ID)
+	r.Equal("Starfighter Arena", manifests[0].Name)
 }
 
 func TestLoadGamesFromDir_InvalidDir(t *testing.T) {

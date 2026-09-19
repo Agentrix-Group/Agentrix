@@ -30,6 +30,9 @@ func validateContest(c *model.Contest) error {
 	if c.Name == "" || c.GameId == "" {
 		return errors.New("contest name and game_id are required")
 	}
+	if c.GameId != "starfighter" {
+		return errors.New("game_id must be starfighter")
+	}
 	return nil
 }
 
@@ -43,16 +46,6 @@ func validateCategory(c *model.Category) error {
 	return nil
 }
 
-func validateGame(g *model.Game) error {
-	if g == nil {
-		return errors.New("game data is required")
-	}
-	if g.Name == "" {
-		return errors.New("game name is required")
-	}
-	return nil
-}
-
 func validateAgent(a *model.Agent) error {
 	if a == nil {
 		return errors.New("agent data is required")
@@ -60,15 +53,8 @@ func validateAgent(a *model.Agent) error {
 	if a.Name == "" || a.GameId == "" {
 		return errors.New("agent name and game_id are required")
 	}
-	return nil
-}
-
-func validateSubmission(s *model.Submission) error {
-	if s == nil {
-		return errors.New("submission data is required")
-	}
-	if s.AgentId == "" {
-		return errors.New("agent_id is required")
+	if a.GameId != "starfighter" {
+		return errors.New("game_id must be starfighter")
 	}
 	return nil
 }
@@ -79,6 +65,9 @@ func validateMatch(m *model.Match) error {
 	}
 	if m.GameId == "" {
 		return errors.New("game_id is required")
+	}
+	if m.GameId != "starfighter" {
+		return errors.New("game_id must be starfighter")
 	}
 	return nil
 }

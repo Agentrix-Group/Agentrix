@@ -3,15 +3,25 @@
   "selectPrompt": "Select a match to watch its replay.",
   "matchTitle": "Match Replay: {{matchId}}",
   "clearSelection": "Clear Selection",
+  "loading": "Preparing the authoritative replay…",
+  "loadError": "This replay could not be loaded.",
+  "authoritative": "Public snapshots emitted by the official engine",
+  "result": "Result",
+  "draw": "Draw",
   "controls": {
     "play": "Play",
     "pause": "Pause",
     "prev": "Prev",
     "next": "Next",
-    "reset": "Reset"
+    "reset": "Reset",
+    "speed": "Speed",
+    "timeline": "Timeline"
   },
   "tickInfo": "Tick: {{current}} / {{total}}",
   "agentsTitle": "Agents",
   "eventsTitle": "Events",
-  "agentStats": "{{id}} — HP: {{hp}} | Energy: {{energy}} | Score: {{score}}"
+  "agentStats": "{{id}} — HP: {{hp}} | Energy: {{energy}} | Score: {{score}}",
+  "health": "Health: {{value}}",
+  "shieldActive": "Shield active",
+  "noEvents": "No public events at this tick."
 }

@@ -19,7 +19,7 @@ func TestConsoleEventIsCompactAndReadable(t *testing.T) {
 	ctx = WithActorID(ctx, "actor-123456789")
 
 	InfoEvent(ctx, ScopeMatch, "match.started", "Partida iniciada",
-		String("game", "arena-basica"),
+		String("game", "starfighter"),
 		Err(errors.New("internal detail must stay hidden")),
 	)
 
@@ -28,7 +28,7 @@ func TestConsoleEventIsCompactAndReadable(t *testing.T) {
 	require.Contains(t, output, "INFO")
 	require.Contains(t, output, "MATCH")
 	require.Contains(t, output, "Partida iniciada")
-	require.Contains(t, output, "game=arena-basica")
+	require.Contains(t, output, "game=starfighter")
 	require.Contains(t, output, "request_id=12345678")
 	require.Contains(t, output, "actor_id=actor-12")
 	require.NotContains(t, output, "internal detail")

@@ -15,26 +15,6 @@ paths:
                 type: array
                 items:
                   $ref: './components/models.yaml#/Game'
-    post:
-      summary: Register a new game engine
-      tags:
-        - Games
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: './components/models.yaml#/Game'
-      responses:
-        '201':
-          description: Game registered
-          content:
-            application/json:
-              schema:
-                $ref: './components/models.yaml#/SuccessResponse'
-
   /api/v1/games/{id}:
     get:
       summary: Get game manifest and metadata
@@ -55,52 +35,3 @@ paths:
             application/json:
               schema:
                 $ref: './components/models.yaml#/Game'
-    put:
-      summary: Update game metadata
-      tags:
-        - Games
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: './components/models.yaml#/Game'
-      responses:
-        '200':
-          description: Game updated
-          content:
-            application/json:
-              schema:
-                $ref: './components/models.yaml#/SuccessResponse'
-    patch:
-      summary: Activate or deactivate game
-      tags:
-        - Games
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: true
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: Game status updated
-          content:
-            application/json:
-              schema:
-                $ref: './components/models.yaml#/SuccessResponse'

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/F4nk1/Agentrix/src/common"
@@ -11,6 +14,28 @@ import (
 	"github.com/F4nk1/Agentrix/src/repository"
 	"github.com/stretchr/testify/require"
 )
+
+type mockAdmissionValidator struct {
+	err error
+}
+
+func (m mockAdmissionValidator) ValidateBot(ctx context.Context, codePath string) error {
+	return m.err
+}
+
+func makeBotBundle(t *testing.T, manifest, bot string) []byte {
+	t.Helper()
+	var output bytes.Buffer
+	writer := zip.NewWriter(&output)
+	for name, content := range map[string]string{"agentrix.json": manifest, "bot.py": bot} {
+		entry, err := writer.Create(name)
+		require.NoError(t, err)
+		_, err = entry.Write([]byte(content))
+		require.NoError(t, err)
+	}
+	require.NoError(t, writer.Close())
+	return output.Bytes()
+}
 
 type mockArtifactStore struct {
 	savedPath string
@@ -41,6 +66,10 @@ func (m *mockArtifactStore) Delete(ctx context.Context, subpath string) error {
 	return nil
 }
 
+func (m *mockArtifactStore) OpenWriter(ctx context.Context, subpath string) (io.WriteCloser, string, error) {
+	return nil, "", errors.New("not implemented by submission tests")
+}
+
 type mockSubmissionRepo struct {
 	repository.Repository
 	getAgentFn               func(ctx context.Context, id string) (*model.Agent, error)
@@ -69,121 +98,46 @@ func (m *mockSubmissionRepo) CreateSubmission(ctx context.Context, s *model.Subm
 	return nil
 }
 
-func TestCreateSubmission(t *testing.T) {
-	r := require.New(t)
+func TestCreateSubmissionBundle(t *testing.T) {
 	ctx := context.Background()
-
-	ownedAgent := &model.Agent{
-		Id:            "agent-1",
-		ParticipantId: "part-1",
-		Name:          "HunterBot",
-		GameId:        "arena-basica",
+	ownedAgent := &model.Agent{Id: "agent-1", ParticipantId: "part-1", GameId: "starfighter"}
+	var created *model.Submission
+	repo := &mockSubmissionRepo{
+		getAgentFn: func(context.Context, string) (*model.Agent, error) { return ownedAgent, nil },
+		createSubmissionFn: func(ctx context.Context, submission *model.Submission) error {
+			created = submission
+			return nil
+		},
 	}
+	bundle := makeBotBundle(t,
+		`{"name":"Candidate","entrypoint":"bot.py","protocol_version":"1.0"}`,
+		"import json, sys\n",
+	)
+	svc := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{})
+	submission, err := svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", bundle)
+	require.NoError(t, err)
+	require.Same(t, created, submission)
+	require.Equal(t, "python", submission.Language)
+	require.Contains(t, submission.CodePath, "/submissions/agent-1/v1/bot.py")
 
-	t.Run("Valid submission succeeds and saves code artifact", func(t *testing.T) {
-		var created *model.Submission
-		artifacts := &mockArtifactStore{}
-		repo := &mockSubmissionRepo{
-			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-				if id == "agent-1" {
-					return ownedAgent, nil
-				}
-				return nil, sql.ErrNoRows
-			},
-			createSubmissionFn: func(ctx context.Context, s *model.Submission) error {
-				created = s
-				return nil
-			},
-		}
+	badBundle := makeBotBundle(t,
+		`{"name":"Candidate","entrypoint":"main.js","protocol_version":"1.0"}`,
+		"print('bad manifest')\n",
+	)
+	_, err = svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", badBundle)
+	require.ErrorIs(t, err, ErrInvalidBotBundle)
 
-		svc := NewService(repo, artifacts, nil)
+	unknownFieldBundle := makeBotBundle(t,
+		`{"name":"Candidate","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python"}`,
+		"print('unexpected manifest field')\n",
+	)
+	_, err = svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", unknownFieldBundle)
+	require.ErrorIs(t, err, ErrInvalidBotBundle)
 
-		sub := &model.Submission{
-			AgentId:  "agent-1",
-			Language: "python",
-		}
-		code := []byte("print('hello bot')")
+	rejecting := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{err: errors.New("tick timeout")})
+	_, err = rejecting.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", bundle)
+	require.ErrorIs(t, err, ErrAdmissionFailed)
 
-		err := svc.CreateSubmission(ctx, "part-1", common.RoleParticipant, sub, code)
-		r.NoError(err)
-		r.NotNil(created)
-		r.Equal("agent-1", created.AgentId)
-		r.Equal(1, created.Version)
-		r.Equal(common.SubmissionStatusReady, created.Status)
-		r.NotEmpty(created.CodePath)
-		r.Equal("/artifacts/submissions/agent-1/agent_v1.py", created.CodePath)
-	})
-
-	t.Run("Rejects empty submission code", func(t *testing.T) {
-		repo := &mockSubmissionRepo{
-			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-				return ownedAgent, nil
-			},
-		}
-		svc := NewService(repo, &mockArtifactStore{}, nil)
-
-		sub := &model.Submission{AgentId: "agent-1"}
-		err := svc.CreateSubmission(ctx, "part-1", common.RoleParticipant, sub, []byte(""))
-		r.Error(err)
-		r.True(errors.Is(err, ErrEmptySubmissionCode))
-	})
-
-	t.Run("Rejects submission if agent belongs to another participant", func(t *testing.T) {
-		repo := &mockSubmissionRepo{
-			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-				return ownedAgent, nil
-			},
-		}
-		svc := NewService(repo, &mockArtifactStore{}, nil)
-
-		sub := &model.Submission{AgentId: "agent-1"}
-		err := svc.CreateSubmission(ctx, "another-part", common.RoleParticipant, sub, []byte("code"))
-		r.Error(err)
-		r.True(errors.Is(err, ErrAgentNotOwned))
-	})
-
-	t.Run("Admin can submit for any participant agent", func(t *testing.T) {
-		var created *model.Submission
-		repo := &mockSubmissionRepo{
-			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-				return ownedAgent, nil
-			},
-			createSubmissionFn: func(ctx context.Context, s *model.Submission) error {
-				created = s
-				return nil
-			},
-		}
-		svc := NewService(repo, &mockArtifactStore{}, nil)
-
-		sub := &model.Submission{AgentId: "agent-1"}
-		err := svc.CreateSubmission(ctx, "admin-user", common.RoleAdmin, sub, []byte("admin-override-code"))
-		r.NoError(err)
-		r.NotNil(created)
-	})
-
-	t.Run("Auto-increments version based on existing submissions", func(t *testing.T) {
-		var created *model.Submission
-		repo := &mockSubmissionRepo{
-			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-				return ownedAgent, nil
-			},
-			listSubmissionsByAgentFn: func(ctx context.Context, agentId string) ([]model.Submission, error) {
-				return []model.Submission{
-					{Id: "sub-1", Version: 1},
-					{Id: "sub-2", Version: 2},
-				}, nil
-			},
-			createSubmissionFn: func(ctx context.Context, s *model.Submission) error {
-				created = s
-				return nil
-			},
-		}
-		svc := NewService(repo, &mockArtifactStore{}, nil)
-
-		sub := &model.Submission{AgentId: "agent-1"}
-		err := svc.CreateSubmission(ctx, "part-1", common.RoleParticipant, sub, []byte("version-3-code"))
-		r.NoError(err)
-		r.NotNil(created)
-		r.Equal(3, created.Version)
-	})
+	_, err = svc.CreateSubmissionBundle(ctx, "another-participant", common.RoleParticipant, "agent-1", bundle)
+	require.ErrorIs(t, err, ErrAgentNotOwned)
 }

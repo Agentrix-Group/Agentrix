@@ -21,6 +21,9 @@ func (s *service) GetAgent(ctx context.Context, id string) (*model.Agent, error)
 }
 
 func (s *service) CreateAgent(ctx context.Context, agent *model.Agent) error {
+	if agent.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	if agent.Id == "" {
 		agent.Id = uuid.New().String()
 	}
@@ -31,6 +34,9 @@ func (s *service) CreateAgent(ctx context.Context, agent *model.Agent) error {
 }
 
 func (s *service) UpdateAgent(ctx context.Context, agent *model.Agent) error {
+	if agent.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	return s.repo.UpdateAgent(ctx, agent)
 }
 

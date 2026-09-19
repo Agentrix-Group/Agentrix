@@ -1,10 +1,16 @@
 package service
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/F4nk1/Agentrix/src/common"
@@ -25,73 +31,152 @@ func (s *service) GetSubmission(ctx context.Context, id string) (*model.Submissi
 }
 
 var (
-	ErrSubmissionNotFound  = errors.New("submission not found")
-	ErrEmptySubmissionCode = errors.New("submission code cannot be empty")
-	ErrAgentNotOwned       = ErrUnauthorizedAgent
+	ErrSubmissionNotFound = errors.New("submission not found")
+	ErrAgentNotOwned      = ErrUnauthorizedAgent
+	ErrInvalidBotBundle   = errors.New("invalid bot bundle")
+	ErrAdmissionFailed    = errors.New("bot admission failed")
 )
 
-func (s *service) CreateSubmission(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error {
-	if len(codeContent) == 0 {
-		return ErrEmptySubmissionCode
-	}
+const (
+	maxBundleBytes       = 2 << 20
+	maxBotBytes          = 1 << 20
+	agentProtocolVersion = "1.0"
+)
 
-	// Verify agent exists
-	agent, err := s.repo.GetAgent(ctx, submission.AgentId)
+func (s *service) CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+	if len(archive) == 0 || len(archive) > maxBundleBytes {
+		return nil, fmt.Errorf("%w: ZIP must be between 1 byte and 2 MiB", ErrInvalidBotBundle)
+	}
+	agent, err := s.repo.GetAgent(ctx, agentId)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			return ErrAgentNotFound
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAgentNotFound
 		}
-		return err
+		return nil, err
 	}
-
-	// Verify ownership (unless admin)
 	if roleId != common.RoleAdmin && agent.ParticipantId != participantId {
-		return ErrAgentNotOwned
+		return nil, ErrAgentNotOwned
+	}
+	if agent.GameId != "starfighter" {
+		return nil, fmt.Errorf("%w: agent must target starfighter", ErrInvalidBotBundle)
 	}
 
-	if submission.Language == "" {
-		submission.Language = "python"
-	}
-
-	// Auto-compute version if not explicitly supplied
-	if submission.Version <= 0 {
-		existing, err := s.repo.ListSubmissionsByAgent(ctx, submission.AgentId)
-		if err == nil {
-			submission.Version = len(existing) + 1
-		} else {
-			submission.Version = 1
-		}
-	}
-
-	if submission.Id == "" {
-		submission.Id = uuid.New().String()
-	}
-
-	submission.Status = common.SubmissionStatusReady
-	submission.Active = true
-	submission.CreatedAt = time.Now().UTC()
-
-	// Save code to artifact store
-	ext := "py"
-	if submission.Language == "go" {
-		ext = "go"
-	} else if submission.Language == "javascript" || submission.Language == "js" {
-		ext = "js"
-	}
-	subpath := fmt.Sprintf("submissions/%s/agent_v%d.%s", submission.AgentId, submission.Version, ext)
-	savedPath, err := s.artifacts.Save(ctx, subpath, codeContent)
+	manifestBytes, botBytes, manifest, err := readBotBundle(archive)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	submission.CodePath = savedPath
+	if manifest.Entrypoint != "bot.py" || manifest.ProtocolVersion != agentProtocolVersion {
+		return nil, fmt.Errorf("%w: agentrix.json must declare bot.py and protocol 1.0", ErrInvalidBotBundle)
+	}
+	if s.validator == nil {
+		return nil, fmt.Errorf("%w: validator unavailable", ErrAdmissionFailed)
+	}
+	tempDir, err := os.MkdirTemp("", "agentrix-admission-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tempDir)
+	tempBot := filepath.Join(tempDir, "bot.py")
+	if err := os.WriteFile(tempBot, botBytes, 0o600); err != nil {
+		return nil, err
+	}
+	if err := s.validator.ValidateBot(ctx, tempBot); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAdmissionFailed, err)
+	}
 
-	return s.repo.CreateSubmission(ctx, submission)
+	version := 1
+	if existing, listErr := s.repo.ListSubmissionsByAgent(ctx, agentId); listErr == nil {
+		version = len(existing) + 1
+	}
+	submission := &model.Submission{
+		Id: uuid.New().String(), AgentId: agentId, Version: version,
+		Language: "python", Status: common.SubmissionStatusReady,
+		Active: true, CreatedAt: time.Now().UTC(),
+	}
+	basePath := fmt.Sprintf("submissions/%s/v%d", agentId, version)
+	codePath, err := s.artifacts.Save(ctx, basePath+"/bot.py", botBytes)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.artifacts.Save(ctx, basePath+"/agentrix.json", manifestBytes); err != nil {
+		return nil, err
+	}
+	if _, err := s.artifacts.Save(ctx, basePath+"/bundle.zip", archive); err != nil {
+		return nil, err
+	}
+	submission.CodePath = codePath
+	if err := s.repo.CreateSubmission(ctx, submission); err != nil {
+		return nil, err
+	}
+	return submission, nil
 }
 
-func (s *service) UpdateSubmission(ctx context.Context, submission *model.Submission) error {
-	return s.repo.UpdateSubmission(ctx, submission)
+func readBotBundle(archive []byte) ([]byte, []byte, model.AgentPackageManifest, error) {
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: malformed ZIP", ErrInvalidBotBundle)
+	}
+	files := make(map[string][]byte, 2)
+	var total uint64
+	for _, item := range reader.File {
+		if item.FileInfo().IsDir() {
+			continue
+		}
+		name := filepath.ToSlash(filepath.Clean(item.Name))
+		if name != item.Name || name == "." || name == ".." || filepath.IsAbs(item.Name) {
+			return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: unsafe archive path", ErrInvalidBotBundle)
+		}
+		if name != "agentrix.json" && name != "bot.py" {
+			return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: unexpected file %s", ErrInvalidBotBundle, name)
+		}
+		if _, duplicated := files[name]; duplicated {
+			return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: duplicate file %s", ErrInvalidBotBundle, name)
+		}
+		total += item.UncompressedSize64
+		if item.UncompressedSize64 > maxBotBytes || total > maxBundleBytes {
+			return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: uncompressed content is too large", ErrInvalidBotBundle)
+		}
+		stream, err := item.Open()
+		if err != nil {
+			return nil, nil, model.AgentPackageManifest{}, err
+		}
+		content, readErr := io.ReadAll(io.LimitReader(stream, maxBotBytes+1))
+		closeErr := stream.Close()
+		if readErr != nil {
+			return nil, nil, model.AgentPackageManifest{}, readErr
+		}
+		if closeErr != nil {
+			return nil, nil, model.AgentPackageManifest{}, closeErr
+		}
+		if len(content) > maxBotBytes {
+			return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: file %s is too large", ErrInvalidBotBundle, name)
+		}
+		files[name] = content
+	}
+	manifestBytes, manifestOK := files["agentrix.json"]
+	botBytes, botOK := files["bot.py"]
+	if !manifestOK || !botOK || len(botBytes) == 0 {
+		return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: agentrix.json and bot.py are required", ErrInvalidBotBundle)
+	}
+	var manifest model.AgentPackageManifest
+	decoder := json.NewDecoder(bytes.NewReader(manifestBytes))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&manifest); err != nil {
+		return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: invalid agentrix.json", ErrInvalidBotBundle)
+	}
+	if err := ensureJSONEOF(decoder); err != nil {
+		return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: invalid agentrix.json", ErrInvalidBotBundle)
+	}
+	if manifest.Name == "" || len(manifest.Name) > 80 {
+		return nil, nil, model.AgentPackageManifest{}, fmt.Errorf("%w: manifest name must contain 1 to 80 characters", ErrInvalidBotBundle)
+	}
+	return manifestBytes, botBytes, manifest, nil
 }
 
-func (s *service) ActivateSubmission(ctx context.Context, id string, isActive bool) error {
-	return s.repo.ActivateSubmission(ctx, id, isActive)
+func ensureJSONEOF(decoder *json.Decoder) error {
+	var extra any
+	if err := decoder.Decode(&extra); !errors.Is(err, io.EOF) {
+		return errors.New("unexpected data after JSON object")
+	}
+	return nil
 }

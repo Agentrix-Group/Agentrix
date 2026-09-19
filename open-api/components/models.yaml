@@ -140,7 +140,7 @@ Game:
   type: object
   properties:
     id:
-      type: string
+      const: starfighter
     name:
       type: string
     description:
@@ -148,9 +148,9 @@ Game:
     manifest_path:
       type: string
     min_players:
-      type: integer
+      const: 2
     max_players:
-      type: integer
+      const: 2
     active:
       type: boolean
     created_at:
@@ -167,7 +167,7 @@ Contest:
     description:
       type: string
     game_id:
-      type: string
+      const: starfighter
     category_id:
       type: string
     start_date:
@@ -192,7 +192,7 @@ Agent:
     participant_id:
       type: string
     game_id:
-      type: string
+      const: starfighter
     name:
       type: string
     description:
@@ -215,7 +215,7 @@ Submission:
     code_path:
       type: string
     language:
-      type: string
+      const: python
     status:
       type: string
     active:
@@ -232,7 +232,7 @@ Match:
     contest_id:
       type: string
     game_id:
-      type: string
+      const: starfighter
     status:
       type: string
     seed:
@@ -355,4 +355,3 @@ PublicContestSummary:
     - name
     - description
     - state
-

@@ -97,7 +97,7 @@ func TestAgentsService(t *testing.T) {
 	r.Equal("a1", agent.Id)
 
 	// CreateAgent
-	newAgent := &model.Agent{Name: "NewBot", ParticipantId: "part-1"}
+	newAgent := &model.Agent{Name: "NewBot", ParticipantId: "part-1", GameId: "starfighter"}
 	err = svc.CreateAgent(ctx, newAgent)
 	r.NoError(err)
 	r.NotEmpty(newAgent.Id)
@@ -107,4 +107,5 @@ func TestAgentsService(t *testing.T) {
 	// UpdateAgent & ActivateAgent
 	r.NoError(svc.UpdateAgent(ctx, newAgent))
 	r.NoError(svc.ActivateAgent(ctx, newAgent.Id, false))
+	r.ErrorIs(svc.CreateAgent(ctx, &model.Agent{Name: "Other", GameId: "other-game"}), ErrUnsupportedGame)
 }

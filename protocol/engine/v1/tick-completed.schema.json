@@ -8,7 +8,8 @@
     "tick",
     "events",
     "stateHash",
-    "isOver"
+    "isOver",
+    "publicSnapshot"
   ],
   "properties": {
     "tick": {
@@ -34,9 +35,9 @@
       "type": "string",
       "description": "Identificador del ganador si la partida finalizó en este tick con victoria."
     },
-    "publicState": {
+    "publicSnapshot": {
       "type": "object",
-      "description": "Snapshot público o representación de entidades sanitizada para el visor/replay.",
+      "description": "Snapshot público autoritativo del estado resultante para el visor y replay.",
       "additionalProperties": true
     },
     "playerStates": {

@@ -34,7 +34,7 @@ func (m *mockEngineClient) AdvanceTick(ctx context.Context, req AdvanceTickReque
 	if m.advanceTickFn != nil {
 		return m.advanceTickFn(ctx, req)
 	}
-	return &TickResult{Tick: req.Tick}, nil
+	return &TickResult{Tick: req.Tick + 1}, nil
 }
 
 func (m *mockEngineClient) FinishMatch(ctx context.Context, reason string) (*MatchResult, error) {
@@ -68,7 +68,7 @@ func TestEngineClientInterface(t *testing.T) {
 	r.NoError(err)
 	r.Equal("m-1", initRes.MatchID)
 
-	tickRes, err := client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 1})
+	tickRes, err := client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 0})
 	r.NoError(err)
 	r.Equal(1, tickRes.Tick)
 

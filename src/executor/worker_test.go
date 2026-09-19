@@ -39,7 +39,7 @@ func TestWorkerPoolLifecycle(t *testing.T) {
 	job := &connection.MatchJob{
 		JobId:   "job-pool-1",
 		MatchId: "match-pool-1",
-		GameId:  "arena-basica",
+		GameId:  "starfighter",
 	}
 
 	err := queue.Enqueue(ctx, job)

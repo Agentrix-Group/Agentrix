@@ -15,7 +15,7 @@ func TestMatchJSONSerialization(t *testing.T) {
 	match := Match{
 		Id:        "match-1",
 		ContestId: "contest-1",
-		GameId:    "arena-basica",
+		GameId:    "starfighter",
 		Status:    "finished",
 		Seed:      12345,
 		ReplayId:  "replay-1",

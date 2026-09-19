@@ -9,16 +9,16 @@ El MVP no intenta organizar todavía una final universitaria completa. Comprueba
 ## 2. Recorrido vertical
 
 1. Un administrador prepara un concurso de demostración.
-2. El concurso tiene una categoría y un juego básico por ticks.
+2. El concurso usa Starfighter, con dos agentes y simulación autoritativa por ticks.
 3. Existen una cuenta administradora y una cuenta concursante.
 4. El concursante consulta el contrato del juego.
-5. Presenta un paquete de agente.
-6. El sistema almacena su digest y lo valida en aislamiento.
+5. Presenta un ZIP con `agentrix.json` y `bot.py`.
+6. El sistema valida tamaño, estructura, sintaxis Python y una interacción `init` + tick 0.
 7. El participante recibe un informe reproducible.
 8. Si está aprobado, solicita o recibe una partida contra un agente de referencia.
 9. La partida espera hasta disponer de capacidad.
-10. El worker ejecuta juego y agentes sin red.
-11. Se registran eventos por tick.
+10. El worker ejecuta los agentes Python y coordina el motor Rust con Bevy y Avian2D.
+11. Rust emite percepciones privadas y snapshots públicos; Go los escribe como NDJSON.
 12. La partida termina sin comprometer la plataforma.
 13. El sistema muestra resultado, estadísticas básicas y replay.
 
@@ -31,10 +31,10 @@ El MVP no intenta organizar todavía una final universitaria completa. Comprueba
 - roles Administrador y Concursante;
 - un concurso de demostración;
 - una categoría;
-- un juego de arena básico;
+- Starfighter como único juego;
 - un protocolo de agente;
-- un runner interpretado y uno compilado, sujetos a PE-006;
-- paquete comprimido con manifest;
+- un único runner de agentes Python;
+- paquete ZIP con `agentrix.json` y `bot.py`;
 - almacenamiento de artefactos;
 - validación estructural y de protocolo;
 - cola persistente;
@@ -44,7 +44,7 @@ El MVP no intenta organizar todavía una final universitaria completa. Comprueba
 - acciones por ticks;
 - agente de referencia;
 - resultado provisional y confirmación automática sin incidentes;
-- log sellado por ticks;
+- replay NDJSON sellado por ticks y `stateHash`;
 - replay posterior a la partida;
 - vista pública simple;
 - informe técnico para el propietario;
@@ -60,31 +60,32 @@ El MVP no intenta organizar todavía una final universitaria completa. Comprueba
 - arbitraje avanzado;
 - visión computacional;
 - múltiples juegos activos;
+- agentes JavaScript, Go u otros lenguajes;
 - edición visual de permisos;
 - personalización de perfil;
 - transmisión y clips;
+- transmisión en vivo por WebSocket;
 - soporte de múltiples organizaciones;
 - aplicación nativa móvil;
 - escalamiento horizontal automático.
 
 El modelo conceptual conserva espacio para esas capacidades; el código del MVP no crea abstracciones sin uso.
 
-## 4. Juego de demostración
+## 4. Juego del MVP: Starfighter
 
-El primer juego debe ser deliberadamente pequeño:
+El corte vertical fija estas reglas de plataforma:
 
-- arena 2D en cuadrícula o coordenadas discretas;
+- arena 2D continua ejecutada en Rust con Bevy y Avian2D;
 - dos agentes;
 - percepción parcial;
-- movimiento y una interacción simple;
-- obstáculos o apariciones controladas;
+- empuje, giro, disparo y escudo;
 - duración máxima;
 - puntuación sencilla;
 - eventos visuales claros;
 - semilla registrada;
-- estado suficiente para replay.
+- snapshots públicos suficientes para replay, sin estado privado.
 
-Su misión no es ser el juego definitivo. Debe probar contrato, aislamiento, ticks, azar, registro y visualización.
+Starfighter es la única opción implementada. Añadir otro juego requiere una decisión posterior y un concurso que lo necesite.
 
 ## 5. Criterios de aceptación del corte vertical
 
@@ -264,4 +265,3 @@ Cada solicitud de implementación debe incluir:
 7. verificación final.
 
 Codex no debe generar la plataforma completa en una sola solicitud, crear carpetas futuras vacías, hacer commit o push sin autorización, ni introducir una abstracción sin un consumidor actual.
-

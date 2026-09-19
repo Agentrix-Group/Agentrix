@@ -33,12 +33,4 @@ func TestSubmissionsRepositoryDisconnected(t *testing.T) {
 	// CreateSubmission
 	err = repo.CreateSubmission(ctx, &model.Submission{AgentId: "agent-1", Version: 1})
 	r.Error(err)
-
-	// UpdateSubmission
-	err = repo.UpdateSubmission(ctx, &model.Submission{Id: "sub-1", Version: 2})
-	r.Error(err)
-
-	// ActivateSubmission
-	err = repo.ActivateSubmission(ctx, "sub-1", false)
-	r.Error(err)
 }

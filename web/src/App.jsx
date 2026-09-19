@@ -8,6 +8,7 @@ import { AgentsPage } from './pages/AgentsPage.jsx';
 import { AuthPage } from './pages/AuthPage.jsx';
 import { ReplayViewer } from './viewer/ReplayViewer.jsx';
 import { ApiService } from './service/apiService.js';
+import { X } from 'lucide-react';
 
 export function App() {
   const { t } = useTranslation(['viewer', 'common']);
@@ -72,7 +73,7 @@ export function App() {
               <h1>{t('viewer:title')}</h1>
               {selectedReplayId && (
                 <button className="btn" onClick={() => setSelectedReplayId(null)}>
-                  {t('viewer:clearSelection')}
+                  <X size={17} aria-hidden="true" /> {t('viewer:clearSelection')}
                 </button>
               )}
             </div>

@@ -1,5 +1,7 @@
 package engine
 
+import "encoding/json"
+
 const (
 	ProtocolVersion = "agentrix-engine/1"
 
@@ -36,10 +38,9 @@ type Envelope struct {
 
 // PlayerActionInput describes a participant's turn evaluation sent to the engine.
 type PlayerActionInput struct {
-	Status       string                 `json:"status"`
-	ActionType   string                 `json:"actionType,omitempty"`
-	Payload      map[string]interface{} `json:"payload,omitempty"`
-	ErrorDetails string                 `json:"errorDetails,omitempty"`
+	Status       string          `json:"status"`
+	Payload      json.RawMessage `json:"payload,omitempty"`
+	ErrorDetails string          `json:"errorDetails,omitempty"`
 }
 
 // InitializeMatchRequest contains game startup parameters sent to the engine.
@@ -57,11 +58,12 @@ type InitializeMatchRequest struct {
 
 // MatchInitializedResult represents the engine's confirmation and initial perception state.
 type MatchInitializedResult struct {
-	MatchID     string                            `json:"matchId"`
-	InitialTick int                               `json:"initialTick"`
-	StateHash   string                            `json:"stateHash"`
-	Perceptions map[string]map[string]interface{} `json:"perceptions"`
-	Events      []string                          `json:"events"`
+	MatchID        string                     `json:"matchId"`
+	InitialTick    int                        `json:"initialTick"`
+	StateHash      string                     `json:"stateHash"`
+	PublicSnapshot json.RawMessage            `json:"publicSnapshot"`
+	Perceptions    map[string]json.RawMessage `json:"perceptions"`
+	Events         []string                   `json:"events"`
 }
 
 // AdvanceTickRequest supplies the next tick index and all agent actions to the engine.
@@ -72,14 +74,13 @@ type AdvanceTickRequest struct {
 
 // TickResult represents the outcome of simulating one tick.
 type TickResult struct {
-	Tick         int                               `json:"tick"`
-	Events       []string                          `json:"events"`
-	StateHash    string                            `json:"stateHash"`
-	IsOver       bool                              `json:"isOver"`
-	Winner       string                            `json:"winner,omitempty"`
-	PublicState  map[string]interface{}            `json:"publicState,omitempty"`
-	PlayerStates map[string]map[string]interface{} `json:"playerStates,omitempty"`
-	Perceptions  map[string]map[string]interface{} `json:"perceptions,omitempty"`
+	Tick           int                        `json:"tick"`
+	Events         []string                   `json:"events"`
+	StateHash      string                     `json:"stateHash"`
+	IsOver         bool                       `json:"isOver"`
+	Winner         string                     `json:"winner,omitempty"`
+	PublicSnapshot json.RawMessage            `json:"publicSnapshot"`
+	Perceptions    map[string]json.RawMessage `json:"perceptions,omitempty"`
 }
 
 // PlayerRank describes the final placement and score of a participant.

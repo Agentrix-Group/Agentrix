@@ -161,4 +161,18 @@ El flujo candidato se documenta, pero queda aplazado hasta que José Daniel auto
 
 ## 9. Estado de implementación
 
-En la revisión del 2026-09-13, José Daniel aplazó Etapa 0, Etapa 1 y el flujo público de concursos. El 2026-09-18 aprobó el primer corte de **interfaz pública** para consultar concursos mediante el endpoint existente. Esa aprobación no autoriza una nueva implementación de backend de producción, la Etapa 0, la Etapa 1 ni cambios adicionales de persistencia.
+En la revisión del 2026-09-13, José Daniel aplazó Etapa 0, Etapa 1 y el flujo público de concursos. El 2026-09-18 aprobó el primer corte de interfaz pública para consultar concursos mediante el endpoint existente. PostgreSQL sigue siendo la dirección de persistencia aprobada.
+
+## 10. Actualización posterior: corte vertical Starfighter
+
+El contenido de las secciones 2 a 5 conserva el diagnóstico histórico del prototipo observado el 2026-09-13. El estado activo consolidó el MVP de Starfighter:
+
+- Arena Básica y su visor de cuadrícula fueron retirados;
+- Starfighter es el único juego activo y usa el motor Rust con Bevy y Avian2D;
+- los agentes admitidos son paquetes ZIP de Python con `agentrix.json` y `bot.py`;
+- la sesión de bot usa `init`, `perception`, `action` y `end`, con tick 0 estricto y terminación por timeout;
+- el replay autoritativo se escribe en streaming NDJSON desde snapshots públicos del motor y compresión Zstandard;
+- la cola persistente de partidas usa PostgreSQL y `FOR UPDATE SKIP LOCKED`;
+- la web React ofrece el flujo público y un visor Canvas 2D claro, accesible y responsive.
+
+Esta actualización reemplaza las afirmaciones de estado del diagnóstico inicial para el corte MVP; no altera su valor como evidencia histórica del prototipo que fue revisado.

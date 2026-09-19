@@ -66,7 +66,9 @@ func (s *Server) buildHandler() http.Handler {
 	api.HandleFunc("/matches", s.listMatches).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/matches/{id}", s.getMatch).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/rankings", s.listRankings).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/rankings/{id}", s.getRanking).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/replays/{id}", s.getReplay).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/replays/{id}/stream", s.streamReplay).Methods(http.MethodGet, http.MethodOptions)
 
 	// Protected routes
 	protected := api.NewRoute().Subrouter()
@@ -97,10 +99,7 @@ func (s *Server) buildHandler() http.Handler {
 
 	// Games
 	protected.HandleFunc("/games", s.listGames).Methods(http.MethodGet)
-	protected.HandleFunc("/games", s.createGame).Methods(http.MethodPost)
 	protected.HandleFunc("/games/{id}", s.getGame).Methods(http.MethodGet)
-	protected.HandleFunc("/games/{id}", s.updateGame).Methods(http.MethodPut)
-	protected.HandleFunc("/games/{id}", s.activateGame).Methods(http.MethodPatch)
 
 	// Agents
 	protected.HandleFunc("/agents", s.listAgents).Methods(http.MethodGet)
@@ -111,10 +110,8 @@ func (s *Server) buildHandler() http.Handler {
 
 	// Submissions
 	protected.HandleFunc("/submissions", s.listSubmissions).Methods(http.MethodGet)
-	protected.HandleFunc("/submissions", s.createSubmission).Methods(http.MethodPost)
+	protected.HandleFunc("/submissions/upload", s.uploadSubmissionBundle).Methods(http.MethodPost)
 	protected.HandleFunc("/submissions/{id}", s.getSubmission).Methods(http.MethodGet)
-	protected.HandleFunc("/submissions/{id}", s.updateSubmission).Methods(http.MethodPut)
-	protected.HandleFunc("/submissions/{id}", s.activateSubmission).Methods(http.MethodPatch)
 
 	// Matches (Scheduling & Execution)
 	protected.HandleFunc("/matches", s.createMatch).Methods(http.MethodPost)
@@ -125,9 +122,6 @@ func (s *Server) buildHandler() http.Handler {
 	// Results
 	protected.HandleFunc("/results", s.listResults).Methods(http.MethodGet)
 	protected.HandleFunc("/results/{id}", s.getResult).Methods(http.MethodGet)
-
-	// Replay stream
-	protected.HandleFunc("/replays/{id}/stream", s.streamReplay).Methods(http.MethodGet)
 
 	return router
 }

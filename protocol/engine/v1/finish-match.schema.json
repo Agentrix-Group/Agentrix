@@ -10,7 +10,12 @@
   "properties": {
     "reason": {
       "type": "string",
-      "description": "Razón del cierre (ej. 'admin_abort', 'agent_disqualified', 'timeout')."
+      "enum": [
+        "eliminated",
+        "timeout",
+        "score_limit"
+      ],
+      "description": "Condición competitiva de cierre de la partida."
     }
   },
   "additionalProperties": false

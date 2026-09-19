@@ -6,25 +6,17 @@
   "payload": {
     "tick": 1,
     "events": [
-      "bot-alpha moved to (2,1)",
-      "bot-beta timed out and remained idle"
+      "bot-alpha fired",
+      "bot-beta was disqualified by timeout"
     ],
     "stateHash": "h1_tick_hash_987654",
     "isOver": false,
-    "publicState": {
+    "publicSnapshot": {
       "tick": 1,
-      "players": {
-        "bot-alpha": {
-          "alive": true,
-          "hp": 100,
-          "score": 0
-        },
-        "bot-beta": {
-          "alive": true,
-          "hp": 100,
-          "score": 0
-        }
-      }
+      "fighters": [],
+      "bullets": [],
+      "events": ["bot-alpha fired"],
+      "stateHash": "h1_tick_hash_987654"
     },
     "perceptions": {
       "bot-alpha": {

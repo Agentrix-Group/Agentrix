@@ -1,11 +1,10 @@
 paths:
   /api/v1/replays/{id}:
     get:
-      summary: Get replay metadata and frames
+      summary: Get replay metadata
       tags:
         - Replays
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: id
           in: path
@@ -24,11 +23,10 @@ paths:
 
   /api/v1/replays/{id}/stream:
     get:
-      summary: Stream raw JSON replay artifact
+      summary: Stream the authoritative NDJSON replay
       tags:
         - Replays
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: id
           in: path
@@ -37,10 +35,10 @@ paths:
             type: string
       responses:
         '200':
-          description: Replay JSON file
+          description: Metadata line, sequential public snapshots, and final result line
           content:
-            application/json:
+            application/x-ndjson:
               schema:
-                type: object
+                type: string
         '404':
           $ref: './components/errors.yaml#/NotFound'

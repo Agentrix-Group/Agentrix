@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
 import { formatDateTime, formatNumber } from '../i18n/formatters.js';
+import { Bot, FileArchive, ShieldCheck, UploadCloud, UserPlus } from 'lucide-react';
 
 export function AgentsPage({ currentUser }) {
   const { t, i18n } = useTranslation(['agents', 'common', 'errors']);
@@ -10,8 +11,7 @@ export function AgentsPage({ currentUser }) {
   const [agents, setAgents] = useState([]);
   const [contests, setContests] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
-  const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('python');
+  const [bundle, setBundle] = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [newAgentName, setNewAgentName] = useState('');
   const [newAgentDesc, setNewAgentDesc] = useState('');
@@ -65,7 +65,7 @@ export function AgentsPage({ currentUser }) {
     try {
       await ApiService.createAgent({
         name: newAgentName.trim(),
-        game_id: 'arena-basica',
+        game_id: 'starfighter',
         description: newAgentDesc.trim(),
       });
       setNewAgentName('');
@@ -79,14 +79,14 @@ export function AgentsPage({ currentUser }) {
 
   const handleSubmitCode = async (e) => {
     e.preventDefault();
-    if (!selectedAgent || !code.trim()) return;
+    if (!selectedAgent || !bundle) return;
     setStatusMsg('');
     setErrorMsg('');
 
     try {
-      const res = await ApiService.submitCode(selectedAgent.id, code, language);
+      const res = await ApiService.uploadBotBundle(selectedAgent.id, bundle);
       setStatusMsg(t('agents:messages.submitSuccess', { version: res.version || 'new' }));
-      setCode('');
+      setBundle(null);
       ApiService.listSubmissions(selectedAgent.id).then((subs) => setSubmissions(subs || []));
     } catch (err) {
       setErrorMsg(err.message || t('agents:messages.submitError'));
@@ -140,7 +140,7 @@ export function AgentsPage({ currentUser }) {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', marginTop: '24px' }}>
+      <div className="agents-layout">
         {/* Left Column: Create Bot & Bot List */}
         <div>
           <div className="card" style={{ marginBottom: '24px' }}>
@@ -161,7 +161,7 @@ export function AgentsPage({ currentUser }) {
                 rows={2}
                 style={{ padding: '8px 12px', resize: 'vertical' }}
               />
-              <button type="submit" className="btn">{t('agents:register.submit')}</button>
+              <button type="submit" className="btn"><Bot size={17} /> {t('agents:register.submit')}</button>
             </form>
           </div>
 
@@ -198,7 +198,7 @@ export function AgentsPage({ currentUser }) {
           {selectedAgent ? (
             <div>
               <div className="card" style={{ marginBottom: '24px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div className="agent-detail-header">
                   <h2>{selectedAgent.name}</h2>
                   <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <select
@@ -210,43 +210,35 @@ export function AgentsPage({ currentUser }) {
                         <option key={c.id} value={c.id}>{c.name}</option>
                       ))}
                     </select>
-                    <button className="btn" onClick={handleEnroll}>{t('agents:details.enroll')}</button>
+                    <button className="btn" onClick={handleEnroll}><UserPlus size={17} /> {t('agents:details.enroll')}</button>
                   </div>
                 </div>
                 <p style={{ color: 'var(--text-secondary)' }}>{selectedAgent.description || t('agents:details.noDescription')}</p>
               </div>
 
               <div className="card" style={{ marginBottom: '24px' }}>
-                <h3>{t('agents:submission.uploadTitle')}</h3>
+                <h3 style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <UploadCloud size={20} /> {t('agents:submission.uploadTitle')}
+                </h3>
                 <form onSubmit={handleSubmitCode} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-                    <label style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>{t('agents:submission.language')}</label>
-                    <select
-                      value={language}
-                      onChange={(e) => setLanguage(e.target.value)}
-                      style={{ padding: '6px 10px' }}
-                    >
-                      <option value="python">Python 3</option>
-                      <option value="javascript">JavaScript / Node</option>
-                      <option value="go">Go</option>
-                    </select>
+                  <label className="bundle-dropzone">
+                    <FileArchive size={30} aria-hidden="true" />
+                    <strong>{bundle ? bundle.name : t('agents:submission.chooseZip')}</strong>
+                    <span>{t('agents:submission.zipHelp')}</span>
+                    <input
+                      type="file"
+                      accept=".zip,application/zip"
+                      onChange={(event) => setBundle(event.target.files?.[0] || null)}
+                      required
+                    />
+                  </label>
+                  <div className="admission-note">
+                    <ShieldCheck size={18} />
+                    <span>{t('agents:submission.admissionCheck')}</span>
                   </div>
-                  <textarea
-                    rows={10}
-                    placeholder={`#!/usr/bin/env python3\n# Agent logic...\nimport sys, json\nprint(json.dumps({'type': 'ATTACK'}))`}
-                    value={code}
-                    onChange={(e) => setCode(e.target.value)}
-                    style={{
-                      fontFamily: 'monospace',
-                      fontSize: '0.85rem',
-                      padding: '12px',
-                      background: 'var(--bg-subtle)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '6px',
-                    }}
-                    required
-                  />
-                  <button type="submit" className="btn">{t('agents:submission.publish')}</button>
+                  <button type="submit" className="btn" disabled={!bundle}>
+                    <UploadCloud size={17} /> {t('agents:submission.publish')}
+                  </button>
                 </form>
               </div>
 

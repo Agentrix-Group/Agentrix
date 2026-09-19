@@ -43,8 +43,12 @@ export const ApiService = {
     const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
     return api.get(`/submissions${query}`);
   },
-  submitCode: (agentId, code, language = 'python') =>
-    api.post('/submissions', { agent_id: agentId, code, language }),
+  uploadBotBundle: (agentId, file) => {
+    const form = new FormData();
+    form.append('agent_id', agentId);
+    form.append('bundle', file);
+    return api.form('/submissions/upload', form);
+  },
 
   // Matches
   listMatches: (contestId) => {
@@ -63,5 +67,5 @@ export const ApiService = {
 
   // Replays
   getReplay: (id) => api.get(`/replays/${id}`),
-  streamReplay: (id) => api.get(`/replays/${id}/stream`),
+  streamReplay: (id) => api.text(`/replays/${id}/stream`),
 };

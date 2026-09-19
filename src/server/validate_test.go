@@ -22,15 +22,7 @@ func TestValidateContest(t *testing.T) {
 	r.Error(validateContest(nil))
 	r.Error(validateContest(&model.Contest{}))
 	r.Error(validateContest(&model.Contest{Name: "Cup 2026"}))
-	r.NoError(validateContest(&model.Contest{Name: "Cup 2026", GameId: "arena-basica"}))
-}
-
-func TestValidateGame(t *testing.T) {
-	r := require.New(t)
-
-	r.Error(validateGame(nil))
-	r.Error(validateGame(&model.Game{}))
-	r.NoError(validateGame(&model.Game{Name: "Arena Basica"}))
+	r.NoError(validateContest(&model.Contest{Name: "Cup 2026", GameId: "starfighter"}))
 }
 
 func TestValidateAgent(t *testing.T) {
@@ -39,5 +31,5 @@ func TestValidateAgent(t *testing.T) {
 	r.Error(validateAgent(nil))
 	r.Error(validateAgent(&model.Agent{}))
 	r.Error(validateAgent(&model.Agent{Name: "HunterBot"}))
-	r.NoError(validateAgent(&model.Agent{Name: "HunterBot", GameId: "arena-basica"}))
+	r.NoError(validateAgent(&model.Agent{Name: "HunterBot", GameId: "starfighter"}))
 }

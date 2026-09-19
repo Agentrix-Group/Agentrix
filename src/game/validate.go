@@ -3,39 +3,38 @@ package game
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 func ValidateManifest(manifest *Manifest) error {
 	if manifest == nil {
 		return errors.New("manifest is nil")
 	}
-	if manifest.ID == "" {
-		return errors.New("game ID is required")
+	if manifest.ID != "starfighter" {
+		return errors.New("Agentrix MVP supports only the starfighter game")
 	}
 	if manifest.Name == "" {
 		return errors.New("game name is required")
 	}
-	if manifest.MinPlayers <= 0 {
-		return errors.New("min_players must be greater than 0")
-	}
-	if manifest.MaxPlayers < manifest.MinPlayers {
-		return errors.New("max_players must be >= min_players")
+	if manifest.MinPlayers != 2 || manifest.MaxPlayers != 2 {
+		return errors.New("starfighter requires exactly two players")
 	}
 	if manifest.MaxTicks <= 0 {
 		return errors.New("max_ticks must be greater than 0")
 	}
+	if manifest.FixedTimestepMs <= 0 {
+		return errors.New("fixed_timestep_ms must be greater than 0")
+	}
+	if manifest.BinaryPath == "" {
+		return errors.New("binary_path is required")
+	}
+	if len(manifest.ReferenceAgents) == 0 {
+		return errors.New("at least one Python reference agent is required")
+	}
+	for _, agent := range manifest.ReferenceAgents {
+		if agent.ID == "" || !strings.HasSuffix(agent.Path, ".py") {
+			return fmt.Errorf("invalid reference agent %q", agent.ID)
+		}
+	}
 	return nil
-}
-
-func ValidateAction(action *Action) error {
-	if action == nil {
-		return errors.New("action is nil")
-	}
-
-	switch action.Type {
-	case ActionUp, ActionDown, ActionLeft, ActionRight, ActionAttack, ActionShield, ActionRest:
-		return nil
-	default:
-		return fmt.Errorf("unknown action type: %s", action.Type)
-	}
 }

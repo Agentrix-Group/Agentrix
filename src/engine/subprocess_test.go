@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -50,7 +52,7 @@ func TestSubprocessLifecycle_Success(t *testing.T) {
 	// InitializeMatch
 	initRes, err := client.InitializeMatch(ctx, InitializeMatchRequest{
 		MatchID:         "m-test-1",
-		GameID:          "arena-basica",
+		GameID:          "starfighter",
 		Seed:            42,
 		FixedTimestepMs: 50,
 		MaxTicks:        10,
@@ -62,12 +64,12 @@ func TestSubprocessLifecycle_Success(t *testing.T) {
 	r.NotEmpty(initRes.StateHash)
 	r.Contains(initRes.Perceptions, "bot-1")
 
-	// AdvanceTick 1
+	// Action tick 0 produces state tick 1.
 	tickRes, err := client.AdvanceTick(ctx, AdvanceTickRequest{
-		Tick: 1,
+		Tick: 0,
 		Actions: map[string]PlayerActionInput{
-			"bot-1": {Status: ActionStatusValid, ActionType: "MOVE"},
-			"bot-2": {Status: ActionStatusValid, ActionType: "ATTACK"},
+			"bot-1": {Status: ActionStatusValid, Payload: json.RawMessage(`{"thrust":"FORWARD"}`)},
+			"bot-2": {Status: ActionStatusValid, Payload: json.RawMessage(`{"shoot":true}`)},
 		},
 	})
 	r.NoError(err)
@@ -166,7 +168,7 @@ func TestSubprocess_EngineDeclaredError(t *testing.T) {
 
 	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
 		MatchID: "m-err",
-		GameID:  "arena-basica",
+		GameID:  "starfighter",
 		Players: []string{"b1"},
 	})
 	r.Error(err)
@@ -190,7 +192,7 @@ func TestSubprocess_InvalidSequence(t *testing.T) {
 
 	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
 		MatchID: "m-seq",
-		GameID:  "arena-basica",
+		GameID:  "starfighter",
 		Players: []string{"b1"},
 	})
 	r.Error(err)
@@ -212,12 +214,12 @@ func TestSubprocess_LargeMessageRejected(t *testing.T) {
 
 	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
 		MatchID: "m-large",
-		GameID:  "arena-basica",
+		GameID:  "starfighter",
 		Players: []string{"b1"},
 	})
 	r.NoError(err)
 
-	_, err = client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 1})
+	_, err = client.AdvanceTick(ctx, AdvanceTickRequest{Tick: 0})
 	r.Error(err)
 	r.ErrorIs(err, ErrLineTooLong)
 }
@@ -237,7 +239,7 @@ func TestDeterminism_FakeEngine(t *testing.T) {
 
 		_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
 			MatchID:         "m-det",
-			GameID:          "arena-basica",
+			GameID:          "starfighter",
 			Seed:            seed,
 			FixedTimestepMs: 50,
 			MaxTicks:        int(len(actions)),
@@ -249,9 +251,9 @@ func TestDeterminism_FakeEngine(t *testing.T) {
 		var allEvents []string
 		for i, act := range actions {
 			res, err := client.AdvanceTick(ctx, AdvanceTickRequest{
-				Tick: i + 1,
+				Tick: i,
 				Actions: map[string]PlayerActionInput{
-					"bot-1": {Status: ActionStatusValid, ActionType: act},
+					"bot-1": {Status: ActionStatusValid, Payload: json.RawMessage(fmt.Sprintf(`{"action":%q}`, act))},
 				},
 			})
 			r.NoError(err)

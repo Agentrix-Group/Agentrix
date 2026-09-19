@@ -3,6 +3,7 @@ package connection
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -15,6 +16,19 @@ type ArtifactStore interface {
 	Exists(subpath string) bool
 	GetPath(subpath string) string
 	Delete(ctx context.Context, subpath string) error
+	OpenWriter(ctx context.Context, subpath string) (io.WriteCloser, string, error)
+}
+
+func (s *artifactStore) OpenWriter(ctx context.Context, subpath string) (io.WriteCloser, string, error) {
+	target := s.GetPath(subpath)
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return nil, "", err
+	}
+	file, err := os.Create(target)
+	if err != nil {
+		return nil, "", err
+	}
+	return file, target, nil
 }
 
 type artifactStore struct {

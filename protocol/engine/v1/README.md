@@ -61,19 +61,15 @@ sequenceDiagram
     A->>E: initialize_match (seed, fixedTimestepMs, maxTicks, players)
     E->>A: match_initialized (initialTick: 0, stateHash, perceptions)
 
-    loop Cada Tick de Simulación (1 .. maxTicks)
+    loop Cada acción de simulación (0 .. maxTicks-1)
         Note over A: Supervisor evalúa agentes en sandboxes aislados
-        A->>E: advance_tick (tick, actions: {botId: {status, actionType, payload}})
-        Note over E: Bevy/Rapier procesa físicas y reglas autoritativas
-        E->>A: tick_completed (tick, events, stateHash, isOver, perceptions)
+        A->>E: advance_tick (tick, actions: {botId: {status, payload}})
+        Note over E: Bevy/Avian2D procesa físicas y reglas autoritativas
+        E->>A: tick_completed (tick + 1, publicSnapshot, perceptions)
     end
 
-    alt Simulación finalizada por fin de juego o límite
-        E->>A: match_completed (finalTick, reason, winner, scores, rankings, finalStateHash)
-    else Aborto solicitado por Agentrix
-        A->>E: finish_match (reason: "admin_abort")
-        E->>A: match_completed (reason: "aborted")
-    end
+    A->>E: finish_match (reason: eliminated | timeout | score_limit)
+    E->>A: match_completed (finalTick, reason, winner, scores, rankings, finalStateHash)
 
     A->>E: shutdown (reason)
     E->>A: shutdown_ack (status: "ok")
@@ -91,14 +87,14 @@ sequenceDiagram
 2. **`advance_tick`** ([Esquema](./advance-tick.schema.json)):
    - Indica el `tick` correlativo a ejecutar y entrega las acciones recolectadas.
    - Cada participante tiene un `status`:
-     - `"valid"`: El bot envió una acción semántica (`actionType` y `payload`).
+     - `"valid"`: El bot envió un `payload` JSON opaco que solo interpreta Rust.
      - `"timeout"`: El bot agotó su presupuesto de tiempo por tick.
      - `"invalid_output"`: El bot respondió datos corruptos o no conformes a su contrato.
      - `"crashed"`: El subproceso del bot finalizó abruptamente.
      - `"disqualified"`: El bot fue descalificado por el supervisor.
    - **Importante:** Agentrix nunca sustituye silenciosamente un fallo por una acción neutra como `REST`; el motor recibe el estado del agente y aplica las reglas físicas/competitivas correspondientes.
 3. **`finish_match`** ([Esquema](./finish-match.schema.json)):
-   - Solicita la detención inmediata de la partida antes de alcanzar el límite de ticks.
+   - Sella la partida con una de las tres condiciones competitivas admitidas: `eliminated`, `timeout` o `score_limit`.
 4. **`shutdown`** ([Esquema](./shutdown.schema.json)):
    - Ordena el cierre ordenado del subproceso del motor.
 
@@ -109,9 +105,9 @@ sequenceDiagram
 2. **`match_initialized`** ([Esquema](./match-initialized.schema.json)):
    - Confirma la creación del mundo, estado inicial `tick: 0`, hash criptográfico inicial y el primer lote de percepciones privadas para cada slot.
 3. **`tick_completed`** ([Esquema](./tick-completed.schema.json)):
-   - Resultado del tick: `tick`, `events` (strings públicos de eventos), `stateHash` (digest acumulativo), `isOver` (booleano), `winner` (opcional), `publicState` (opcional para el visor) y `perceptions` (percepción privada filtrada para el siguiente tick para cada bot activo).
+   - Estado resultante: `tick`, `events`, `stateHash`, `isOver`, `winner` (opcional), `publicSnapshot` autoritativo y `perceptions` privadas del mismo tick.
 4. **`match_completed`** ([Esquema](./match-completed.schema.json)):
-   - Cierre de la partida: `finalTick`, `reason` (`"time_limit"`, `"victory"`, `"elimination"`, `"draw"`, `"aborted"`), `scores` (mapa de puntajes numéricos), `rankings` (array ordenado de puestos) y `finalStateHash`.
+   - Cierre de la partida: `finalTick`, `reason` (`"eliminated"`, `"timeout"` o `"score_limit"`), `scores`, `rankings` y `finalStateHash`.
 5. **`engine_error`** ([Esquema](./engine-error.schema.json)):
    - Reporte de fallo del motor: `code` estructurado, `message` humano redactado y `fatal` (si true, aborta el proceso).
 6. **`shutdown_ack`** ([Esquema](./shutdown-ack.schema.json)):

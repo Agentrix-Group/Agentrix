@@ -8,9 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Registry manages the game manifests available in Agentrix.
-// Game execution is handled by external engine processes (Rust/Bevy/Rapier or fake-engine for tests)
-// via the engine.EngineClient interface, keeping the game registry purely declarative.
+// Registry exposes the single Starfighter manifest supported by the MVP.
 type Registry struct {
 	mu        sync.RWMutex
 	manifests map[string]*Manifest
@@ -34,8 +32,11 @@ func NewRegistry() *Registry {
 	}
 }
 
-// RegisterManifest registers or updates a game manifest.
+// RegisterManifest registers or updates the Starfighter manifest.
 func (r *Registry) RegisterManifest(manifest *Manifest) {
+	if manifest == nil || manifest.ID != "starfighter" {
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.manifests[manifest.ID] = manifest
@@ -48,34 +49,21 @@ func (r *Registry) GetManifest(gameID string) *Manifest {
 	return r.manifests[gameID]
 }
 
-// LoadGamesFromDir scans a directory for subdirectories containing manifest.yaml files.
+// LoadGamesFromDir loads only games/starfighter/manifest.yaml.
 func (r *Registry) LoadGamesFromDir(dir string) error {
-	entries, err := os.ReadDir(dir)
+	manifestPath := filepath.Join(dir, "starfighter", "manifest.yaml")
+	data, err := os.ReadFile(manifestPath)
 	if err != nil {
 		return err
 	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			manifestPath := filepath.Join(dir, entry.Name(), "manifest.yaml")
-			if _, err := os.Stat(manifestPath); err == nil {
-				data, err := os.ReadFile(manifestPath)
-				if err != nil {
-					continue
-				}
-
-				var manifest Manifest
-				if err := yaml.Unmarshal(data, &manifest); err != nil {
-					continue
-				}
-
-				if manifest.ID == "" {
-					manifest.ID = entry.Name()
-				}
-				r.RegisterManifest(&manifest)
-			}
-		}
+	var manifest Manifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		return err
 	}
+	if err := ValidateManifest(&manifest); err != nil {
+		return err
+	}
+	r.RegisterManifest(&manifest)
 	return nil
 }
 

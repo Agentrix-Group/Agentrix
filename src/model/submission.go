@@ -13,3 +13,9 @@ type Submission struct {
 	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
 	Agent     *Agent    `json:"agent,omitempty"`
 }
+
+type AgentPackageManifest struct {
+	Name            string `json:"name"`
+	Entrypoint      string `json:"entrypoint"`
+	ProtocolVersion string `json:"protocol_version"`
+}

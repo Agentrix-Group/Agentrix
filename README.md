@@ -1,110 +1,80 @@
-# Agentrix Platform
+# Agentrix
 
-## Overview
+Agentrix es una plataforma de concursos para bots. El MVP implementa un único recorrido completo: un participante carga un bot Python, el worker ejecuta un duelo de Starfighter en el motor Rust con Bevy y Avian2D, guarda snapshots públicos autoritativos en NDJSON y los muestra en un visor Canvas de React.
 
-Agentrix is a multi-agent competitive gaming and bot evaluation platform built with Go, PostgreSQL, and React. It orchestrates automated matches between participant code submissions, provides sandboxed execution with slot-isolated perception, manages tournaments and contests, tracks leaderboard rankings, and generates match replays viewable on the web canvas.
+## Alcance del MVP
 
-## Architecture
+- Juego único: `starfighter`, dos participantes por partida.
+- Agentes: archivos Python 3 dentro de un ZIP con `agentrix.json` y `bot.py`.
+- Protocolo de bot por JSON Lines: `init`, `perception`, `action`, `end`.
+- Motor autoritativo externo: `bin/starfighter-engine` mediante `agentrix-engine/1` sobre `stdin/stdout`.
+- Replays: metadata, snapshots públicos secuenciales desde tick 0 y resultado final en NDJSON.
+- Consumo de partidas: cola PostgreSQL con reserva `FOR UPDATE SKIP LOCKED`; cola en memoria como respaldo de desarrollo.
+- Interfaz: React con tema claro pastel, iconos Lucide y visor Canvas 2D.
 
-Agentrix follows a layered modular architecture adhering to architectural decisions DP-001, DP-002, and ATD-015:
+## Recorrido del código
 
 ```text
-main.go
-  ├─ config       → Environment configuration (Server, PostgreSQL Database, Artifacts, Queue)
-  ├─ tracer       → Structured logging with Zap and correlation context
-  ├─ connection   → PostgreSQL database (pgx), artifact storage, and match job queue
-  ├─ repository   → Segregated database access layer (CRUD and queries for domain entities)
-  ├─ service      → Domain business logic, validation, authentication, and orchestration
-  ├─ executor     → Match execution, background worker pool, and isolated bot sandbox
-  ├─ game         → Game engine registry, validation, and Arena Basica simulation
-  ├─ replay       → Replay recorder, sealed frames, and client projection
-  ├─ server       → Gorilla mux HTTP server with RBAC middleware & REST handlers
-  └─ web          → React + Vite frontend dashboard and HTML5 canvas replay viewer
+open-api/  -> src/server/ -> src/service/ -> src/repository/ -> src/model/
+                                  |
+src/connection/ <- src/executor/ <-+-> src/engine/ -> motor Rust
+                         |
+                    src/replay/ -> artifacts/replays/*.ndjson
 ```
 
-## Prerequisites (Ubuntu / Linux)
+El backend Go trata la percepción y la acción espacial como JSON opaco. El motor Rust valida las acciones, avanza la simulación y produce las percepciones privadas y el snapshot público.
 
-- Go 1.25 or higher
+## Requisitos
+
+- Go 1.25+
+- Python 3.10+
 - PostgreSQL 14+
-- Python 3.10+ (for bot script execution)
-- Make build tool
-- Node.js 18+ (for Web frontend)
+- Node.js 22.22+
+- El motor hermano `agentrix_engine` compilado como `bin/starfighter-engine`
 
-### Environment Variables
+## Verificación
 
-| Variable | Description | Default |
-| --- | --- | --- |
-| `MODE` | Execution mode (`dev`, `gcp`, `railway`) | `dev` |
-| `PORT` | HTTP Server port | `8080` |
-| `LOG_LEVEL` | Minimum operational log level (`debug`, `info`, `warn`, `error`) | `info` |
-| `LOG_FORMAT` | Output format (`console`, `json`) | `console` in `dev`; `json` in deployed modes |
-| `LOG_COLOR` | Console color (`auto`, `always`, `never`) | `auto` |
-| `DB_USER` | PostgreSQL user | `postgres` |
-| `DB_PASSWORD` | PostgreSQL password | `` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_NAME` | PostgreSQL database name | `agentrix` |
-| `ACCESS_SECRET` | JWT Access Token Secret | `agentrix-access-secret-key-change-in-prod` |
-| `REFRESH_SECRET` | JWT Refresh Token Secret | `agentrix-refresh-secret-key-change-in-prod` |
-| `SESSION_SECRET` | Cookie Session Secret | `agentrix-session-secret-key-change-in-prod` |
-| `ARTIFACTS_DIR` | Directory for submission code & replays | `./artifacts` |
-
-### Backend logs
-
-The default console is intentionally quiet and oriented to people. It shows startup and recovery, relevant HTTP mutations, queue transitions, match lifecycle, aggregated agent incidents, and failures that require attention. Routine reads, expected client errors, SQL operations, and per-tick events do not appear at `info`.
-
-```text
-10:43:10  INFO   MATCH      Partida iniciada                        game=arena-basica match_id=87c2fa91
-10:43:13  WARN   AGENT      Incidencias del agente                  timeouts=3 agent_id=ae14c7f2
-10:43:16  INFO   MATCH      Partida finalizada                      elapsed=2.8s ticks=142 match_id=87c2fa91
+```bash
+GOCACHE=/tmp/agentrix-go-cache go test ./...
+cd web && npm test -- --run && npm run build
+cd ../../agentrix_engine && cargo test
 ```
 
-Use `LOG_LEVEL=debug` for diagnostic detail. Production should use `LOG_FORMAT=json`; stable English event names and full correlation identifiers remain available there for filtering. Operational logs must never be used as replay storage, competitive evidence, participant reports, or security audit records.
+## Ejecución local
 
-## Quick Start
-
-### 1. Setup Go Dependencies
 ```bash
-make agentrix-setup
-```
-
-### 2. Setup PostgreSQL Database
-```bash
-make db-setup
-```
-
-### 3. Run Backend Tests & Linter
-```bash
-make test
-make lint
-```
-
-### 4. Build and Run Server
-```bash
+make build-engine
 make build
 make run
 ```
 
-### 5. Frontend Web Dashboard (React + Vite)
-```bash
-# Install frontend dependencies
-make web-install
+El servidor usa `PORT=8080`, `ARTIFACTS_DIR=./artifacts` y las variables `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` y `DB_NAME` para PostgreSQL. Si la conexión no está disponible en desarrollo, la cola de partidas usa su implementación en memoria.
 
-# Start development server with API proxy
-make web-dev
+## Paquete de un bot
 
-# Build production bundle
-make web-build
+El ZIP contiene exactamente estos archivos en su raíz:
+
+```text
+agentrix.json
+bot.py
 ```
 
-## API Documentation
+Ejemplo de `agentrix.json`:
 
-The OpenAPI 3.1 specifications are organized under `open-api/`:
-- `open-api/openapi.yaml`: Master API specification
-- Resources: `auth.yaml`, `contests.yaml`, `categories.yaml`, `participants.yaml`, `games.yaml`, `agents.yaml`, `submissions.yaml`, `matches.yaml`, `results.yaml`, `rankings.yaml`, `replays.yaml`, `permissions.yaml`
+```json
+{
+  "name": "My Starfighter Bot",
+  "entrypoint": "bot.py",
+  "protocol_version": "1.0"
+}
+```
 
-## Contracts and Games
+La admisión limita el ZIP a 2 MiB, valida rutas y contenido, analiza la sintaxis Python y ejecuta `init` seguido de la percepción del tick 0. El endpoint es `POST /api/v1/submissions/upload` con formulario multipart `agent_id` y `bundle`.
 
-- `contracts/`: JSON Schemas defining the agent protocol, game manifest, and replay serialization.
-- `games/arena-basica/`: Canonical 2-4 bot battle game with manifest, engine, renderer, and example bots (`bot_hunter.py`, `bot_random.py`).
-- `web/`: Modern React dashboard and HTML5 canvas replay viewer.
+## Contratos
+
+- `contracts/agentrix-submission.schema.json`: manifiesto del ZIP.
+- `contracts/game.schema.json`: manifiesto fijo de Starfighter.
+- `contracts/replay.schema.json`: tipos de línea del replay NDJSON.
+- `protocol/engine/v1/`: contrato versionado Go–Rust.
+- `open-api/`: API HTTP.

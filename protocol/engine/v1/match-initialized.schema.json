@@ -8,6 +8,7 @@
     "matchId",
     "initialTick",
     "stateHash",
+    "publicSnapshot",
     "perceptions"
   ],
   "properties": {
@@ -22,6 +23,10 @@
     "stateHash": {
       "type": "string",
       "description": "Hash determinista del estado inicial autoritativo."
+    },
+    "publicSnapshot": {
+      "type": "object",
+      "description": "Snapshot público autoritativo y sanitizado de State[0]."
     },
     "perceptions": {
       "type": "object",

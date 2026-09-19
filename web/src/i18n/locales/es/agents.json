@@ -1,6 +1,6 @@
 {
   "title": "Mis agentes autónomos",
-  "subtitle": "Desarrolla, envía e inscribe agentes competitivos en los torneos de arena.",
+  "subtitle": "Desarrolla y valida bots Python para competir en Starfighter.",
   "authRequired": {
     "title": "Autenticación requerida",
     "description": "Inicia sesión para gestionar tus agentes y envíos de código."
@@ -23,9 +23,12 @@
     "enroll": "Inscribir en concurso"
   },
   "submission": {
-    "uploadTitle": "Subir envío de código",
+    "uploadTitle": "Admitir bot de Starfighter",
     "language": "Lenguaje:",
-    "publish": "Publicar envío de código",
+    "publish": "Validar y publicar ZIP",
+    "chooseZip": "Selecciona el paquete ZIP",
+    "zipHelp": "Debe contener agentrix.json y bot.py en la raíz. Máximo 2 MiB.",
+    "admissionCheck": "Agentrix comprobará sintaxis, inicialización y respuesta al tick 0.",
     "history": "Historial de versiones",
     "emptyHistory": "Aún no se han subido versiones de código.",
     "table": {
@@ -39,8 +42,8 @@
   "messages": {
     "createdSuccess": "¡Agente creado con éxito!",
     "createError": "Error al crear el agente",
-    "submitSuccess": "¡Envío de código v{{version}} creado con éxito!",
-    "submitError": "Error al enviar el código",
+    "submitSuccess": "Bot Python v{{version}} admitido correctamente.",
+    "submitError": "El bot no superó la admisión",
     "enrollSuccess": "¡'{{name}}' inscrito en el concurso '{{contest}}'!",
     "enrollError": "Error al inscribir el agente"
   }

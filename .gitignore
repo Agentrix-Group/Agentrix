@@ -1,6 +1,8 @@
 # Binaries
 main
 bin/
+Agentrix
+agentrix
 
 # Python bytecode
 __pycache__/

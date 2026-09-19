@@ -21,7 +21,7 @@ func TestInMemoryJobQueue(t *testing.T) {
 		Attempt:       1,
 		MatchId:       "match-1",
 		ContestId:     "contest-1",
-		GameId:        "arena-basica",
+		GameId:        "starfighter",
 		SubmissionIds: []string{"sub-1", "sub-2"},
 		Seed:          1234,
 	}
@@ -36,7 +36,14 @@ func TestInMemoryJobQueue(t *testing.T) {
 	r.NoError(err)
 	r.NotNil(dequeued)
 	r.Equal("job-1", dequeued.JobId)
+	r.Equal(2, dequeued.Attempt)
 	r.Equal(0, q.Len())
+	r.NoError(q.Retry(ctx, dequeued, context.DeadlineExceeded))
+	r.Equal(1, q.Len())
+	retried, err := q.Dequeue(ctx)
+	r.NoError(err)
+	r.Equal(3, retried.Attempt)
+	r.NoError(q.Complete(ctx, retried))
 
 	// Test context cancellation when buffer is full
 	fullQ := NewJobQueue(1)

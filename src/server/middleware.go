@@ -47,13 +47,10 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodPatch: common.AdminPermission,
 	},
 	"/api/v1/games": {
-		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.AdminPermission,
+		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/games/{id}": {
-		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/agents": {
 		http.MethodGet:  common.ReadPermission,
@@ -65,13 +62,13 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodPatch: common.AdminPermission,
 	},
 	"/api/v1/submissions": {
-		http.MethodGet:  common.ReadPermission,
+		http.MethodGet: common.ReadPermission,
+	},
+	"/api/v1/submissions/upload": {
 		http.MethodPost: common.SubmitAgentPermission,
 	},
 	"/api/v1/submissions/{id}": {
-		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.SubmitAgentPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/matches": {
 		http.MethodGet:  common.ReadPermission,
@@ -95,12 +92,6 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/rankings/{id}": {
-		http.MethodGet: common.ReadPermission,
-	},
-	"/api/v1/replays/{id}": {
-		http.MethodGet: common.ReadPermission,
-	},
-	"/api/v1/replays/{id}/stream": {
 		http.MethodGet: common.ReadPermission,
 	},
 }

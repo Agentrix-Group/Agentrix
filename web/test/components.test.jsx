@@ -47,7 +47,7 @@ describe('Localized React Components Rendering', () => {
   it('renders MatchCard with localized status and attributes in Spanish and English', async () => {
     const mockMatch = {
       id: 'm-12345678-abcd',
-      game_id: 'arena-basica',
+      game_id: 'starfighter',
       status: 'finished',
       seed: 42,
       replay_id: 'rep-001',
@@ -63,7 +63,7 @@ describe('Localized React Components Rendering', () => {
     // Spanish verification
     expect(screen.getByText('Partida #m-123456')).toBeDefined();
     expect(screen.getByText('Finalizada')).toBeDefined();
-    expect(screen.getByText(/Juego: arena-basica/)).toBeDefined();
+    expect(screen.getByText(/Juego: starfighter/)).toBeDefined();
     expect(screen.getByText(/Puesto 1: sub-alpha/)).toBeDefined();
     expect(screen.getByText('Ver repetición')).toBeDefined();
 
@@ -75,21 +75,32 @@ describe('Localized React Components Rendering', () => {
 
     expect(screen.getByText('Match #m-123456')).toBeDefined();
     expect(screen.getByText('Finished')).toBeDefined();
-    expect(screen.getByText(/Game: arena-basica/)).toBeDefined();
+    expect(screen.getByText(/Game: starfighter/)).toBeDefined();
     expect(screen.getByText(/Rank 1: sub-alpha/)).toBeDefined();
     expect(screen.getByText('Watch Replay')).toBeDefined();
   });
 
-  it('does not offer match execution in the public match card', () => {
-    render(
+  it('does not offer match execution in the public match card unless authorized', () => {
+    const pendingMatch = { id: 'm-pending', game_id: 'starfighter', status: 'pending', seed: 7 };
+    const { rerender } = render(
       <MatchCard
-        match={{ id: 'match-1', status: 'pending', game_id: 'arena-basica', seed: 42 }}
+        match={pendingMatch}
         onWatchReplay={() => {}}
         onTriggerRun={() => {}}
       />
     );
 
     expect(screen.queryByRole('button', { name: 'Ejecutar partida' })).toBeNull();
+
+    rerender(
+      <MatchCard
+        match={pendingMatch}
+        onWatchReplay={() => {}}
+        onTriggerRun={() => {}}
+        canRun={true}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Ejecutar partida' })).toBeDefined();
   });
 
   it('renders RankingsPage table headers localized in Spanish and English', async () => {

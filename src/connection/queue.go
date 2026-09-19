@@ -129,27 +129,30 @@ func (q *postgresJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
 	if q.closed.Load() {
 		return nil, errors.New("queue is closed")
 	}
-	tx, err := q.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback()
 
 	var job MatchJob
 	var submissions []byte
-	err = tx.QueryRowContext(ctx, `
-		SELECT id, match_id, COALESCE(contest_id, ''), game_id, submission_ids, seed, attempt + 1
-		FROM match_jobs
-		WHERE attempt < max_attempts
-		  AND available_at <= NOW()
-		  AND (
-			status = 'pending'
-			OR (status = 'reserved' AND reserved_at < NOW() - INTERVAL '5 minutes')
-		  )
-		ORDER BY created_at
-		FOR UPDATE SKIP LOCKED
-		LIMIT 1
-	`).Scan(
+	err := q.db.QueryRowContext(ctx, `
+		UPDATE match_jobs
+		SET status = 'reserved',
+			reserved_by = $1,
+			reserved_at = NOW(),
+			attempt = attempt + 1,
+			updated_at = NOW()
+		WHERE id = (
+			SELECT id FROM match_jobs
+			WHERE attempt < max_attempts
+			  AND available_at <= NOW()
+			  AND (
+				status = 'pending'
+				OR (status = 'reserved' AND reserved_at < NOW() - INTERVAL '2 minutes')
+			  )
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, match_id, COALESCE(contest_id, ''), game_id, submission_ids, seed, attempt;
+	`, q.workerID).Scan(
 		&job.JobId, &job.MatchId, &job.ContestId, &job.GameId,
 		&submissions, &job.Seed, &job.Attempt,
 	)
@@ -160,17 +163,6 @@ func (q *postgresJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal(submissions, &job.SubmissionIds); err != nil {
-		return nil, err
-	}
-	if _, err := tx.ExecContext(ctx, `
-		UPDATE match_jobs
-		SET status = 'reserved', attempt = $2, reserved_at = NOW(),
-			reserved_by = $3, updated_at = NOW()
-		WHERE id = $1
-	`, job.JobId, job.Attempt, q.workerID); err != nil {
-		return nil, err
-	}
-	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
 	return &job, nil

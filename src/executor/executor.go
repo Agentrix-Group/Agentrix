@@ -14,6 +14,7 @@ import (
 	"github.com/F4nk1/Agentrix/src/engine"
 	"github.com/F4nk1/Agentrix/src/game"
 	"github.com/F4nk1/Agentrix/src/model"
+	replaystream "github.com/F4nk1/Agentrix/src/replay"
 	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/google/uuid"
@@ -393,6 +394,12 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		return fmt.Errorf("seal authoritative replay: %w", err)
 	}
 	replayRecord.DurationTicks = replayWriter.FrameCount()
+	if replayRecord.FilePath != "" && replaystream.IsZstdAvailable() {
+		if zstPath, err := replaystream.CompressZstd(ctx, replayRecord.FilePath); err == nil {
+			tracer.InfoEvent(ctx, tracer.ScopeReplay, "replay.compressed", "Replay comprimido con Zstandard",
+				tracer.String("zst_path", zstPath))
+		}
+	}
 
 	// Build rankings list if not supplied by engine
 	if len(rankings) == 0 {

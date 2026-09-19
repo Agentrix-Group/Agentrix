@@ -40,7 +40,17 @@ func (s *service) GetReplay(ctx context.Context, id string) (*model.Replay, erro
 	subpath := fmt.Sprintf("replays/%s.ndjson", id)
 	raw, err := s.artifacts.Read(ctx, subpath)
 	if err != nil {
-		return nil, err
+		zstSubpath := fmt.Sprintf("replays/%s.ndjson.zst", id)
+		if s.artifacts.Exists(zstSubpath) {
+			decompressed, decErr := replaystream.DecompressZstd(ctx, s.artifacts.GetPath(zstSubpath))
+			if decErr != nil {
+				return nil, decErr
+			}
+			raw = decompressed
+			subpath = zstSubpath
+		} else {
+			return nil, err
+		}
 	}
 	document, err := replaystream.DecodeNDJSON(bytes.NewReader(raw))
 	if err != nil {
@@ -58,5 +68,14 @@ func (s *service) GetReplay(ctx context.Context, id string) (*model.Replay, erro
 }
 
 func (s *service) StreamReplay(ctx context.Context, id string) ([]byte, error) {
-	return s.artifacts.Read(ctx, fmt.Sprintf("replays/%s.ndjson", id))
+	subpath := fmt.Sprintf("replays/%s.ndjson", id)
+	raw, err := s.artifacts.Read(ctx, subpath)
+	if err == nil {
+		return raw, nil
+	}
+	zstSubpath := fmt.Sprintf("replays/%s.ndjson.zst", id)
+	if s.artifacts.Exists(zstSubpath) {
+		return replaystream.DecompressZstd(ctx, s.artifacts.GetPath(zstSubpath))
+	}
+	return nil, err
 }

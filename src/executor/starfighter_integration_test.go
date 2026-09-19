@@ -361,6 +361,7 @@ func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *test
 			if err != nil {
 				return nil, err
 			}
+			replay.FilePath = replayPath
 			return replaystream.NewStreamWriter(file, metadata)
 		},
 		createResultFn: func(ctx context.Context, res *model.Result) error {
@@ -424,5 +425,14 @@ func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *test
 	}
 
 	r.Equal(50, document.Result.FinalTick, "final tick must be 50")
+
+	// Verify Zstandard compression was performed upon completion
+	if replaystream.IsZstdAvailable() {
+		zstPath := replayPath + ".zst"
+		r.FileExists(zstPath, "authoritative NDJSON replay must be compressed to .zst upon match completion")
+		decompressed, decErr := replaystream.DecompressZstd(ctx, zstPath)
+		r.NoError(decErr, "decompression of replay .zst must succeed")
+		r.NotEmpty(decompressed, "decompressed replay payload must not be empty")
+	}
 }
 

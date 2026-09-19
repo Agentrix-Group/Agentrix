@@ -443,9 +443,9 @@ Configuración:
 
 ### Fase 2: Replay Autorizado y Persistencia (Corte 2)
 
-* [ ] Exportar `publicSnapshot` en cada tick desde `starfighter-engine`.
-* [ ] Implementar streaming NDJSON en el Worker de Go y compresión Zstd al finalizar.
-* [ ] Conectar la reserva de partidas en PostgreSQL con `FOR UPDATE SKIP LOCKED`.
+* [x] Exportar `publicSnapshot` en cada tick desde `starfighter-engine`.
+* [x] Implementar streaming NDJSON en el Worker de Go y compresión Zstd al finalizar.
+* [x] Conectar la reserva de partidas en PostgreSQL con `FOR UPDATE SKIP LOCKED`.
 
 ### Fase 3: Visor Web de Starfighter (Corte 3)
 

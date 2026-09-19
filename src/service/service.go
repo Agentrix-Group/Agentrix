@@ -5,6 +5,7 @@ import (
 
 	"github.com/F4nk1/Agentrix/src/connection"
 	"github.com/F4nk1/Agentrix/src/model"
+	replaystream "github.com/F4nk1/Agentrix/src/replay"
 	"github.com/F4nk1/Agentrix/src/repository"
 )
 
@@ -37,9 +38,6 @@ type Service interface {
 	// Games
 	ListGames(ctx context.Context) ([]model.Game, error)
 	GetGame(ctx context.Context, id string) (*model.Game, error)
-	CreateGame(ctx context.Context, game *model.Game) error
-	UpdateGame(ctx context.Context, game *model.Game) error
-	ActivateGame(ctx context.Context, id string, isActive bool) error
 
 	// Agents
 	ListAgents(ctx context.Context) ([]model.Agent, error)
@@ -53,9 +51,7 @@ type Service interface {
 	ListSubmissions(ctx context.Context) ([]model.Submission, error)
 	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
 	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
-	CreateSubmission(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error
-	UpdateSubmission(ctx context.Context, submission *model.Submission) error
-	ActivateSubmission(ctx context.Context, id string, isActive bool) error
+	CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error)
 
 	// Matches
 	ListMatches(ctx context.Context) ([]model.Match, error)
@@ -80,7 +76,7 @@ type Service interface {
 
 	// Replays
 	GetReplay(ctx context.Context, id string) (*model.Replay, error)
-	SaveReplay(ctx context.Context, replay *model.Replay, data *model.ReplayData) error
+	OpenReplay(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error)
 	StreamReplay(ctx context.Context, id string) ([]byte, error)
 }
 
@@ -88,12 +84,21 @@ type service struct {
 	repo      repository.Repository
 	artifacts connection.ArtifactStore
 	queue     connection.JobQueue
+	validator BotAdmissionValidator
 }
 
-func NewService(repo repository.Repository, artifacts connection.ArtifactStore, queue connection.JobQueue) Service {
-	return &service{
+type BotAdmissionValidator interface {
+	ValidateBot(ctx context.Context, codePath string) error
+}
+
+func NewService(repo repository.Repository, artifacts connection.ArtifactStore, queue connection.JobQueue, validators ...BotAdmissionValidator) Service {
+	svc := &service{
 		repo:      repo,
 		artifacts: artifacts,
 		queue:     queue,
 	}
+	if len(validators) > 0 {
+		svc.validator = validators[0]
+	}
+	return svc
 }

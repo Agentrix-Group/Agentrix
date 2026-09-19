@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
 	"github.com/F4nk1/Agentrix/src/config"
 	"github.com/F4nk1/Agentrix/src/connection"
@@ -27,35 +29,33 @@ func TestReplaysService(t *testing.T) {
 		MatchId: "match-123",
 	}
 
-	data := &model.ReplayData{
-		GameId:   "arena-basica",
-		MatchId:  "match-123",
-		Seed:     42,
-		Winner:   "bot-1",
-		Scores:   map[string]int{"bot-1": 100},
-		Players:  []string{"bot-1"},
-		MaxTicks: 50,
-		Frames: []model.ReplayFrame{
-			{Tick: 1, Events: []string{"start"}},
-		},
-	}
-
-	// SaveReplay
-	err = svc.SaveReplay(ctx, replay, data)
+	writer, err := svc.OpenReplay(ctx, replay, model.ReplayMetadata{
+		ReplayID: "rep-123", MatchID: "match-123", GameID: "starfighter", Seed: 42,
+		Participants: []string{"bot-1", "bot-2"}, FixedTimestepMs: 17, CreatedAt: time.Now().UTC(),
+	})
 	r.NoError(err)
+	snapshot, _ := json.Marshal(map[string]any{"tick": 0, "fighters": []any{}, "bullets": []any{}, "stateHash": "hash-0"})
+	r.NoError(writer.WriteSnapshot(model.ReplaySnapshot{Tick: 0, PublicSnapshot: snapshot, StateHash: "hash-0"}))
+	r.NoError(writer.Complete(model.ReplayResult{
+		FinalTick: 0, Winner: "bot-1", Scores: map[string]int{"bot-1": 100, "bot-2": 0},
+		Reason: "eliminated", FinalStateHash: "hash-0", FinishedAt: time.Now().UTC(),
+	}))
+	r.NoError(writer.Close())
 	r.NotEmpty(replay.FilePath)
-	r.Equal(1, replay.DurationTicks)
 
 	// GetReplay
 	fetched, err := svc.GetReplay(ctx, "rep-123")
 	r.NoError(err)
 	r.NotNil(fetched)
 	r.Equal("rep-123", fetched.Id)
-	r.Equal("bot-1", fetched.Data.Winner)
+	r.Equal(1, fetched.DurationTicks)
+	r.Contains(fetched.Summary, "bot-1")
 
 	// StreamReplay
 	raw, err := svc.StreamReplay(ctx, "rep-123")
 	r.NoError(err)
 	r.NotEmpty(raw)
-	r.Contains(string(raw), "arena-basica")
+	r.Contains(string(raw), "\"type\":\"metadata\"")
+	r.Contains(string(raw), "starfighter")
+	r.Contains(string(raw), "\"type\":\"result\"")
 }

@@ -98,31 +98,3 @@ func (r *repository) CreateSubmission(ctx context.Context, submission *model.Sub
 
 	return nil
 }
-
-func (r *repository) UpdateSubmission(ctx context.Context, submission *model.Submission) error {
-	db, err := r.getDb()
-	if err != nil {
-		return err
-	}
-
-	query := `UPDATE submissions SET status = $1, code_path = $2, active = $3 WHERE id = $4`
-
-	_, err = db.ExecContext(ctx, query, submission.Status, submission.CodePath, submission.Active, submission.Id)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (r *repository) ActivateSubmission(ctx context.Context, id string, isActive bool) error {
-	db, err := r.getDb()
-	if err != nil {
-		return err
-	}
-
-	query := `UPDATE submissions SET active = $1 WHERE id = $2`
-
-	_, err = db.ExecContext(ctx, query, isActive, id)
-	return err
-}

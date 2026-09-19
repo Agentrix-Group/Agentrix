@@ -12,6 +12,7 @@ import (
 	"github.com/F4nk1/Agentrix/src/engine"
 	"github.com/F4nk1/Agentrix/src/game"
 	"github.com/F4nk1/Agentrix/src/model"
+	replaystream "github.com/F4nk1/Agentrix/src/replay"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,11 +48,13 @@ func TestStarfighterIntegration_RealRustEngineAndPythonBots(t *testing.T) {
 	// Ensure manifest for starfighter has the correct resolved binary path
 	manifest := game.GetRegistry().GetManifest("starfighter")
 	r.NotNil(manifest, "starfighter manifest must be loaded")
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
 	manifest.BinaryPath = engineBin
 	// Limit max ticks to 5 for a fast integration test
 	manifest.MaxTicks = 5
 
-	var capturedReplay *model.ReplayData
+	replayPath := filepath.Join(t.TempDir(), "authoritative.ndjson")
 	resultsCreated := 0
 	updatedStatuses := make([]string, 0)
 
@@ -81,9 +84,12 @@ func TestStarfighterIntegration_RealRustEngineAndPythonBots(t *testing.T) {
 				Active:   true,
 			}, nil
 		},
-		saveReplayFn: func(ctx context.Context, replay *model.Replay, data *model.ReplayData) error {
-			capturedReplay = data
-			return nil
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
 		},
 		createResultFn: func(ctx context.Context, res *model.Result) error {
 			resultsCreated++
@@ -121,25 +127,28 @@ func TestStarfighterIntegration_RealRustEngineAndPythonBots(t *testing.T) {
 	r.Contains(updatedStatuses, common.MatchStatusRunning)
 	r.Contains(updatedStatuses, common.MatchStatusFinished)
 	r.Equal(2, resultsCreated, "both player results must be created")
-	r.NotNil(capturedReplay, "replay data must be saved")
+	replayFile, err := os.Open(replayPath)
+	r.NoError(err)
+	defer replayFile.Close()
+	document, err := replaystream.DecodeNDJSON(replayFile)
+	r.NoError(err, "the real match must produce a sealed NDJSON replay")
+	r.Equal("starfighter", document.Metadata.GameID)
+	r.Equal(17, document.Metadata.FixedTimestepMs)
+	r.Equal(document.Result.FinalStateHash, document.Snapshots[len(document.Snapshots)-1].StateHash)
 
 	// Verify that at least 3 valid ticks were simulated
 	// Frame 0 is initial tick, frames 1..N are simulated ticks
-	r.GreaterOrEqual(len(capturedReplay.Frames), 4,
+	r.GreaterOrEqual(len(document.Snapshots), 4,
 		"must have at least 4 replay frames (frame 0 initial + at least 3 simulated ticks)")
 
-	t.Logf("Total simulated frames: %d", len(capturedReplay.Frames))
+	t.Logf("Total simulated frames: %d", len(document.Snapshots))
 
 	// Verify frames 1, 2, 3 have valid action records without tick desync
 	for tick := 1; tick <= 3; tick++ {
-		frame := capturedReplay.Frames[tick]
+		frame := document.Snapshots[tick]
 		r.Equal(tick, frame.Tick, "frame tick must match sequentially")
-		r.NotEmpty(frame.Actions, "actions must be recorded for tick %d", tick)
-		r.NotNil(frame.Actions["sub-star-1"], "sub-star-1 must have action")
-		r.NotNil(frame.Actions["sub-star-2"], "sub-star-2 must have action")
-		// Verify neither was marked as REST due to an invalid action / tick mismatch
-		r.NotEqual("REST", frame.Actions["sub-star-1"], "sub-star-1 must have valid non-REST action on tick %d", tick)
-		r.NotEqual("REST", frame.Actions["sub-star-2"], "sub-star-2 must have valid non-REST action on tick %d", tick)
+		r.NotEmpty(frame.PublicSnapshot)
+		r.NotEmpty(frame.StateHash)
 	}
 }
 
@@ -159,10 +168,12 @@ func TestStarfighterIntegration_WithFallbackBots(t *testing.T) {
 
 	manifest := game.GetRegistry().GetManifest("starfighter")
 	r.NotNil(manifest)
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
 	manifest.BinaryPath = engineBin
 	manifest.MaxTicks = 4
 
-	var capturedReplay *model.ReplayData
+	capturedReplay := &captureReplayWriter{}
 	mockSvc := &mockExecutorService{
 		getMatchFn: func(ctx context.Context, id string) (*model.Match, error) {
 			return &model.Match{
@@ -174,9 +185,8 @@ func TestStarfighterIntegration_WithFallbackBots(t *testing.T) {
 		updateMatchFn: func(ctx context.Context, match *model.Match) error {
 			return nil
 		},
-		saveReplayFn: func(ctx context.Context, replay *model.Replay, data *model.ReplayData) error {
-			capturedReplay = data
-			return nil
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			return capturedReplay, nil
 		},
 		createResultFn: func(ctx context.Context, res *model.Result) error {
 			return nil
@@ -207,15 +217,85 @@ func TestStarfighterIntegration_WithFallbackBots(t *testing.T) {
 
 	err := exec.Execute(ctx, job)
 	r.NoError(err, "match execution with fallback bots must succeed")
-	r.NotNil(capturedReplay)
-	r.GreaterOrEqual(len(capturedReplay.Frames), 4, "must have at least 4 replay frames")
+	r.True(capturedReplay.completed)
+	r.GreaterOrEqual(len(capturedReplay.snapshots), 4, "must have at least 4 replay frames")
 
 	// Both fallback bots (bot-ref-1 and bot-ref-2) must have valid actions without error
 	for tick := 1; tick <= 3; tick++ {
-		frame := capturedReplay.Frames[tick]
-		r.NotNil(frame.Actions["bot-ref-1"])
-		r.NotNil(frame.Actions["bot-ref-2"])
-		r.NotEqual("REST", frame.Actions["bot-ref-1"])
-		r.NotEqual("REST", frame.Actions["bot-ref-2"])
+		frame := capturedReplay.snapshots[tick]
+		r.Equal(tick, frame.Tick)
+		r.NotEmpty(frame.PublicSnapshot)
 	}
+}
+
+func TestStarfighterIntegration_TimeoutDisqualifiesAndSealsReplay(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+	gamesDir := resolveTestPath("games")
+	r.NoError(game.GetRegistry().LoadGamesFromDir(gamesDir))
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest)
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
+	manifest.MaxTicks = 50
+
+	slowBot := filepath.Join(t.TempDir(), "slow_bot.py")
+	r.NoError(os.WriteFile(slowBot, []byte(`import json, sys, time
+json.loads(sys.stdin.readline())
+for line in sys.stdin:
+    message = json.loads(line)
+    if message["type"] == "end":
+        break
+    time.sleep(2)
+`), 0o600))
+	hunter := resolveTestPath("games/starfighter/examples/bot_hunter.py")
+	replayPath := filepath.Join(t.TempDir(), "timeout.ndjson")
+
+	mockSvc := &mockExecutorService{
+		getMatchFn: func(context.Context, string) (*model.Match, error) {
+			return &model.Match{Id: "match-timeout", GameId: "starfighter", Status: common.MatchStatusPending}, nil
+		},
+		getSubmissionFn: func(_ context.Context, id string) (*model.Submission, error) {
+			path := hunter
+			if id == "slow" {
+				path = slowBot
+			}
+			return &model.Submission{Id: id, AgentId: id, Language: "python", CodePath: path, Status: common.SubmissionStatusReady, Active: true}, nil
+		},
+		openReplayFn: func(_ context.Context, _ *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
+		},
+	}
+	engineFactory := func(ctx context.Context, _ *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{BinaryPath: engineBin, HandshakeTimeout: 5 * time.Second})
+		return client, err
+	}
+	exec := NewMatchExecutor(mockSvc, NewSandbox(50*time.Millisecond), engineFactory)
+	started := time.Now()
+	err := exec.Execute(ctx, &connection.MatchJob{
+		JobId: "job-timeout", MatchId: "match-timeout", GameId: "starfighter",
+		SubmissionIds: []string{"slow", "hunter"}, Seed: 41,
+	})
+	r.NoError(err)
+	r.Less(time.Since(started), 2*time.Second, "the slow bot must be killed before its sleep completes")
+
+	file, err := os.Open(replayPath)
+	r.NoError(err)
+	defer file.Close()
+	document, err := replaystream.DecodeNDJSON(file)
+	r.NoError(err)
+	r.Equal("timeout", document.Result.Reason)
+	r.Equal("hunter", document.Result.Winner)
+	r.Equal(1, document.Result.FinalTick)
 }

@@ -43,7 +43,7 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 
 	req := InitializeMatchRequest{
 		MatchID:         "m-100",
-		GameID:          "arena-basica",
+		GameID:          "starfighter",
 		Seed:            42,
 		FixedTimestepMs: 50,
 		MaxTicks:        100,
@@ -61,12 +61,11 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 	r.Len(parsedReq.Players, 2)
 
 	tickReq := AdvanceTickRequest{
-		Tick: 1,
+		Tick: 0,
 		Actions: map[string]PlayerActionInput{
 			"bot-1": {
-				Status:     ActionStatusValid,
-				ActionType: "MOVE",
-				Payload:    map[string]interface{}{"direction": "UP"},
+				Status:  ActionStatusValid,
+				Payload: json.RawMessage(`{"thrust":"FORWARD","turn":"NONE","shoot":false,"shield":false}`),
 			},
 			"bot-2": {
 				Status:       ActionStatusTimeout,
@@ -82,7 +81,7 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 
 	res := MatchResult{
 		FinalTick:      100,
-		Reason:         "victory",
+		Reason:         "eliminated",
 		Winner:         "bot-1",
 		Scores:         map[string]int{"bot-1": 150, "bot-2": 50},
 		Rankings:       []PlayerRank{{PlayerID: "bot-1", Rank: 1, Score: 150}},
@@ -90,7 +89,7 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 	}
 	resData, err := json.Marshal(res)
 	r.NoError(err)
-	r.Contains(string(resData), `"reason":"victory"`)
+	r.Contains(string(resData), `"reason":"eliminated"`)
 }
 
 func TestContractExamplesValidation(t *testing.T) {
@@ -131,7 +130,7 @@ func TestContractExamplesValidation(t *testing.T) {
 		case TypeAdvanceTick:
 			var p AdvanceTickRequest
 			r.NoError(json.Unmarshal(payloadBytes, &p))
-			r.True(p.Tick > 0)
+			r.True(p.Tick >= 0)
 			r.NotEmpty(p.Actions)
 		case TypeTickCompleted:
 			var p TickResult

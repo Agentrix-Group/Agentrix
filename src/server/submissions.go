@@ -2,11 +2,9 @@ package server
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
-	"fmt"
+	"io"
 	"net/http"
-	"strconv"
 
 	"github.com/F4nk1/Agentrix/src/common"
 	"github.com/F4nk1/Agentrix/src/model"
@@ -14,13 +12,6 @@ import (
 	"github.com/F4nk1/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
-
-type CreateSubmissionRequest struct {
-	AgentId  string `json:"agent_id"`
-	Version  int    `json:"version"`
-	Language string `json:"language"`
-	Code     string `json:"code"`
-}
 
 func (s *Server) listSubmissions(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -59,82 +50,52 @@ func (s *Server) getSubmission(w http.ResponseWriter, r *http.Request) {
 	common.WriteObjectResponse(w, http.StatusOK, submission)
 }
 
-func (s *Server) createSubmission(w http.ResponseWriter, r *http.Request) {
+func (s *Server) uploadSubmissionBundle(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
 	if !ok || claims == nil {
 		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
 		return
 	}
-
-	var req CreateSubmissionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
+	r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
+	if err := r.ParseMultipartForm(3 << 20); err != nil {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "ZIP upload exceeds the 2 MiB limit or is malformed")
 		return
 	}
-
-	submission := model.Submission{
-		AgentId:  req.AgentId,
-		Version:  req.Version,
-		Language: req.Language,
-		Status:   common.SubmissionStatusReady,
-	}
-
-	if err := validateSubmission(&submission); err != nil {
-		common.WriteErrorResponse(w, common.MISSING_FIELDS_ERROR)
+	agentID := r.FormValue("agent_id")
+	if agentID == "" {
+		common.WriteErrorMessage(w, common.MISSING_FIELDS_ERROR, "agent_id is required")
 		return
 	}
-
-	if err := s.Service.CreateSubmission(ctx, claims.ParticipantId, claims.RoleId, &submission, []byte(req.Code)); err != nil {
-		if errors.Is(err, service.ErrAgentNotFound) {
+	file, header, err := r.FormFile("bundle")
+	if err != nil {
+		common.WriteErrorMessage(w, common.MISSING_FIELDS_ERROR, "bundle ZIP is required")
+		return
+	}
+	defer file.Close()
+	if header.Size <= 0 || header.Size > 2<<20 {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "bundle ZIP must not exceed 2 MiB")
+		return
+	}
+	archive, err := io.ReadAll(io.LimitReader(file, (2<<20)+1))
+	if err != nil || len(archive) > 2<<20 {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "could not read bundle ZIP")
+		return
+	}
+	submission, err := s.Service.CreateSubmissionBundle(ctx, claims.ParticipantId, claims.RoleId, agentID, archive)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAgentNotFound):
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Agent not found")
-			return
+		case errors.Is(err, service.ErrAgentNotOwned):
+			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "You are not authorized to submit for this agent")
+		case errors.Is(err, service.ErrInvalidBotBundle), errors.Is(err, service.ErrAdmissionFailed):
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+		default:
+			tracer.FailRequest(ctx, tracer.ScopeArtifact, "submission.bundle.failed", "No se pudo admitir el ZIP del bot", tracer.Err(err))
+			common.WriteErrorResponse(w, common.INTERNAL_ERROR)
 		}
-		if errors.Is(err, service.ErrAgentNotOwned) {
-			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "You are not authorized to submit code for this agent")
-			return
-		}
-		if errors.Is(err, service.ErrEmptySubmissionCode) {
-			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "Submission code cannot be empty")
-			return
-		}
-		tracer.FailRequest(ctx, tracer.ScopeArtifact, "submission.create.failed", "No se pudo guardar el envío", tracer.Err(err))
-		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
-
 	common.WriteObjectResponse(w, http.StatusCreated, submission)
-}
-
-func (s *Server) updateSubmission(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := mux.Vars(r)["id"]
-
-	var submission model.Submission
-	if err := json.NewDecoder(r.Body).Decode(&submission); err != nil {
-		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
-		return
-	}
-	submission.Id = id
-
-	if err := s.Service.UpdateSubmission(ctx, &submission); err != nil {
-		tracer.FailRequest(ctx, tracer.ScopeDatabase, "submission.update.failed", "No se pudo actualizar el envío", tracer.Err(err))
-		common.WriteErrorResponse(w, common.DATABASE_ERROR)
-		return
-	}
-
-	common.WriteSuccessResponse(w, http.StatusOK, fmt.Sprintf("Submission %s updated successfully", id))
-}
-
-func (s *Server) activateSubmission(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	id := mux.Vars(r)["id"]
-	isActive, _ := strconv.ParseBool(r.URL.Query().Get("status"))
-
-	if err := s.Service.ActivateSubmission(ctx, id, isActive); err != nil {
-		common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Submission not found")
-		return
-	}
-
-	common.WriteSuccessResponse(w, http.StatusOK, fmt.Sprintf("Submission %s status updated", id))
 }

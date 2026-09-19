@@ -4,8 +4,7 @@ paths:
       summary: List matches
       tags:
         - Matches
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: contest_id
           in: query
@@ -59,8 +58,7 @@ paths:
       summary: Get match details by ID
       tags:
         - Matches
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: id
           in: path

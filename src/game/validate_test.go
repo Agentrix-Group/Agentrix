@@ -12,53 +12,23 @@ func TestValidateManifest(t *testing.T) {
 	// nil manifest
 	r.Error(ValidateManifest(nil))
 
-	// missing ID
-	r.Error(ValidateManifest(&Manifest{Name: "Game", MinPlayers: 2, MaxPlayers: 4, MaxTicks: 100}))
-
-	// missing Name
-	r.Error(ValidateManifest(&Manifest{ID: "g1", MinPlayers: 2, MaxPlayers: 4, MaxTicks: 100}))
-
-	// invalid min players
-	r.Error(ValidateManifest(&Manifest{ID: "g1", Name: "Game", MinPlayers: 0, MaxPlayers: 4, MaxTicks: 100}))
-
-	// max players < min players
-	r.Error(ValidateManifest(&Manifest{ID: "g1", Name: "Game", MinPlayers: 4, MaxPlayers: 2, MaxTicks: 100}))
-
-	// invalid max ticks
-	r.Error(ValidateManifest(&Manifest{ID: "g1", Name: "Game", MinPlayers: 2, MaxPlayers: 4, MaxTicks: 0}))
-
-	// valid manifest
-	r.NoError(ValidateManifest(&Manifest{
-		ID:         "arena-basica",
-		Name:       "Arena Basica",
-		MinPlayers: 2,
-		MaxPlayers: 4,
-		MaxTicks:   100,
-	}))
-}
-
-func TestValidateAction(t *testing.T) {
-	r := require.New(t)
-
-	// nil action
-	r.Error(ValidateAction(nil))
-
-	// valid actions
-	validActions := []ActionType{
-		ActionUp,
-		ActionDown,
-		ActionLeft,
-		ActionRight,
-		ActionAttack,
-		ActionShield,
-		ActionRest,
+	valid := Manifest{
+		ID: "starfighter", Name: "Starfighter Arena", MinPlayers: 2, MaxPlayers: 2,
+		MaxTicks: 100, FixedTimestepMs: 17, BinaryPath: "bin/starfighter-engine",
+		ReferenceAgents: []ReferenceAgent{{ID: "hunter", Path: "bot_hunter.py"}},
 	}
+	r.NoError(ValidateManifest(&valid))
 
-	for _, actType := range validActions {
-		r.NoError(ValidateAction(&Action{Type: actType}))
-	}
-
-	// invalid action
-	r.Error(ValidateAction(&Action{Type: "teleport"}))
-	r.Error(ValidateAction(&Action{Type: ""}))
+	invalid := valid
+	invalid.ID = "other-game"
+	r.Error(ValidateManifest(&invalid))
+	invalid = valid
+	invalid.MaxPlayers = 4
+	r.Error(ValidateManifest(&invalid))
+	invalid = valid
+	invalid.FixedTimestepMs = 0
+	r.Error(ValidateManifest(&invalid))
+	invalid = valid
+	invalid.ReferenceAgents = nil
+	r.Error(ValidateManifest(&invalid))
 }

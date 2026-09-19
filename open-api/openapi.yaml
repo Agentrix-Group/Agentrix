@@ -28,6 +28,8 @@ paths:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests'
   /api/v1/contests/{id}:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}'
+  /api/v1/contests/{id}/agents:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1agents'
 
   # Categories
   /api/v1/categories:
@@ -52,6 +54,8 @@ paths:
     $ref: './submissions.yaml#/paths/~1api~1v1~1submissions'
   /api/v1/submissions/{id}:
     $ref: './submissions.yaml#/paths/~1api~1v1~1submissions~1{id}'
+  /api/v1/submissions/upload:
+    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions~1upload'
 
   # Matches
   /api/v1/matches:

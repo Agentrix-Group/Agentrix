@@ -8,12 +8,12 @@ ON DUPLICATE KEY UPDATE email = VALUES(email);
 
 -- Reference Agents
 INSERT INTO agents (id, participant_id, game_id, name, description, active) VALUES
-('agent-random', 'part-admin', 'arena-basica', 'Random Wanderer', 'Baseline agent executing pseudo-random movements and actions.', TRUE),
-('agent-hunter', 'part-admin', 'arena-basica', 'Hunter Aggressor', 'Heuristic agent actively chasing and attacking adjacent opponents.', TRUE)
+('agent-evasive', 'part-admin', 'starfighter', 'Evasive Pilot', 'Reference pilot prioritizing movement and survival.', TRUE),
+('agent-hunter', 'part-admin', 'starfighter', 'Hunter Pilot', 'Reference pilot pursuing and firing at its opponent.', TRUE)
 ON DUPLICATE KEY UPDATE name = VALUES(name);
 
 -- Submissions for Reference Agents
 INSERT INTO submissions (id, agent_id, version, code_path, language, status, active) VALUES
-('sub-random-v1', 'agent-random', 1, 'games/arena-basica/examples/bot_random.py', 'python', 'ready', TRUE),
-('sub-hunter-v1', 'agent-hunter', 1, 'games/arena-basica/examples/bot_hunter.py', 'python', 'ready', TRUE)
+('sub-evasive-v1', 'agent-evasive', 1, 'games/starfighter/examples/bot_evasive.py', 'python', 'ready', TRUE),
+('sub-hunter-v1', 'agent-hunter', 1, 'games/starfighter/examples/bot_hunter.py', 'python', 'ready', TRUE)
 ON DUPLICATE KEY UPDATE status = VALUES(status);

@@ -49,7 +49,7 @@ func TestContestJSONSerialization(t *testing.T) {
 		Id:          "contest-1",
 		Name:        "Grand Tournament",
 		Description: "Official season tournament",
-		GameId:      "arena-basica",
+		GameId:      "starfighter",
 		CategoryId:  "cat-strat",
 		StartDate:   now,
 		EndDate:     now.Add(24 * time.Hour),

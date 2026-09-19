@@ -44,7 +44,7 @@ func (m *mockMatchesService) GetMatch(ctx context.Context, id string) (*model.Ma
 	if m.getMatchFn != nil {
 		return m.getMatchFn(ctx, id)
 	}
-	return &model.Match{Id: id, GameId: "arena-basica"}, nil
+	return &model.Match{Id: id, GameId: "starfighter"}, nil
 }
 
 func (m *mockMatchesService) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) error {
@@ -80,7 +80,7 @@ func TestServerMatchesHandlers(t *testing.T) {
 
 	mockSvc := &mockMatchesService{
 		listMatchesFn: func(ctx context.Context) ([]model.Match, error) {
-			return []model.Match{{Id: "m1", GameId: "arena-basica"}}, nil
+			return []model.Match{{Id: "m1", GameId: "starfighter"}}, nil
 		},
 		listMatchesByContestFn: func(ctx context.Context, contestId string) ([]model.Match, error) {
 			return []model.Match{{Id: "m1", ContestId: contestId}}, nil
@@ -89,7 +89,7 @@ func TestServerMatchesHandlers(t *testing.T) {
 			if id == "not-found" {
 				return nil, sql.ErrNoRows
 			}
-			return &model.Match{Id: id, GameId: "arena-basica"}, nil
+			return &model.Match{Id: id, GameId: "starfighter"}, nil
 		},
 	}
 
@@ -122,7 +122,7 @@ func TestServerMatchesHandlers(t *testing.T) {
 	r.Equal(http.StatusNotFound, rec.Code)
 
 	// 5. createMatch (valid)
-	body, _ := json.Marshal(CreateMatchRequest{ContestId: "c1", GameId: "arena-basica", SubmissionIds: []string{"sub-1"}})
+	body, _ := json.Marshal(CreateMatchRequest{ContestId: "c1", GameId: "starfighter", SubmissionIds: []string{"sub-1"}})
 	req = httptest.NewRequest(http.MethodPost, "/matches", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	server.createMatch(rec, req)
@@ -143,7 +143,7 @@ func TestServerMatchesHandlers(t *testing.T) {
 	r.Equal(http.StatusAccepted, rec.Code)
 
 	// 8. updateMatch
-	body, _ = json.Marshal(model.Match{GameId: "arena-basica"})
+	body, _ = json.Marshal(model.Match{GameId: "starfighter"})
 	req = httptest.NewRequest(http.MethodPut, "/matches/m1", bytes.NewReader(body))
 	req = mux.SetURLVars(req, map[string]string{"id": "m1"})
 	rec = httptest.NewRecorder()
@@ -156,4 +156,22 @@ func TestServerMatchesHandlers(t *testing.T) {
 	rec = httptest.NewRecorder()
 	server.activateMatch(rec, req)
 	r.Equal(http.StatusOK, rec.Code)
+}
+
+func TestMatchReadRoutesArePublic(t *testing.T) {
+	server := NewServer(&mockMatchesService{
+		listMatchesFn: func(context.Context) ([]model.Match, error) {
+			return []model.Match{{Id: "m-public", GameId: "starfighter"}}, nil
+		},
+		getMatchFn: func(_ context.Context, id string) (*model.Match, error) {
+			return &model.Match{Id: id, GameId: "starfighter"}, nil
+		},
+	})
+
+	for _, path := range []string{"/api/v1/matches", "/api/v1/matches/m-public"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		server.Handler.ServeHTTP(response, request)
+		require.Equal(t, http.StatusOK, response.Code, path)
+	}
 }

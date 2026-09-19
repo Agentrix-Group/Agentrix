@@ -2,6 +2,7 @@ package executor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"testing"
@@ -12,16 +13,27 @@ import (
 	"github.com/F4nk1/Agentrix/src/engine"
 	"github.com/F4nk1/Agentrix/src/game"
 	"github.com/F4nk1/Agentrix/src/model"
+	replaystream "github.com/F4nk1/Agentrix/src/replay"
 	"github.com/F4nk1/Agentrix/src/service"
 	"github.com/stretchr/testify/require"
 )
+
+func init() {
+	game.GetRegistry().RegisterManifest(&game.Manifest{
+		ID: "starfighter", MinPlayers: 2, MaxPlayers: 2, MaxTicks: 2, FixedTimestepMs: 17,
+		ReferenceAgents: []game.ReferenceAgent{
+			{ID: "hunter", Path: "games/starfighter/examples/bot_hunter.py"},
+			{ID: "evasive", Path: "games/starfighter/examples/bot_evasive.py"},
+		},
+	})
+}
 
 type mockExecutorService struct {
 	service.Service
 	getMatchFn          func(ctx context.Context, id string) (*model.Match, error)
 	updateMatchFn       func(ctx context.Context, match *model.Match) error
 	getSubmissionFn     func(ctx context.Context, id string) (*model.Submission, error)
-	saveReplayFn        func(ctx context.Context, replay *model.Replay, data *model.ReplayData) error
+	openReplayFn        func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error)
 	createResultFn      func(ctx context.Context, res *model.Result) error
 	calculateRankingsFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
@@ -47,12 +59,30 @@ func (m *mockExecutorService) GetSubmission(ctx context.Context, id string) (*mo
 	return &model.Submission{Id: id, CodePath: "fake.py"}, nil
 }
 
-func (m *mockExecutorService) SaveReplay(ctx context.Context, replay *model.Replay, data *model.ReplayData) error {
-	if m.saveReplayFn != nil {
-		return m.saveReplayFn(ctx, replay, data)
+func (m *mockExecutorService) OpenReplay(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+	if m.openReplayFn != nil {
+		return m.openReplayFn(ctx, replay, metadata)
 	}
+	return &captureReplayWriter{}, nil
+}
+
+type captureReplayWriter struct {
+	snapshots []model.ReplaySnapshot
+	result    model.ReplayResult
+	completed bool
+}
+
+func (w *captureReplayWriter) WriteSnapshot(snapshot model.ReplaySnapshot) error {
+	w.snapshots = append(w.snapshots, snapshot)
 	return nil
 }
+func (w *captureReplayWriter) Complete(result model.ReplayResult) error {
+	w.result = result
+	w.completed = true
+	return nil
+}
+func (w *captureReplayWriter) Close() error    { return nil }
+func (w *captureReplayWriter) FrameCount() int { return len(w.snapshots) }
 
 func (m *mockExecutorService) CreateResult(ctx context.Context, res *model.Result) error {
 	if m.createResultFn != nil {
@@ -69,57 +99,27 @@ func (m *mockExecutorService) CalculateRankings(ctx context.Context, contestId s
 }
 
 type mockSandbox struct {
-	executeTurnFn               func(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error)
-	executeTurnWithPerceptionFn func(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error)
-	filterPerceptionFn          func(state *game.GameState, playerID string) SlotPerception
-	startSessionFn              func(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error)
+	startSessionFn func(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error)
 }
 
-// mockBotSession bridges the session-based interface to
-// mockSandbox.executeTurnWithPerceptionFn, so existing tests written
-// against the old per-call sandbox API keep exercising the same
-// expectations without needing to know about persistent sessions.
-type mockBotSession struct {
-	sandbox *mockSandbox
-	players map[string]string
-}
+func (m *mockSandbox) ValidateBot(ctx context.Context, codePath string) error { return nil }
 
-func (s *mockBotSession) ExecuteTurn(ctx context.Context, tick int, playerID string, perception interface{}) engine.PlayerActionInput {
-	action, err := s.sandbox.ExecuteTurnWithPerception(ctx, s.players[playerID], perception, playerID)
-	if err != nil {
-		return engine.PlayerActionInput{Status: engine.ActionStatusTimeout, ErrorDetails: err.Error()}
+type mockBotSession struct{}
+
+func (s *mockBotSession) ExecuteTurn(ctx context.Context, tick int, playerID string, perception json.RawMessage) engine.PlayerActionInput {
+	return engine.PlayerActionInput{
+		Status:  engine.ActionStatusValid,
+		Payload: json.RawMessage(`{"thrust":"OFF","turn":"NONE","shoot":false,"shield":false}`),
 	}
-	return engine.PlayerActionInput{Status: engine.ActionStatusValid, ActionType: string(action.Type), Payload: action.Payload}
 }
 
 func (s *mockBotSession) Close(ctx context.Context, winner string, reason string) {}
-
-func (m *mockSandbox) ExecuteTurn(ctx context.Context, codePath string, state *game.GameState, playerID string) (game.Action, error) {
-	if m.executeTurnFn != nil {
-		return m.executeTurnFn(ctx, codePath, state, playerID)
-	}
-	return game.Action{Type: game.ActionRest}, nil
-}
-
-func (m *mockSandbox) ExecuteTurnWithPerception(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error) {
-	if m.executeTurnWithPerceptionFn != nil {
-		return m.executeTurnWithPerceptionFn(ctx, codePath, perception, playerID)
-	}
-	return game.Action{Type: game.ActionRest}, nil
-}
-
-func (m *mockSandbox) FilterPerception(state *game.GameState, playerID string) SlotPerception {
-	if m.filterPerceptionFn != nil {
-		return m.filterPerceptionFn(state, playerID)
-	}
-	return SlotPerception{}
-}
 
 func (m *mockSandbox) StartSession(ctx context.Context, matchID string, players map[string]string, seed int64, timeout time.Duration) (BotSession, error) {
 	if m.startSessionFn != nil {
 		return m.startSessionFn(ctx, matchID, players, seed, timeout)
 	}
-	return &mockBotSession{sandbox: m, players: players}, nil
+	return &mockBotSession{}, nil
 }
 
 type mockEngineClient struct {
@@ -142,13 +142,14 @@ func (m *mockEngineClient) InitializeMatch(ctx context.Context, req engine.Initi
 		return m.initializeMatchFn(ctx, req)
 	}
 	return &engine.MatchInitializedResult{
-		MatchID:     req.MatchID,
-		InitialTick: 0,
-		StateHash:   "hash-0",
-		Events:      []string{"init"},
-		Perceptions: map[string]map[string]interface{}{
-			"sub-1": {"tick": 0},
-			"sub-2": {"tick": 0},
+		MatchID:        req.MatchID,
+		InitialTick:    0,
+		StateHash:      "hash-0",
+		PublicSnapshot: json.RawMessage(`{"tick":0,"fighters":[],"bullets":[]}`),
+		Events:         []string{"init"},
+		Perceptions: map[string]json.RawMessage{
+			"sub-1": json.RawMessage(`{"tick":0}`),
+			"sub-2": json.RawMessage(`{"tick":0}`),
 		},
 	}, nil
 }
@@ -158,14 +159,15 @@ func (m *mockEngineClient) AdvanceTick(ctx context.Context, req engine.AdvanceTi
 		return m.advanceTickFn(ctx, req)
 	}
 	return &engine.TickResult{
-		Tick:      req.Tick,
-		Events:    []string{"tick-advanced"},
-		StateHash: "hash-1",
-		IsOver:    true,
-		Winner:    "sub-1",
-		Perceptions: map[string]map[string]interface{}{
-			"sub-1": {"tick": req.Tick},
-			"sub-2": {"tick": req.Tick},
+		Tick:           req.Tick + 1,
+		Events:         []string{"tick-advanced"},
+		StateHash:      "hash-1",
+		IsOver:         true,
+		Winner:         "sub-1",
+		PublicSnapshot: json.RawMessage(`{"tick":1,"fighters":[],"bullets":[]}`),
+		Perceptions: map[string]json.RawMessage{
+			"sub-1": json.RawMessage(`{"tick":1}`),
+			"sub-2": json.RawMessage(`{"tick":1}`),
 		},
 	}, nil
 }
@@ -186,7 +188,7 @@ func (m *mockEngineClient) FinishMatch(ctx context.Context, reason string) (*eng
 			{PlayerID: "sub-1", Rank: 1, Score: 100},
 			{PlayerID: "sub-2", Rank: 2, Score: 50},
 		},
-		FinalStateHash: "hash-final",
+		FinalStateHash: "hash-1",
 	}, nil
 }
 
@@ -204,6 +206,7 @@ func TestMatchExecutorExecute_WithMockEngine(t *testing.T) {
 	updatedStatuses := make([]string, 0)
 	resultsCreated := 0
 	replaySaved := false
+	captured := &captureReplayWriter{}
 
 	mockSvc := &mockExecutorService{
 		updateMatchFn: func(ctx context.Context, match *model.Match) error {
@@ -214,17 +217,13 @@ func TestMatchExecutorExecute_WithMockEngine(t *testing.T) {
 			resultsCreated++
 			return nil
 		},
-		saveReplayFn: func(ctx context.Context, replay *model.Replay, data *model.ReplayData) error {
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
 			replaySaved = true
-			return nil
+			return captured, nil
 		},
 	}
 
-	mockSb := &mockSandbox{
-		executeTurnWithPerceptionFn: func(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error) {
-			return game.Action{Type: game.ActionRest}, nil
-		},
-	}
+	mockSb := &mockSandbox{}
 
 	mockEng := &mockEngineClient{}
 
@@ -238,7 +237,7 @@ func TestMatchExecutorExecute_WithMockEngine(t *testing.T) {
 		Attempt:       1,
 		MatchId:       "match-101",
 		ContestId:     "contest-1",
-		GameId:        "arena-basica",
+		GameId:        "starfighter",
 		SubmissionIds: []string{"sub-1", "sub-2"},
 		Seed:          42,
 	}
@@ -249,6 +248,8 @@ func TestMatchExecutorExecute_WithMockEngine(t *testing.T) {
 	r.Contains(updatedStatuses, common.MatchStatusRunning)
 	r.Contains(updatedStatuses, common.MatchStatusFinished)
 	r.True(replaySaved)
+	r.True(captured.completed)
+	r.Len(captured.snapshots, 2)
 	r.Equal(2, resultsCreated)
 }
 
@@ -271,6 +272,7 @@ func TestMatchExecutorExecute_WithFakeEngineBinary(t *testing.T) {
 	updatedStatuses := make([]string, 0)
 	resultsCreated := 0
 	replaySaved := false
+	captured := &captureReplayWriter{}
 
 	mockSvc := &mockExecutorService{
 		updateMatchFn: func(ctx context.Context, match *model.Match) error {
@@ -281,17 +283,13 @@ func TestMatchExecutorExecute_WithFakeEngineBinary(t *testing.T) {
 			resultsCreated++
 			return nil
 		},
-		saveReplayFn: func(ctx context.Context, replay *model.Replay, data *model.ReplayData) error {
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
 			replaySaved = true
-			return nil
+			return captured, nil
 		},
 	}
 
-	mockSb := &mockSandbox{
-		executeTurnWithPerceptionFn: func(ctx context.Context, codePath string, perception interface{}, playerID string) (game.Action, error) {
-			return game.Action{Type: game.ActionUp}, nil
-		},
-	}
+	mockSb := &mockSandbox{}
 
 	exec := NewMatchExecutor(mockSvc, mockSb, func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
 		c := engine.NewSubprocessClient()
@@ -305,7 +303,7 @@ func TestMatchExecutorExecute_WithFakeEngineBinary(t *testing.T) {
 		JobId:         "job-fake-1",
 		Attempt:       1,
 		MatchId:       "match-fake-1",
-		GameId:        "arena-basica",
+		GameId:        "starfighter",
 		SubmissionIds: []string{"bot-1", "bot-2"},
 		Seed:          12345,
 	}
@@ -316,6 +314,7 @@ func TestMatchExecutorExecute_WithFakeEngineBinary(t *testing.T) {
 	r.Contains(updatedStatuses, common.MatchStatusRunning)
 	r.Contains(updatedStatuses, common.MatchStatusFinished)
 	r.True(replaySaved)
+	r.True(captured.completed)
 	r.Equal(2, resultsCreated)
 }
 
@@ -333,7 +332,7 @@ func TestMatchExecutorGetMatchError(t *testing.T) {
 	job := &connection.MatchJob{
 		JobId:   "job-err",
 		MatchId: "match-err",
-		GameId:  "arena-basica",
+		GameId:  "starfighter",
 	}
 
 	err := exec.Execute(ctx, job)
@@ -352,7 +351,7 @@ func TestMatchExecutorEngineStartError(t *testing.T) {
 	job := &connection.MatchJob{
 		JobId:   "job-start-err",
 		MatchId: "match-start-err",
-		GameId:  "arena-basica",
+		GameId:  "starfighter",
 	}
 
 	err := exec.Execute(ctx, job)
@@ -378,7 +377,7 @@ func TestMatchExecutorEngineInitializeError(t *testing.T) {
 	job := &connection.MatchJob{
 		JobId:   "job-init-err",
 		MatchId: "match-init-err",
-		GameId:  "arena-basica",
+		GameId:  "starfighter",
 	}
 
 	err := exec.Execute(ctx, job)
@@ -391,10 +390,14 @@ func TestMatchExecutorEngineTickError(t *testing.T) {
 	ctx := context.Background()
 
 	updatedStatuses := make([]string, 0)
+	captured := &captureReplayWriter{}
 	mockSvc := &mockExecutorService{
 		updateMatchFn: func(ctx context.Context, match *model.Match) error {
 			updatedStatuses = append(updatedStatuses, match.Status)
 			return nil
+		},
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			return captured, nil
 		},
 	}
 	mockEng := &mockEngineClient{
@@ -410,12 +413,13 @@ func TestMatchExecutorEngineTickError(t *testing.T) {
 	job := &connection.MatchJob{
 		JobId:   "job-tick-err",
 		MatchId: "match-tick-err",
-		GameId:  "arena-basica",
+		GameId:  "starfighter",
 	}
 
 	err := exec.Execute(ctx, job)
 	r.Error(err)
 	r.Contains(updatedStatuses, common.MatchStatusFailed)
+	r.False(captured.completed, "technical failures must not be sealed as competitive replay results")
 }
 
 func TestRecordAgentIssue(t *testing.T) {
@@ -436,18 +440,18 @@ func TestRecordAgentIssue(t *testing.T) {
 	r.Equal(1, summary.execution)
 }
 
-func TestFallbackBotForGame(t *testing.T) {
+func TestReferenceBotsComeFromStarfighterManifest(t *testing.T) {
 	r := require.New(t)
+	manifest := game.GetRegistry().GetManifest("starfighter")
 
-	bot0 := fallbackBotForGame("starfighter", 0)
+	bot0, err := referenceBot(manifest, 0)
+	r.NoError(err)
 	r.Equal("games/starfighter/examples/bot_hunter.py", bot0)
 
-	bot1 := fallbackBotForGame("starfighter", 1)
+	bot1, err := referenceBot(manifest, 1)
+	r.NoError(err)
 	r.Equal("games/starfighter/examples/bot_evasive.py", bot1)
 
-	botArena := fallbackBotForGame("arena-basica", 0)
-	r.Equal("games/arena-basica/examples/bot_hunter.py", botArena)
-
-	botUnknown := fallbackBotForGame("non-existent-game", 0)
-	r.Equal("games/arena-basica/examples/bot_hunter.py", botUnknown)
+	_, err = referenceBot(&game.Manifest{ID: "other"}, 0)
+	r.Error(err)
 }

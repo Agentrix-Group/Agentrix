@@ -87,3 +87,21 @@ func TestServerRankingsHandlers(t *testing.T) {
 	server.getRanking(rec, req)
 	r.Equal(http.StatusNotFound, rec.Code)
 }
+
+func TestRankingRoutesArePublic(t *testing.T) {
+	server := NewServer(&mockRankingsService{
+		listRankingsFn: func(context.Context) ([]model.Ranking, error) {
+			return []model.Ranking{{Id: "r-public", Score: 10}}, nil
+		},
+		getRankingFn: func(_ context.Context, id string) (*model.Ranking, error) {
+			return &model.Ranking{Id: id, Score: 10}, nil
+		},
+	})
+
+	for _, path := range []string{"/api/v1/rankings", "/api/v1/rankings/r-public"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		server.Handler.ServeHTTP(response, request)
+		require.Equal(t, http.StatusOK, response.Code, path)
+	}
+}

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import { Play, ScanEye } from 'lucide-react';
 import { formatNumber } from '../i18n/formatters.js';
 
 export function MatchCard({ match, onWatchReplay, onTriggerRun }) {
@@ -47,12 +48,12 @@ export function MatchCard({ match, onWatchReplay, onTriggerRun }) {
       <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
         {match.status === 'finished' && match.replay_id && (
           <button className="btn" onClick={() => onWatchReplay(match.replay_id)}>
-            {t('matches:card.watchReplay')}
+            <ScanEye size={17} aria-hidden="true" /> {t('matches:card.watchReplay')}
           </button>
         )}
-        {match.status === 'pending' && (
+        {match.status === 'pending' && typeof onTriggerRun === 'function' && (
           <button className="btn" onClick={() => onTriggerRun(match.id)}>
-            {t('matches:card.runMatch')}
+            <Play size={17} aria-hidden="true" /> {t('matches:card.runMatch')}
           </button>
         )}
       </div>

@@ -40,7 +40,7 @@ func (m *mockMatchesRepo) GetMatch(ctx context.Context, id string) (*model.Match
 	if m.getMatchFn != nil {
 		return m.getMatchFn(ctx, id)
 	}
-	return &model.Match{Id: id, Status: common.MatchStatusPending}, nil
+	return &model.Match{Id: id, GameId: "starfighter", Status: common.MatchStatusPending}, nil
 }
 
 func (m *mockMatchesRepo) CreateMatch(ctx context.Context, match *model.Match) error {
@@ -77,7 +77,7 @@ func TestMatchesService(t *testing.T) {
 
 	mockRepo := &mockMatchesRepo{
 		listMatchesFn: func(ctx context.Context) ([]model.Match, error) {
-			return []model.Match{{Id: "m1", GameId: "arena-basica"}}, nil
+			return []model.Match{{Id: "m1", GameId: "starfighter"}}, nil
 		},
 		listMatchesByContestFn: func(ctx context.Context, contestId string) ([]model.Match, error) {
 			return []model.Match{{Id: "m1", ContestId: contestId}}, nil
@@ -109,7 +109,7 @@ func TestMatchesService(t *testing.T) {
 	r.Len(match.Results, 1)
 
 	// CreateMatch with submissions (should enqueue)
-	newMatch := &model.Match{GameId: "arena-basica", ContestId: "c1"}
+	newMatch := &model.Match{GameId: "starfighter", ContestId: "c1"}
 	err = svc.CreateMatch(ctx, newMatch, []string{"sub-1", "sub-2"})
 	r.NoError(err)
 	r.NotEmpty(newMatch.Id)
@@ -125,4 +125,5 @@ func TestMatchesService(t *testing.T) {
 	// UpdateMatch & ActivateMatch
 	r.NoError(svc.UpdateMatch(ctx, newMatch))
 	r.NoError(svc.ActivateMatch(ctx, newMatch.Id, false))
+	r.ErrorIs(svc.CreateMatch(ctx, &model.Match{GameId: "other-game"}, nil), ErrUnsupportedGame)
 }

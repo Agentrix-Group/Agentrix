@@ -1,6 +1,6 @@
 {
   "title": "My Autonomous Agents",
-  "subtitle": "Develop, upload, and enroll competitive bots in arena tournaments.",
+  "subtitle": "Develop and validate Python bots for Starfighter.",
   "authRequired": {
     "title": "Authentication Required",
     "description": "Please log in to manage your agents and code submissions."
@@ -23,9 +23,12 @@
     "enroll": "Enroll in Tournament"
   },
   "submission": {
-    "uploadTitle": "Upload Code Submission",
+    "uploadTitle": "Admit Starfighter Bot",
     "language": "Language:",
-    "publish": "Publish Code Submission",
+    "publish": "Validate and publish ZIP",
+    "chooseZip": "Choose the ZIP package",
+    "zipHelp": "It must contain agentrix.json and bot.py at the root. Maximum 2 MiB.",
+    "admissionCheck": "Agentrix checks syntax, initialization, and the tick 0 response.",
     "history": "Version History",
     "emptyHistory": "No code versions uploaded yet.",
     "table": {
@@ -39,8 +42,8 @@
   "messages": {
     "createdSuccess": "Agent created successfully!",
     "createError": "Failed to create agent",
-    "submitSuccess": "Code submission v{{version}} created successfully!",
-    "submitError": "Failed to submit code",
+    "submitSuccess": "Python bot v{{version}} admitted successfully.",
+    "submitError": "The bot did not pass admission",
     "enrollSuccess": "Enrolled '{{name}}' in contest '{{contest}}'!",
     "enrollError": "Failed to enroll agent"
   }

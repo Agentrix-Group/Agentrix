@@ -35,6 +35,9 @@ func (s *service) GetMatch(ctx context.Context, id string) (*model.Match, error)
 }
 
 func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) error {
+	if match.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	if match.Id == "" {
 		match.Id = uuid.New().String()
 	}
@@ -52,10 +55,10 @@ func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissio
 	}
 
 	// Queue job for executor
-	if s.queue != nil && len(submissionIds) > 0 {
+	if s.queue != nil {
 		job := &connection.MatchJob{
 			JobId:         uuid.New().String(),
-			Attempt:       1,
+			Attempt:       0,
 			MatchId:       match.Id,
 			ContestId:     match.ContestId,
 			GameId:        match.GameId,
@@ -80,6 +83,9 @@ func (s *service) RunMatch(ctx context.Context, matchId string) error {
 	if err != nil {
 		return err
 	}
+	if match.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 
 	// Fetch submissions associated with this match or contest
 	var submissionIds []string
@@ -91,7 +97,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string) error {
 	if s.queue != nil {
 		job := &connection.MatchJob{
 			JobId:         uuid.New().String(),
-			Attempt:       1,
+			Attempt:       0,
 			MatchId:       match.Id,
 			ContestId:     match.ContestId,
 			GameId:        match.GameId,
@@ -110,6 +116,9 @@ func (s *service) RunMatch(ctx context.Context, matchId string) error {
 }
 
 func (s *service) UpdateMatch(ctx context.Context, match *model.Match) error {
+	if match.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	return s.repo.UpdateMatch(ctx, match)
 }
 

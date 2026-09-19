@@ -74,6 +74,8 @@ func main() {
 	var matchID string
 	var seed int64
 	var maxTicks int
+	var currentTick int
+	var lastStateHash string
 	var players []string
 	scores := make(map[string]int)
 	alive := make(map[string]bool)
@@ -138,6 +140,8 @@ func main() {
 			}
 
 			initHash := calculateStateHash(seed, 0, scores)
+			currentTick = 0
+			lastStateHash = initHash
 			perceptions := make(map[string]map[string]interface{})
 			for i, p := range players {
 				perceptions[p] = map[string]interface{}{
@@ -146,6 +150,10 @@ func main() {
 					"tick":  0,
 				}
 			}
+			publicSnapshot := map[string]interface{}{
+				"tick": 0, "fighters": []interface{}{}, "bullets": []interface{}{},
+				"events": []string{"Match initialized by fake engine"}, "stateHash": initHash,
+			}
 
 			initEnv := engine.Envelope{
 				ProtocolVersion: engine.ProtocolVersion,
@@ -153,11 +161,12 @@ func main() {
 				MatchID:         matchID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
-					"matchId":     matchID,
-					"initialTick": 0,
-					"stateHash":   initHash,
-					"events":      []string{"Match initialized by fake engine"},
-					"perceptions": perceptions,
+					"matchId":        matchID,
+					"initialTick":    0,
+					"stateHash":      initHash,
+					"events":         []string{"Match initialized by fake engine"},
+					"perceptions":    perceptions,
+					"publicSnapshot": publicSnapshot,
 				},
 			}
 			sendSeq++
@@ -193,8 +202,9 @@ func main() {
 			reqBytes, _ := json.Marshal(inEnv.Payload)
 			_ = json.Unmarshal(reqBytes, &tickReq)
 
-			currentTick := tickReq.Tick
-			rng := rand.New(rand.NewSource(seed + int64(currentTick)))
+			actionTick := tickReq.Tick
+			resultingTick := actionTick + 1
+			rng := rand.New(rand.NewSource(seed + int64(actionTick)))
 
 			events := make([]string, 0)
 			for pID, act := range tickReq.Actions {
@@ -205,14 +215,16 @@ func main() {
 				if act.Status == engine.ActionStatusValid {
 					gain := rng.Intn(15) + 5
 					scores[pID] += gain
-					events = append(events, fmt.Sprintf("%s performed %s and gained %d points", pID, act.ActionType, gain))
+					events = append(events, fmt.Sprintf("%s submitted a valid action and gained %d points", pID, gain))
 				} else {
 					events = append(events, fmt.Sprintf("%s had non-valid action: %s", pID, act.Status))
 				}
 			}
 
-			stateHash := calculateStateHash(seed, currentTick, scores)
-			isOver := currentTick >= maxTicks
+			stateHash := calculateStateHash(seed, resultingTick, scores)
+			currentTick = resultingTick
+			lastStateHash = stateHash
+			isOver := resultingTick >= maxTicks
 
 			winner := ""
 			if isOver {
@@ -228,10 +240,24 @@ func main() {
 			perceptions := make(map[string]map[string]interface{})
 			for _, p := range players {
 				perceptions[p] = map[string]interface{}{
-					"tick":  currentTick,
+					"tick":  resultingTick,
 					"alive": alive[p],
 					"score": scores[p],
 				}
+			}
+			fighters := make([]map[string]interface{}, 0, len(players))
+			for index, p := range players {
+				fighters = append(fighters, map[string]interface{}{
+					"playerId":     p,
+					"position":     map[string]float64{"x": float64(index*200 - 100), "y": 0},
+					"rotation":     0,
+					"health":       100,
+					"shieldActive": false,
+				})
+			}
+			publicSnapshot := map[string]interface{}{
+				"tick": resultingTick, "fighters": fighters, "bullets": []interface{}{},
+				"events": events, "stateHash": stateHash,
 			}
 
 			tickEnv := engine.Envelope{
@@ -240,24 +266,23 @@ func main() {
 				MatchID:         matchID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
-					"tick":        currentTick,
-					"events":      events,
-					"stateHash":   stateHash,
-					"isOver":      isOver,
-					"winner":      winner,
-					"perceptions": perceptions,
+					"tick":           resultingTick,
+					"events":         events,
+					"stateHash":      stateHash,
+					"isOver":         isOver,
+					"winner":         winner,
+					"perceptions":    perceptions,
+					"publicSnapshot": publicSnapshot,
 				},
 			}
 			sendSeq++
 			writeEnvelope(tickEnv)
 
 		case engine.TypeFinishMatch:
-			reason := "time_limit"
+			reason := "score_limit"
 			if r, ok := inEnv.Payload["reason"].(string); ok && r != "" {
 				reason = r
 			}
-			finishHash := calculateStateHash(seed, 9999, scores)
-
 			winner := ""
 			highestScore := -1
 			for pID, sc := range scores {
@@ -286,12 +311,12 @@ func main() {
 				MatchID:         matchID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
-					"finalTick":      maxTicks,
+					"finalTick":      currentTick,
 					"reason":         reason,
 					"winner":         winner,
 					"scores":         scores,
 					"rankings":       rankings,
-					"finalStateHash": finishHash,
+					"finalStateHash": lastStateHash,
 				},
 			}
 			sendSeq++

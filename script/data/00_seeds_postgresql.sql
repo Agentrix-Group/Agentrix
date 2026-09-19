@@ -41,18 +41,18 @@ ON CONFLICT (role_id, permission_id) DO UPDATE SET active = EXCLUDED.active;
 -- Categories
 INSERT INTO categories (id, description, active) VALUES
 ('ai-challenge', 'Artificial Intelligence & Algorithmic Bots', TRUE),
-('battle-royale', 'Multi-Agent Survival Arena', TRUE),
+('battle-royale', 'Deterministic Starfighter Duel', TRUE),
 ('heuristics', 'Heuristic Strategy & Optimization', TRUE)
 ON CONFLICT (id) DO UPDATE SET description = EXCLUDED.description, active = EXCLUDED.active;
 
 -- Games
 INSERT INTO games (id, name, description, manifest_path, min_players, max_players, active) VALUES
-('arena-basica', 'Arena Basica', 'Canonical 2-4 agent grid survival battle with health, energy, attacks and shields.', 'games/arena-basica/manifest.yaml', 2, 4, TRUE)
+('starfighter', 'Starfighter Arena', 'Deterministic duel between two Python-controlled starfighters.', 'games/starfighter/manifest.yaml', 2, 2, TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, active = EXCLUDED.active;
 
 -- Initial Demo Contest
 INSERT INTO contests (id, name, description, game_id, category_id, state, status, active) VALUES
-('arena-cup-2026', 'Arena Basica Spring Championship 2026', 'Inaugural tournament for autonomous agent bots in Arena Basica.', 'arena-basica', 'battle-royale', 'registration_open', 'upcoming', TRUE)
+('starfighter-cup-2026', 'Starfighter Championship 2026', 'Tournament for Python bots controlling starfighters.', 'starfighter', 'battle-royale', 'registration_open', 'upcoming', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state, active = EXCLUDED.active;
 
 -- Seed default admin user (password: admin123 hashed with SHA-512)

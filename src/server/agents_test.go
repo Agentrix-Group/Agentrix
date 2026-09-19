@@ -114,7 +114,7 @@ func TestServerAgentsHandlers(t *testing.T) {
 	r.Equal(http.StatusNotFound, rec.Code)
 
 	// 5. createAgent (valid)
-	body, _ := json.Marshal(model.Agent{Name: "NewAgent", ParticipantId: "p1", GameId: "arena-basica"})
+	body, _ := json.Marshal(model.Agent{Name: "NewAgent", ParticipantId: "p1", GameId: "starfighter"})
 	req = httptest.NewRequest(http.MethodPost, "/agents", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	server.createAgent(rec, req)

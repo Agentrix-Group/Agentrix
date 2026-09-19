@@ -6,19 +6,23 @@ description: >
   2D Newtonian space dogfight. Ships move by inertia (thrust, drag, active
   braking), manage a shared health/energy pool, can raise an energy shield
   that reduces incoming bullet damage, and fire cooldown-limited bullets.
-  Continuous coordinate arena (not a grid) -- grid_width/grid_height do not
-  apply to this game, arena dimensions are declared under settings instead.
-  Free-for-all: 2 to 4 symmetric ships, no teams in this version.
+  The engine owns the continuous arena dimensions declared in settings.
+  Duelo entre dos naves simétricas, sin equipos.
 min_players: 2
-max_players: 4
+max_players: 2
 max_ticks: 3600
+fixed_timestep_ms: 17
+reference_agents:
+  - id: hunter
+    path: games/starfighter/examples/bot_hunter.py
+  - id: evasive
+    path: games/starfighter/examples/bot_evasive.py
 settings:
   # Simulation
   tick_hz: "60"
   arena_width: "2000"
   arena_height: "1000"
-  # Ship model (Fase 1, src/lib.rs constants -- values are placeholders,
-  # real balance is out of scope until a real contest needs it)
+  # Ship model
   ship_max_health: "100"
   ship_max_energy: "100"
   bullet_damage: "25"
@@ -27,7 +31,5 @@ settings:
   shield_energy_cost_per_tick: "1"
   shield_damage_reduction: "0.7"
   energy_regen_per_tick: "0.5"
-  # Perception (Decision 2.3 -- declared now, not consumed by the engine
-  # yet: Fase 3 wires this up as a per-slot radar cutoff read from the
-  # frozen match snapshot, not a hardcoded constant in the engine).
+  # Perception
   radar_range: "800"

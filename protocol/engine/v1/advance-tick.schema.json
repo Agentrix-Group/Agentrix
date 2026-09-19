@@ -11,8 +11,8 @@
   "properties": {
     "tick": {
       "type": "integer",
-      "minimum": 1,
-      "description": "Número de tick correlativo esperado para esta iteración."
+      "minimum": 0,
+      "description": "Tick de la percepción y acción que se aplica. La primera transición usa tick 0."
     },
     "actions": {
       "type": "object",
@@ -34,13 +34,9 @@
             ],
             "description": "Estado estricto de la evaluación del agente en este tick."
           },
-          "actionType": {
-            "type": "string",
-            "description": "Identificador de la acción semántica enviada por el bot (ej. 'MOVE', 'ATTACK'). Requerido si status es 'valid'."
-          },
           "payload": {
             "type": "object",
-            "description": "Parámetros de la acción suministrados por el agente.",
+            "description": "Acción opaca suministrada por el agente; Go no interpreta su contenido.",
             "additionalProperties": true
           },
           "errorDetails": {
@@ -48,7 +44,13 @@
             "description": "Detalles diagnósticos redactados cuando status != 'valid'."
           }
         },
-        "additionalProperties": false
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {"properties": {"status": {"const": "valid"}}},
+            "then": {"required": ["payload"]}
+          }
+        ]
       }
     }
   },

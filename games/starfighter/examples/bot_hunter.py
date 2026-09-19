@@ -101,11 +101,8 @@ def choose_action(perception: dict) -> dict:
 
 
 def main() -> None:
-    handshake = read()
-    assert handshake["type"] == "handshake"
-    send({"type": "handshake_ack", "protocol_version": PROTOCOL_VERSION})
-
-    read()  # init
+    init = read()
+    assert init["type"] == "init"
 
     while True:
         msg = read()
@@ -113,7 +110,7 @@ def main() -> None:
             return
         assert msg["type"] == "perception"
         action = choose_action(msg["perception"])
-        send({"type": "action", "tick": msg["perception"]["tick"], "action": action})
+        send({"type": "action", "tick": msg["tick"], "action": action})
 
 
 if __name__ == "__main__":

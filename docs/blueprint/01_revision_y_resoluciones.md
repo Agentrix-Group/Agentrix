@@ -119,6 +119,30 @@ Esta decisión no cambia el alcance ni las respuestas AR-001 a AR-111; únicamen
 
 **Decisión:** el motor de juego oficial es un ejecutable externo e independiente escrito en Rust con Bevy y Rapier que corre en modo headless. Agentrix (en Go) conserva el plano de control, supervisión, cola y persistencia. La simulación y los resultados son autoritativos del motor. La comunicación inicial se realiza mediante el protocolo versionado `agentrix-engine/1` sobre `stdin/stdout` (JSON Lines). Los agentes no corren dentro del motor ni el motor accede a la base de datos de Agentrix. La implementación previa `ArenaBasicaEngine` en Go queda retirada por ser provisional.
 
+DP-004 actualiza la biblioteca de física y fija el alcance ejecutable del MVP descrito por esta decisión.
+
+### DP-004 — Corte vertical público de Starfighter
+
+**Estado:** decidido explícitamente por José Daniel el 2026-09-18.
+
+**Decisión:** el MVP de Agentrix implementa un único recorrido vertical público: carga de un bot Python, admisión mediante ZIP, partida de Starfighter para dos agentes en el motor Rust con Bevy y Avian2D, replay público autoritativo en NDJSON y reproducción en React con Canvas 2D.
+
+Para este MVP:
+
+- Starfighter es el único juego registrable y ejecutable;
+- Python es el único lenguaje de agentes;
+- el paquete contiene exactamente `agentrix.json` y `bot.py` en su raíz;
+- el protocolo de bot usa solamente `init`, `perception`, `action` y `end` por JSON Lines;
+- el ciclo autoritativo comienza en tick 0: `State[0]` → `Perception[0]` → `Action[0]` → `State[1]`;
+- Go transporta las percepciones y acciones como JSON opaco; Rust interpreta el dominio espacial;
+- un timeout por tick termina el proceso del bot y lo descalifica;
+- Rust emite percepciones privadas y un snapshot público sanitizado por tick;
+- Go escribe metadata, snapshots y resultado directamente como NDJSON, sin reconstruir el estado;
+- la cola persistente reserva trabajos en PostgreSQL con `FOR UPDATE SKIP LOCKED`;
+- el replay se consulta por HTTP y no se implementa transmisión en vivo por WebSocket.
+
+Esta decisión retira Arena Básica y las configuraciones genéricas para registrar otros juegos del alcance activo. Aplica RD-009 mediante una sola opción completa. También reemplaza Rapier por Avian2D en DP-003. La incorporación de otro juego, lenguaje o transporte requiere una necesidad aprobada de un concurso posterior.
+
 ## 4. Parámetros configurables, no decisiones de arquitectura
 
 Las respuestas delegan varios valores al comité. Se modelarán como configuración del concurso, categoría o juego:

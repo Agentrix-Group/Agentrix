@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "StarfighterAction",
-  "description": "Per-tick composite action for a starfighter ship (Agentrix, Decision 2.2). Unlike the platform-generic contracts/agent.schema.json (a single discrete action per tick, used by grid-based games like arena-basica), a starfighter ship can thrust, turn, shoot, and shield independently within the same tick -- combining them is the point of inertial 2D combat. Each game module declares its own action schema (08_arquitectura_tecnica.md, section 6, 'Contrato de un modulo de juego').",
+  "description": "Composite action for one Starfighter simulation tick. A ship can combine thrust, turn, shooting, and shield controls.",
   "type": "object",
   "properties": {
     "thrust": {

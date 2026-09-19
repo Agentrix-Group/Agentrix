@@ -3,7 +3,7 @@ package server
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,16 +16,75 @@ import (
 
 type mockSubmissionsService struct {
 	service.Service
-	createSubmissionFn func(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error
-	getSubmissionFn    func(ctx context.Context, id string) (*model.Submission, error)
-	hasPermissionFn    func(ctx context.Context, participantId, permission string) (bool, error)
+	createBundleFn  func(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error)
+	getSubmissionFn func(ctx context.Context, id string) (*model.Submission, error)
+	hasPermissionFn func(ctx context.Context, participantId, permission string) (bool, error)
 }
 
-func (m *mockSubmissionsService) CreateSubmission(ctx context.Context, participantId, roleId string, submission *model.Submission, codeContent []byte) error {
-	if m.createSubmissionFn != nil {
-		return m.createSubmissionFn(ctx, participantId, roleId, submission, codeContent)
+func (m *mockSubmissionsService) CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+	if m.createBundleFn != nil {
+		return m.createBundleFn(ctx, participantId, roleId, agentId, archive)
 	}
-	return nil
+	return nil, service.ErrInvalidBotBundle
+}
+
+func TestServerUploadSubmissionBundle(t *testing.T) {
+	authMgr := auth.NewAuth("secret_test_access_key_32chars!", "secret_test_refresh_key_32chars!")
+	token, err := authMgr.GenerateAuthToken("user-1", "participant")
+	require.NoError(t, err)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("agent_id", "agent-1"))
+	file, err := writer.CreateFormFile("bundle", "candidate.zip")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("PK fake bundle"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	mockSvc := &mockSubmissionsService{
+		createBundleFn: func(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+			require.Equal(t, "user-1", participantId)
+			require.Equal(t, "agent-1", agentId)
+			require.NotEmpty(t, archive)
+			return &model.Submission{Id: "sub-zip", AgentId: agentId, Language: "python", Status: "ready"}, nil
+		},
+	}
+	server := NewServer(mockSvc)
+	server.Auth = authMgr
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions/upload", &body)
+	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, req)
+	require.Equal(t, http.StatusCreated, response.Code)
+	require.Contains(t, response.Body.String(), "sub-zip")
+}
+
+func TestServerUploadSubmissionBundleRequiresSubmitPermission(t *testing.T) {
+	authMgr := auth.NewAuth("secret_test_access_key_32chars!", "secret_test_refresh_key_32chars!")
+	token, err := authMgr.GenerateAuthToken("user-1", "participant")
+	require.NoError(t, err)
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	require.NoError(t, writer.WriteField("agent_id", "agent-1"))
+	file, err := writer.CreateFormFile("bundle", "candidate.zip")
+	require.NoError(t, err)
+	_, err = file.Write([]byte("PK fake bundle"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	server := NewServer(&mockSubmissionsService{
+		hasPermissionFn: func(context.Context, string, string) (bool, error) { return false, nil },
+	})
+	server.Auth = authMgr
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/submissions/upload", &body)
+	request.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusForbidden, response.Code)
 }
 
 func (m *mockSubmissionsService) GetSubmission(ctx context.Context, id string) (*model.Submission, error) {
@@ -40,135 +99,4 @@ func (m *mockSubmissionsService) HasPermission(ctx context.Context, participantI
 		return m.hasPermissionFn(ctx, participantId, permission)
 	}
 	return true, nil
-}
-
-func TestServer_CreateSubmission(t *testing.T) {
-	r := require.New(t)
-	authMgr := auth.NewAuth("secret_test_access_key_32chars!", "secret_test_refresh_key_32chars!")
-
-	validToken, err := authMgr.GenerateAuthToken("user-1", "participant")
-	r.NoError(err)
-
-	t.Run("Valid authenticated submission returns 201 Created", func(t *testing.T) {
-		mockSvc := &mockSubmissionsService{
-			createSubmissionFn: func(ctx context.Context, participantId, roleId string, s *model.Submission, code []byte) error {
-				r.Equal("user-1", participantId)
-				r.Equal("agent-1", s.AgentId)
-				r.Equal("print('ok')", string(code))
-				s.Id = "sub-100"
-				s.Version = 1
-				return nil
-			},
-		}
-
-		server := NewServer(mockSvc)
-		server.Auth = authMgr
-
-		body, _ := json.Marshal(map[string]interface{}{
-			"agent_id": "agent-1",
-			"code":     "print('ok')",
-			"language": "python",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+validToken.AccessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rr, req)
-
-		r.Equal(http.StatusCreated, rr.Code)
-		var resp map[string]interface{}
-		err := json.Unmarshal(rr.Body.Bytes(), &resp)
-		r.NoError(err)
-		r.Equal("sub-100", resp["id"])
-	})
-
-	t.Run("Missing auth token returns 401 Unauthorized", func(t *testing.T) {
-		server := NewServer(&mockSubmissionsService{})
-		server.Auth = authMgr
-
-		body, _ := json.Marshal(map[string]interface{}{
-			"agent_id": "agent-1",
-			"code":     "code",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions", bytes.NewReader(body))
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rr, req)
-
-		r.Equal(http.StatusUnauthorized, rr.Code)
-	})
-
-	t.Run("Submission for unowned agent returns 403 Forbidden", func(t *testing.T) {
-		mockSvc := &mockSubmissionsService{
-			createSubmissionFn: func(ctx context.Context, participantId, roleId string, s *model.Submission, code []byte) error {
-				return service.ErrAgentNotOwned
-			},
-		}
-
-		server := NewServer(mockSvc)
-		server.Auth = authMgr
-
-		body, _ := json.Marshal(map[string]interface{}{
-			"agent_id": "other-agent",
-			"code":     "code",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+validToken.AccessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rr, req)
-
-		r.Equal(http.StatusForbidden, rr.Code)
-	})
-
-	t.Run("Submission with empty code returns 400 Bad Request", func(t *testing.T) {
-		mockSvc := &mockSubmissionsService{
-			createSubmissionFn: func(ctx context.Context, participantId, roleId string, s *model.Submission, code []byte) error {
-				return service.ErrEmptySubmissionCode
-			},
-		}
-
-		server := NewServer(mockSvc)
-		server.Auth = authMgr
-
-		body, _ := json.Marshal(map[string]interface{}{
-			"agent_id": "agent-1",
-			"code":     "",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+validToken.AccessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rr, req)
-
-		r.Equal(http.StatusBadRequest, rr.Code)
-	})
-
-	t.Run("Submission for missing agent returns 404 Not Found", func(t *testing.T) {
-		mockSvc := &mockSubmissionsService{
-			createSubmissionFn: func(ctx context.Context, participantId, roleId string, s *model.Submission, code []byte) error {
-				return service.ErrAgentNotFound
-			},
-		}
-
-		server := NewServer(mockSvc)
-		server.Auth = authMgr
-
-		body, _ := json.Marshal(map[string]interface{}{
-			"agent_id": "nonexistent-agent",
-			"code":     "code",
-		})
-		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions", bytes.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+validToken.AccessToken)
-		req.Header.Set("Content-Type", "application/json")
-
-		rr := httptest.NewRecorder()
-		server.Handler.ServeHTTP(rr, req)
-
-		r.Equal(http.StatusNotFound, rr.Code)
-	})
 }

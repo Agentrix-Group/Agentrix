@@ -31,11 +31,11 @@ func TestMatchesRepositoryDisconnected(t *testing.T) {
 	r.Nil(match)
 
 	// CreateMatch
-	err = repo.CreateMatch(ctx, &model.Match{GameId: "arena-basica"})
+	err = repo.CreateMatch(ctx, &model.Match{GameId: "starfighter"})
 	r.Error(err)
 
 	// UpdateMatch
-	err = repo.UpdateMatch(ctx, &model.Match{Id: "m1", GameId: "arena-basica"})
+	err = repo.UpdateMatch(ctx, &model.Match{Id: "m1", GameId: "starfighter"})
 	r.Error(err)
 
 	// ActivateMatch

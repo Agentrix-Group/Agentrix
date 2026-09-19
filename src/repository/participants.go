@@ -34,11 +34,7 @@ type Repository interface {
 	HasPermission(ctx context.Context, participantId string, permission string) (bool, error)
 
 	// Games
-	ListGames(ctx context.Context) ([]model.Game, error)
 	GetGame(ctx context.Context, id string) (*model.Game, error)
-	CreateGame(ctx context.Context, game *model.Game) error
-	UpdateGame(ctx context.Context, game *model.Game) error
-	ActivateGame(ctx context.Context, id string, isActive bool) error
 
 	// Agents
 	ListAgents(ctx context.Context) ([]model.Agent, error)
@@ -53,8 +49,6 @@ type Repository interface {
 	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
 	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
 	CreateSubmission(ctx context.Context, submission *model.Submission) error
-	UpdateSubmission(ctx context.Context, submission *model.Submission) error
-	ActivateSubmission(ctx context.Context, id string, isActive bool) error
 
 	// Matches
 	ListMatches(ctx context.Context) ([]model.Match, error)

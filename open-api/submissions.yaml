@@ -21,38 +21,6 @@ paths:
                 type: array
                 items:
                   $ref: './components/models.yaml#/Submission'
-    post:
-      summary: Upload new code submission for an agent
-      tags:
-        - Submissions
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                agent_id:
-                  type: string
-                version:
-                  type: integer
-                language:
-                  type: string
-                  example: "python"
-                code:
-                  type: string
-              required:
-                - agent_id
-      responses:
-        '201':
-          description: Submission created
-          content:
-            application/json:
-              schema:
-                $ref: './components/models.yaml#/SuccessResponse'
-
   /api/v1/submissions/{id}:
     get:
       summary: Get submission by ID
@@ -73,52 +41,33 @@ paths:
             application/json:
               schema:
                 $ref: './components/models.yaml#/Submission'
-    put:
-      summary: Update submission
+  /api/v1/submissions/upload:
+    post:
+      summary: Validate and admit a Starfighter Python bot ZIP
       tags:
         - Submissions
       security:
         - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: './components/models.yaml#/Submission'
+              type: object
+              required: [agent_id, bundle]
+              properties:
+                agent_id:
+                  type: string
+                bundle:
+                  type: string
+                  format: binary
+                  description: ZIP up to 2 MiB containing root files agentrix.json and bot.py
       responses:
-        '200':
-          description: Submission updated
+        '201':
+          description: Bot passed syntax, initialization, and tick 0 admission
           content:
             application/json:
               schema:
-                $ref: './components/models.yaml#/SuccessResponse'
-    patch:
-      summary: Activate or deactivate submission
-      tags:
-        - Submissions
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: status
-          in: query
-          required: true
-          schema:
-            type: boolean
-      responses:
-        '200':
-          description: Status updated
-          content:
-            application/json:
-              schema:
-                $ref: './components/models.yaml#/SuccessResponse'
+                $ref: './components/models.yaml#/Submission'
+        '400':
+          description: Invalid ZIP, manifest, Python syntax, or protocol response

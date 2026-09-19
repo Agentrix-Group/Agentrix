@@ -63,7 +63,19 @@ func (p *WorkerPool) Start(ctx context.Context) {
 						jobCtx = tracer.WithMatchID(jobCtx, job.MatchId)
 						jobCtx = tracer.WithAttempt(jobCtx, job.Attempt)
 						tracer.DebugEvent(jobCtx, tracer.ScopeWorker, "worker.job.reserved", "Trabajo reservado", tracer.Int("worker", workerID))
-						_ = p.executor.Execute(jobCtx, job)
+						if err := p.executor.Execute(jobCtx, job); err != nil {
+							tracer.WarnEvent(jobCtx, tracer.ScopeWorker, "worker.job.retry", "La partida falló y será reintentada",
+								tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+							if retryErr := p.queue.Retry(workerCtx, job, err); retryErr != nil {
+								tracer.ErrorEvent(jobCtx, tracer.ScopeQueue, "worker.job.retry_failed", "No se pudo reprogramar la partida",
+									tracer.Origin(tracer.OriginInfrastructure), tracer.Err(retryErr))
+							}
+						} else {
+							if completeErr := p.queue.Complete(workerCtx, job); completeErr != nil {
+								tracer.ErrorEvent(jobCtx, tracer.ScopeQueue, "worker.job.complete_failed", "No se pudo confirmar la partida",
+									tracer.Origin(tracer.OriginInfrastructure), tracer.Err(completeErr))
+							}
+						}
 					}
 				}
 			}

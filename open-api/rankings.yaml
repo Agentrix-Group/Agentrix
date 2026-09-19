@@ -4,8 +4,7 @@ paths:
       summary: List tournament rankings / leaderboard
       tags:
         - Rankings
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: contest_id
           in: query
@@ -27,8 +26,7 @@ paths:
       summary: Get ranking entry by ID
       tags:
         - Rankings
-      security:
-        - bearerAuth: []
+      security: []
       parameters:
         - name: id
           in: path

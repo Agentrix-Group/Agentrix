@@ -1,60 +1,58 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "MatchReplay",
-  "description": "Schema for deterministic match replays in Agentrix",
-  "type": "object",
-  "properties": {
-    "game_id": {
-      "type": "string"
-    },
-    "match_id": {
-      "type": "string"
-    },
-    "seed": {
-      "type": "integer"
-    },
-    "players": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      }
-    },
-    "max_ticks": {
-      "type": "integer"
-    },
-    "winner": {
-      "type": "string"
-    },
-    "scores": {
+  "title": "ReplayNDJSONLine",
+  "description": "One line of an authoritative Starfighter replay. Files contain metadata first, sequential snapshots, and one final result.",
+  "oneOf": [
+    {
       "type": "object",
-      "additionalProperties": {
-        "type": "integer"
-      }
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "metadata"},
+        "replay_id": {"type": "string", "minLength": 1},
+        "match_id": {"type": "string", "minLength": 1},
+        "game_id": {"const": "starfighter"},
+        "seed": {"type": "integer"},
+        "participants": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "string"}},
+        "fixed_timestep_ms": {"type": "integer", "minimum": 1},
+        "created_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["type", "replay_id", "match_id", "game_id", "seed", "participants", "fixed_timestep_ms", "created_at"]
     },
-    "frames": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "tick": {
-            "type": "integer"
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "state": {
-            "type": "object"
-          },
-          "actions": {
-            "type": "object"
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "snapshot"},
+        "tick": {"type": "integer", "minimum": 0},
+        "state_hash": {"type": "string", "minLength": 1},
+        "public_snapshot": {
+          "type": "object",
+          "required": ["tick", "fighters", "bullets", "events", "stateHash"],
+          "properties": {
+            "tick": {"type": "integer", "minimum": 0},
+            "fighters": {"type": "array"},
+            "bullets": {"type": "array"},
+            "events": {"type": "array", "items": {"type": "string"}},
+            "stateHash": {"type": "string", "minLength": 1}
           }
         },
-        "required": ["tick", "state"]
-      }
+        "events": {"type": "array", "items": {"type": "string"}}
+      },
+      "required": ["type", "tick", "state_hash", "public_snapshot"]
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "type": {"const": "result"},
+        "final_tick": {"type": "integer", "minimum": 0},
+        "winner": {"type": "string"},
+        "reason": {"enum": ["eliminated", "timeout", "score_limit"]},
+        "scores": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "final_state_hash": {"type": "string", "minLength": 1},
+        "finished_at": {"type": "string", "format": "date-time"}
+      },
+      "required": ["type", "final_tick", "reason", "scores", "final_state_hash", "finished_at"]
     }
-  },
-  "required": ["game_id", "match_id", "players", "frames", "scores"]
+  ]
 }

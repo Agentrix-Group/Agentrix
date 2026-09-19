@@ -4,6 +4,6 @@
   "matchId": "m-12345678-abcd",
   "sequence": 3,
   "payload": {
-    "reason": "admin_aborted"
+    "reason": "score_limit"
   }
 }

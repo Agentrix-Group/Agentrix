@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/agentrix-submission.schema.json",
+  "title": "Agentrix Python Bot Package",
+  "type": "object",
+  "required": ["name", "entrypoint", "protocol_version"],
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "entrypoint": {
+      "const": "bot.py"
+    },
+    "protocol_version": {
+      "const": "1.0"
+    }
+  },
+  "additionalProperties": false
+}

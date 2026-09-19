@@ -8,20 +8,27 @@
     "initialTick": 0,
     "stateHash": "h0_init_hash_123456",
     "events": [
-      "Match initialized in Arena Basica"
+      "Starfighter match initialized"
     ],
+    "publicSnapshot": {
+      "tick": 0,
+      "fighters": [],
+      "bullets": [],
+      "events": [],
+      "stateHash": "h0_init_hash_123456"
+    },
     "perceptions": {
       "bot-alpha": {
         "tick": 0,
-        "x": 1,
-        "y": 1,
-        "hp": 100
+        "myself": {},
+        "rivals": [],
+        "bullets": []
       },
       "bot-beta": {
         "tick": 0,
-        "x": 8,
-        "y": 8,
-        "hp": 100
+        "myself": {},
+        "rivals": [],
+        "bullets": []
       }
     }
   }

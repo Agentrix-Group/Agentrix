@@ -5,7 +5,7 @@
   "sequence": 1,
   "payload": {
     "matchId": "m-1234",
-    "gameId": "arena-basica",
+    "gameId": "starfighter",
     "seed": 42,
     "fixedTimestepMs": 50,
     "maxTicks": 100,

@@ -73,7 +73,7 @@ func TestServerReplaysHandlers(t *testing.T) {
 	rec = httptest.NewRecorder()
 	server.streamReplay(rec, req)
 	r.Equal(http.StatusOK, rec.Code)
-	r.Equal("application/json", rec.Header().Get("Content-Type"))
+	r.Equal("application/x-ndjson", rec.Header().Get("Content-Type"))
 
 	// 4. streamReplay (not found)
 	req = httptest.NewRequest(http.MethodGet, "/replays/not-found/stream", nil)
@@ -81,4 +81,17 @@ func TestServerReplaysHandlers(t *testing.T) {
 	rec = httptest.NewRecorder()
 	server.streamReplay(rec, req)
 	r.Equal(http.StatusNotFound, rec.Code)
+}
+
+func TestReplayStreamIsPublic(t *testing.T) {
+	server := NewServer(&mockReplaysService{
+		streamReplayFn: func(context.Context, string) ([]byte, error) {
+			return []byte("{\"type\":\"metadata\"}\n"), nil
+		},
+	})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/replays/rep-public/stream", nil)
+	response := httptest.NewRecorder()
+	server.Handler.ServeHTTP(response, request)
+	require.Equal(t, http.StatusOK, response.Code)
+	require.Equal(t, "application/x-ndjson", response.Header().Get("Content-Type"))
 }

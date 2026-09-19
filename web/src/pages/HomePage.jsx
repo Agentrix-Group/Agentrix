@@ -49,7 +49,7 @@ export function HomePage({ onWatchReplay }) {
         <div className="grid-cards">
           {recentMatches.length > 0 ? (
             recentMatches.map((m) => (
-              <MatchCard key={m.id} match={m} onWatchReplay={onWatchReplay} onTriggerRun={() => {}} />
+              <MatchCard key={m.id} match={m} onWatchReplay={onWatchReplay} />
             ))
           ) : (
             <div className="card">{t('home:noMatches')}</div>

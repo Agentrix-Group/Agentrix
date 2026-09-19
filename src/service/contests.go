@@ -20,6 +20,7 @@ var (
 	ErrUnauthorizedAgent    = errors.New("agent does not belong to the authenticated participant")
 	ErrGameMismatch         = errors.New("agent is not configured for the contest's game")
 	ErrAgentAlreadyEnrolled = errors.New("agent is already enrolled in this contest")
+	ErrUnsupportedGame      = errors.New("Agentrix MVP supports only starfighter")
 )
 
 // ContestService defines contest use-case operations for consumer segregation (ATD-015).
@@ -57,6 +58,9 @@ func (s *service) GetContest(ctx context.Context, id string) (*model.Contest, er
 }
 
 func (s *service) CreateContest(ctx context.Context, contest *model.Contest) error {
+	if contest.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	if contest.Id == "" {
 		contest.Id = uuid.New().String()
 	}
@@ -70,6 +74,9 @@ func (s *service) CreateContest(ctx context.Context, contest *model.Contest) err
 }
 
 func (s *service) UpdateContest(ctx context.Context, contest *model.Contest) error {
+	if contest.GameId != "starfighter" {
+		return ErrUnsupportedGame
+	}
 	return s.repo.UpdateContest(ctx, contest)
 }
 

@@ -1,94 +1,75 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  Bot,
+  Home,
+  Languages,
+  LogIn,
+  LogOut,
+  Orbit,
+  PlaySquare,
+  Swords,
+  Trophy,
+  UserRound,
+} from 'lucide-react';
+
+const NAV_ITEMS = [
+  { id: 'home', label: 'home', Icon: Home },
+  { id: 'agents', label: 'agents', Icon: Bot },
+  { id: 'matches', label: 'matches', Icon: Swords },
+  { id: 'rankings', label: 'rankings', Icon: Trophy },
+  { id: 'viewer', label: 'viewer', Icon: PlaySquare },
+];
 
 export function Navbar({ activeTab, onSelectTab, currentUser, onLogout }) {
   const { t, i18n } = useTranslation(['navigation', 'common']);
-
   const currentLanguage = i18n.language?.startsWith('en') ? 'en' : 'es';
 
-  const handleLanguageChange = (e) => {
-    const newLang = e.target.value;
-    i18n.changeLanguage(newLang);
-  };
-
   return (
-    <nav className="navbar">
-      <div className="navbar-brand" onClick={() => onSelectTab('home')} style={{ cursor: 'pointer' }}>
+    <nav className="navbar" aria-label={t('navigation:brand')}>
+      <button className="navbar-brand" type="button" onClick={() => onSelectTab('home')}>
+        <Orbit size={23} aria-hidden="true" />
         {t('navigation:brand')}
-      </div>
+      </button>
+
       <div className="navbar-links">
-        <span
-          className={`navbar-link ${activeTab === 'home' ? 'active' : ''}`}
-          onClick={() => onSelectTab('home')}
-        >
-          {t('navigation:home')}
-        </span>
-        <span
-          className={`navbar-link ${activeTab === 'agents' ? 'active' : ''}`}
-          onClick={() => onSelectTab('agents')}
-        >
-          {t('navigation:agents')}
-        </span>
-        <span
-          className={`navbar-link ${activeTab === 'matches' ? 'active' : ''}`}
-          onClick={() => onSelectTab('matches')}
-        >
-          {t('navigation:matches')}
-        </span>
-        <span
-          className={`navbar-link ${activeTab === 'rankings' ? 'active' : ''}`}
-          onClick={() => onSelectTab('rankings')}
-        >
-          {t('navigation:rankings')}
-        </span>
-        <span
-          className={`navbar-link ${activeTab === 'viewer' ? 'active' : ''}`}
-          onClick={() => onSelectTab('viewer')}
-        >
-          {t('navigation:viewer')}
-        </span>
+        {NAV_ITEMS.map(({ id, label, Icon }) => (
+          <button
+            key={id}
+            type="button"
+            className={`navbar-link ${activeTab === id ? 'active' : ''}`}
+            onClick={() => onSelectTab(id)}
+            aria-current={activeTab === id ? 'page' : undefined}
+          >
+            <Icon size={16} aria-hidden="true" />
+            {t(`navigation:${label}`)}
+          </button>
+        ))}
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        {/* Language selector */}
-        <select
-          aria-label={t('navigation:selectLanguage')}
-          value={currentLanguage}
-          onChange={handleLanguageChange}
-          style={{
-            padding: '4px 8px',
-            fontSize: '0.85rem',
-            borderRadius: '6px',
-            border: '1px solid var(--border)',
-            background: 'var(--bg-subtle)',
-            color: 'var(--text-primary)',
-            cursor: 'pointer',
-          }}
-        >
-          <option value="es">{t('navigation:languages.es')}</option>
-          <option value="en">{t('navigation:languages.en')}</option>
-        </select>
+      <div className="navbar-actions">
+        <label className="language-control">
+          <Languages size={16} aria-hidden="true" />
+          <select
+            aria-label={t('navigation:selectLanguage')}
+            value={currentLanguage}
+            onChange={(event) => i18n.changeLanguage(event.target.value)}
+          >
+            <option value="es">{t('navigation:languages.es')}</option>
+            <option value="en">{t('navigation:languages.en')}</option>
+          </select>
+        </label>
 
         {currentUser ? (
           <>
-            <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-              👤 <strong>{currentUser.username}</strong>
-            </span>
-            <button
-              className="btn btn-secondary"
-              onClick={onLogout}
-              style={{ padding: '5px 12px', fontSize: '0.8rem' }}
-            >
-              {t('navigation:signOut')}
+            <span className="current-user"><UserRound size={16} aria-hidden="true" /><strong>{currentUser.username}</strong></span>
+            <button className="btn btn-secondary btn-compact" type="button" onClick={onLogout}>
+              <LogOut size={16} aria-hidden="true" /> {t('navigation:signOut')}
             </button>
           </>
         ) : (
-          <button
-            className="btn"
-            onClick={() => onSelectTab('auth')}
-            style={{ padding: '6px 14px', fontSize: '0.85rem' }}
-          >
-            {t('navigation:signIn')}
+          <button className="btn btn-compact" type="button" onClick={() => onSelectTab('auth')}>
+            <LogIn size={16} aria-hidden="true" /> {t('navigation:signIn')}
           </button>
         )}
       </div>

@@ -39,18 +39,15 @@ def random_action() -> dict:
 
 
 def main() -> None:
-    handshake = read()
-    assert handshake["type"] == "handshake"
-    send({"type": "handshake_ack", "protocol_version": PROTOCOL_VERSION})
-
-    read()  # init -- bot_random doesn't need any of the limits it carries
+    init = read()
+    assert init["type"] == "init"
 
     while True:
         msg = read()
         if msg["type"] == "end":
             return
         assert msg["type"] == "perception"
-        send({"type": "action", "tick": msg["perception"]["tick"], "action": random_action()})
+        send({"type": "action", "tick": msg["tick"], "action": random_action()})
 
 
 if __name__ == "__main__":

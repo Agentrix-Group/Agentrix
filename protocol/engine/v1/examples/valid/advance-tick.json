@@ -4,18 +4,20 @@
   "matchId": "m-12345678-abcd",
   "sequence": 2,
   "payload": {
-    "tick": 1,
+    "tick": 0,
     "actions": {
       "bot-alpha": {
         "status": "valid",
-        "actionType": "MOVE",
         "payload": {
-          "direction": "RIGHT"
+          "thrust": "FORWARD",
+          "turn": "RIGHT",
+          "shoot": false,
+          "shield": false
         }
       },
       "bot-beta": {
-        "status": "timeout",
-        "errorDetails": "Bot execution exceeded 200ms limit"
+        "status": "disqualified",
+        "errorDetails": "timeout"
       }
     }
   }

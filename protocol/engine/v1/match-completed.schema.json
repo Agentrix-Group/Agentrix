@@ -19,11 +19,9 @@
     "reason": {
       "type": "string",
       "enum": [
-        "time_limit",
-        "victory",
-        "elimination",
-        "draw",
-        "aborted"
+        "eliminated",
+        "timeout",
+        "score_limit"
       ],
       "description": "Causa oficial de conclusión de la partida."
     },

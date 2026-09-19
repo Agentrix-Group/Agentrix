@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Cuestionario maestro para definir Agentrix desde cero
 
 > Este documento parte de una hoja en blanco. No presupone que deban conservarse el producto, la arquitectura, las entidades, los flujos ni las tecnologias de intentos anteriores.
@@ -1019,4 +1023,3 @@ Usa este espacio para observaciones que afecten varias preguntas. Referencia sie
 **Notas:**
 
 que todo salga bien y trabajar con cosas que si compilan y no simplemente hacer codigo
-

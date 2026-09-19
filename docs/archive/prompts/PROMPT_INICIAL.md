@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Prompt inicial para Codex
 
 Copia únicamente el contenido del siguiente bloque y pégalo en Codex después de abrirlo dentro de `~/Projects/Agentrix`.

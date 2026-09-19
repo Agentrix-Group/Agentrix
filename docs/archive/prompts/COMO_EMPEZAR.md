@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Cómo pasar el blueprint a Agentrix
 
 ## 1. Descargar

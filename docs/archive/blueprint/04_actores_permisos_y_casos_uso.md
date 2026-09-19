@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Actores, permisos y casos de uso
 
 ## 1. Actores
@@ -258,4 +262,3 @@ La historia conserva estado anterior, decisión y efecto.
 - Una intervención de emergencia crea un comando auditado.
 - Un usuario nunca ve un artefacto de otro participante por pertenecer al mismo concurso.
 - Los datos públicos provienen de una proyección explícita; no de exponer entidades internas.
-

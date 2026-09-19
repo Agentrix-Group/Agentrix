@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # AGENTRIX: MASTER ARCHITECTURE, PROTOCOL REALIGNMENT & MULTI-ENGINE ROADMAP
 **Status:** Canonical RFC / Architecture Roadmap  
 **Target Branch:** `bot-protocol-generalization` (commit `ef8d3b5`)  

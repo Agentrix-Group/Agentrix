@@ -1,80 +1,65 @@
 # Agentrix
 
-Agentrix es una plataforma de concursos para bots. El MVP implementa un único recorrido completo: un participante carga un bot Python, el worker ejecuta un duelo de Starfighter en el motor Rust con Bevy y Avian2D, guarda snapshots públicos autoritativos en NDJSON y los muestra en un visor Canvas de React.
+Agentrix es una plataforma universitaria para concursos de agentes. El repositorio contiene un MVP experimental de extremo a extremo para **Starfighter**, el único juego admitido actualmente: una API y un worker en Go coordinan bots Python persistentes y un motor autoritativo headless en Rust; la web React reproduce snapshots públicos guardados como NDJSON.
 
-## Alcance del MVP
+El proyecto **no está certificado para producción**. La simulación y el visor existen, pero el aislamiento de bots, la recuperación de trabajos, el sellado de resultados y el despliegue todavía tienen brechas documentadas.
 
-- Juego único: `starfighter`, dos participantes por partida.
-- Agentes: archivos Python 3 dentro de un ZIP con `agentrix.json` y `bot.py`.
-- Protocolo de bot por JSON Lines: `init`, `perception`, `action`, `end`.
-- Motor autoritativo externo: `bin/starfighter-engine` mediante `agentrix-engine/1` sobre `stdin/stdout`.
-- Replays: metadata, snapshots públicos secuenciales desde tick 0 y resultado final en NDJSON.
-- Consumo de partidas: cola PostgreSQL con reserva `FOR UPDATE SKIP LOCKED`; cola en memoria como respaldo de desarrollo.
-- Interfaz: React con tema claro pastel, iconos Lucide y visor Canvas 2D.
+## Estado actual
 
-## Recorrido del código
+| Componente | Estado | Evidencia principal |
+| --- | --- | --- |
+| API REST y worker Go | Parcial | Se construyen en un único binario y proceso; todavía no se despliegan por separado. |
+| Motor Starfighter | Implementado | `agentrix_engine` usa Bevy y Avian2D y expone `agentrix-engine/1` por JSON Lines. |
+| Bots Python | Parcial | El proceso persiste durante la partida y usa tick 0, pero el sandbox no es apto para producción. |
+| PostgreSQL | Parcial | Guarda datos estructurados y trabajos; la reserva carece de heartbeat y fencing. |
+| Replay | Parcial | NDJSON progresivo con snapshots públicos y hashes; faltan sello inmutable y metadatos completos de reproducción. |
+| Web | Implementado para el corte público | React, tema claro y visor Canvas 2D posterior a la partida. No hay directo por WebSocket. |
+| Multi-juego, Gym y sim-core | No implementado | Son etapas posteriores al cierre del MVP seguro. |
+
+## Componentes
 
 ```text
-open-api/  -> src/server/ -> src/service/ -> src/repository/ -> src/model/
-                                  |
-src/connection/ <- src/executor/ <-+-> src/engine/ -> motor Rust
-                         |
-                    src/replay/ -> artifacts/replays/*.ndjson
+web React ──HTTP──> API Go ──> PostgreSQL / artifacts
+                         │
+                         └── worker Go
+                               ├── bots Python persistentes
+                               ├── agentrix-engine/1
+                               └── motor Rust Starfighter
 ```
 
-El backend Go trata la percepción y la acción espacial como JSON opaco. El motor Rust valida las acciones, avanza la simulación y produce las percepciones privadas y el snapshot público.
+Go conserva las acciones y percepciones específicas del juego como JSON opaco. Rust valida esas acciones, ejecuta las reglas, produce percepciones privadas y emite el snapshot público y el resultado autoritativos.
 
-## Requisitos
+## Requisitos de desarrollo
 
-- Go 1.25+
-- Python 3.10+
-- PostgreSQL 14+
-- Node.js 22.22+
-- El motor hermano `agentrix_engine` compilado como `bin/starfighter-engine`
+- Go según `go.mod` (actualmente 1.25).
+- Rust estable según `agentrix_engine/rust-toolchain.toml`.
+- Python 3 para los bots.
+- Node.js y npm compatibles con `web/package-lock.json`.
+- PostgreSQL para persistencia y cola autoritativas.
+- Repositorio hermano `agentrix_engine` para construir el motor.
 
-## Verificación
+## Comandos comprobados
 
 ```bash
-GOCACHE=/tmp/agentrix-go-cache go test ./...
+GOCACHE=/tmp/agentrix-go-cache go build -mod=readonly ./...
+GOCACHE=/tmp/agentrix-go-cache go vet -mod=readonly ./...
 cd web && npm test -- --run && npm run build
-cd ../../agentrix_engine && cargo test
+cd ../../agentrix_engine && cargo test --locked
 ```
 
-## Ejecución local
+`go test -mod=readonly ./...` es el comando correcto para la suite Go, pero al 2026-09-19 falla en `src/executor` cuando Bubblewrap es detectable y los procesos de prueba no consiguen iniciar dentro del entorno restringido. No debe presentarse como una validación verde hasta resolver y volver a ejecutar esos casos.
+
+Para construir el motor y el binario Go:
 
 ```bash
 make build-engine
 make build
-make run
 ```
 
-El servidor usa `PORT=8080`, `ARTIFACTS_DIR=./artifacts` y las variables `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD` y `DB_NAME` para PostgreSQL. Si la conexión no está disponible en desarrollo, la cola de partidas usa su implementación en memoria.
+`make build` ejecuta formateo con escritura, pruebas y compilación. Revise primero el worktree. Los targets de base de datos modifican PostgreSQL y no deben ejecutarse como comprobación rutinaria.
 
-## Paquete de un bot
+## Documentación
 
-El ZIP contiene exactamente estos archivos en su raíz:
+La fuente de navegación es [docs/index.md](docs/index.md). El alcance real del MVP está en [docs/product/mvp-scope.md](docs/product/mvp-scope.md) y la única hoja de ruta vigente en [docs/roadmap/current.md](docs/roadmap/current.md).
 
-```text
-agentrix.json
-bot.py
-```
-
-Ejemplo de `agentrix.json`:
-
-```json
-{
-  "name": "My Starfighter Bot",
-  "entrypoint": "bot.py",
-  "protocol_version": "1.0"
-}
-```
-
-La admisión limita el ZIP a 2 MiB, valida rutas y contenido, analiza la sintaxis Python y ejecuta `init` seguido de la percepción del tick 0. El endpoint es `POST /api/v1/submissions/upload` con formulario multipart `agent_id` y `bundle`.
-
-## Contratos
-
-- `contracts/agentrix-submission.schema.json`: manifiesto del ZIP.
-- `contracts/game.schema.json`: manifiesto fijo de Starfighter.
-- `contracts/replay.schema.json`: tipos de línea del replay NDJSON.
-- `protocol/engine/v1/`: contrato versionado Go–Rust.
-- `open-api/`: API HTTP.
+Los documentos bajo `docs/archive/` son históricos y no dirigen desarrollo nuevo.

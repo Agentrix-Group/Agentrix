@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Adaptación del blueprint al repositorio Agentrix
 
 > La auditoría de este documento corresponde al 2026-09-13 y se conserva como evidencia histórica. Para el primer corte público aprobado el 2026-09-18, el repositorio ya monta React, usa `pgx` para PostgreSQL y aplica la paleta celeste y arena en la interfaz pública. Las filas históricas siguientes no describen por sí solas el estado vigente de esas áreas.

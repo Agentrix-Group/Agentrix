@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Flujos, estados y secuencias
 
 ## 1. Estado del concurso
@@ -236,4 +240,3 @@ sequenceDiagram
 6. La interfaz destaca cambios relevantes sin revelar información privada.
 7. Al terminar ve resultado, estadísticas explicadas y clasificación actualizada.
 8. Después puede abrir el replay si el registro está completo y autorizado.
-

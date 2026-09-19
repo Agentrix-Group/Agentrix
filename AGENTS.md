@@ -1,82 +1,100 @@
-# Instrucciones de trabajo para Codex — Agentrix
+# Instrucciones de trabajo para agentes — Agentrix
 
-## 1. Contexto
+## Alcance
 
-Agentrix es el nombre definitivo del repositorio, producto y sistema descrito en `docs/blueprint/`, según DP-002. No introduzcas nombres alternativos para el producto en código, contratos o documentación activa.
+Este archivo rige todo el repositorio `Agentrix`. El repositorio hermano `agentrix_engine` posee instrucciones propias. Agentrix es el nombre único del producto, repositorio y sistema.
 
-El código existente fue creado como experimento. Su presencia no demuestra que una función esté diseñada, terminada o aprobada.
+## Precedencia
 
-## 2. Fuentes y prioridad
-
-Cuando dos fuentes difieran, usa este orden:
+Cuando dos fuentes difieran, use este orden:
 
 1. La instrucción más reciente y explícita de José Daniel.
-2. Las decisiones marcadas como decididas en `docs/blueprint/01_revision_y_resoluciones.md`.
-3. El modelo de dominio, casos de uso, flujos y requisitos del blueprint.
-4. Las propuestas técnicas ATD que José Daniel haya aprobado.
-5. El código actual, únicamente como evidencia del prototipo.
+2. Código ejecutable, contratos, migraciones, configuración y pruebas que efectivamente pasan, únicamente para describir el estado actual.
+3. Decisiones `accepted` en `docs/decisions/` y la arquitectura objetivo aprobada.
+4. Documentación activa enlazada desde `docs/index.md`.
+5. Material bajo `docs/archive/`, que nunca es normativo.
 
-No conviertas una suposición, un stub o una estructura existente en requisito.
+La existencia de un archivo, stub, prueba o nombre no demuestra que una capacidad esté terminada. Diferencie siempre estado actual y objetivo.
 
-## 3. Protocolo obligatorio antes de modificar código
+## Mapa del repositorio
 
-En la primera sesión:
+El código usa una organización horizontal y poco profunda:
 
-1. Lee este archivo y `docs/blueprint/README.md`.
-2. Lee `docs/blueprint/source/cuestionario_maestro_agentrix.md`, todos los documentos numerados del blueprint y `docs/blueprint/00_ADAPTACION_AGENTRIX.md`.
-3. Inspecciona el repositorio real.
-4. Ejecuta solo comprobaciones no destructivas que no requieran instalar dependencias.
-5. Clasifica lo encontrado como verificado, parcial, stub, contradictorio o ausente.
-6. Presenta el diagnóstico y un primer corte vertical pequeño.
-7. Espera la aprobación de José Daniel antes de editar archivos.
+```text
+open-api/<feature>.yaml
+  -> src/server/<feature>.go
+  -> src/service/<feature>.go
+  -> src/repository/<feature>.go
+  -> src/model/<feature>.go
+```
 
-No hagas una reescritura general, no muevas carpetas y no borres el prototipo durante esta fase.
-
-## 4. Organización del código
-
-La decisión DP-001 fija una organización horizontal, poco profunda y por responsabilidad técnica. Conserva el recorrido reconocible por nombre:
-
-`open-api/contests.yaml` → `src/server/contests.go` → `src/service/contests.go` → `src/repository/contests.go` → `src/model/contest.go`
-
-Responsabilidades:
-
-- `server`: transporte HTTP y WebSocket, validación de entrada y presentación de respuestas.
-- `service`: casos de uso, autorización y transiciones del negocio.
-- `repository`: consultas y persistencia, sin reglas del negocio.
-- `model`: entidades, valores, invariantes y estados, sin HTTP ni SQL.
-- `connection`: creación de conexiones, clientes y transacciones técnicas.
+- `server`: HTTP, validación de entrada y presentación.
+- `service`: casos de uso, autorización y transiciones.
+- `repository`: SQL, persistencia y mapeo; nunca reglas del negocio.
+- `model`: entidades, valores y estados; nunca HTTP o SQL.
+- `connection`: conexiones, artefactos y cola técnica.
 - `auth`: credenciales, sesiones y primitivas de autorización.
-- `executor`: trabajos, procesos, sandbox y coordinación de ticks.
-- `game`: contratos y registro de módulos de juego de la plataforma.
-- `replay`: escritura, sellado y proyección de eventos.
-- `tracer`: logs estructurados, correlación y métricas técnicas.
-- `common`: solo conceptos realmente transversales; nunca código sin propietario.
+- `executor`: reserva de trabajos, bots, motor y coordinación de ticks.
+- `engine`: cliente del protocolo Go↔Rust.
+- `game`: manifest y registro de juegos de la plataforma.
+- `replay`: escritura, validación y compresión del replay.
+- `tracer`: eventos operativos y correlación.
+- `common`: solo conceptos realmente transversales.
 
-No agregues otra capa, patrón, framework o carpeta sin explicar un problema real del corte actual y recibir aprobación.
+Conserve `repository`: hoy separa SQL de casos de uso. No amplíe su interfaz monolítica; introduzca interfaces pequeñas solo cuando un consumidor real las necesite.
 
-La carpeta `repository` ya existe en el prototipo, pero ATD-015 todavía exige revisar si su separación concreta resulta útil. No la expandas ni la elimines por inercia: primero muestra cómo se usa actualmente y recomienda conservarla o retirarla con evidencia.
+## Invariantes vigentes
 
-## 5. Límites de la primera revisión
+- Starfighter es el único juego del MVP actual.
+- Go es plano de control y orquestador; Rust es autoridad de simulación y resultado.
+- El motor nunca ejecuta bots ni accede a PostgreSQL.
+- Los bots son procesos persistentes durante una partida.
+- El ciclo comienza en tick 0: `state[0] -> action[0] -> state[1]`.
+- Go no interpreta acciones, percepciones ni reglas específicas de Starfighter.
+- Percepciones privadas y snapshot público son datos distintos.
+- Producción debe fallar cerrado si no existe aislamiento real.
+- Un hash detecta divergencia; no prueba por sí solo determinismo multiplataforma.
+- Multi-juego, Gym y Rapier no anteceden al cierre de seguridad, ejecución única y despliegue del MVP.
 
-- Ignora `*_test.go` al juzgar la distribución principal de directorios, pero no los borres.
-- Trata `bin/`, `artifacts/` y `__pycache__/` como posibles salidas generadas, no como fuentes de requisitos.
-- No instales paquetes, no cambies versiones y no levantes servicios externos sin autorización.
-- No modifiques la base de datos real ni ejecutes scripts destructivos.
-- No afirmes que algo funciona solo porque existe un archivo con ese nombre.
-- Conserva los cambios ajenos y el historial Git.
+## Comandos de verificación
 
-## 6. Forma de colaboración
+Sin instalar ni actualizar dependencias:
 
-- Explica en español; mantén identificadores de código y contratos en inglés.
-- Presenta primero el resultado y después la evidencia.
-- Evita documentos duplicados o contradictorios.
-- Relaciona cada cambio con una entidad, caso de uso, requisito o decisión del blueprint.
-- Implementa un solo corte vertical aprobado a la vez.
-- Antes de codificar un flujo, explica sus entidades, estados, autorización, entrada, salida y errores.
-- Después de modificar, ejecuta verificaciones relevantes y comunica con precisión lo comprobado y lo que sigue incierto.
+```bash
+GOCACHE=/tmp/agentrix-go-cache go build -mod=readonly ./...
+GOCACHE=/tmp/agentrix-go-cache go test -mod=readonly ./...
+GOCACHE=/tmp/agentrix-go-cache go vet -mod=readonly ./...
+cd web && npm test -- --run
+cd web && ./node_modules/.bin/vite build --outDir /tmp/agentrix-web-build --emptyOutDir
+cd ../agentrix_engine && CARGO_TARGET_DIR=/tmp/agentrix-engine-target cargo test --locked --offline
+git diff --check
+```
 
-## 7. Prohibición principal
+Declare los fallos reales. La suite Go tiene fallos conocidos en `src/executor` dentro del entorno restringido observado el 2026-09-19; no los silencie ni los describa como éxito.
 
-No intentes “completar Agentrix” en una sola ejecución. El objetivo es que José Daniel pueda entender y aprobar cada parte antes de que se convierta en código.
+## Seguridad y operaciones
 
-`docs/blueprint/BLUEPRINT_COMPLETO.md` existe para lectura humana continua y duplica los demás documentos. No lo leas además de los archivos separados durante una misma revisión.
+- No instale paquetes, cambie versiones, levante servicios externos ni ejecute scripts de base de datos sin autorización.
+- `db-reset`, `setup_postgres.sh` y scripts SQL son mutaciones, no verificaciones.
+- No ejecute código no confiable fuera de un sandbox real.
+- No trate el fallback directo a `python3` ni la cola en memoria como comportamiento de producción aceptable.
+- No registre secretos, código de bots, percepciones privadas, SQL ni rutas internas completas.
+- Conserve cambios ajenos y el historial Git. No haga commit o push sin autorización.
+
+## Archivos generados
+
+`bin/`, `artifacts/`, `web/dist/`, `target/`, coberturas y `__pycache__/` son salidas generadas. No los use como fuente de requisitos ni los añada al control de versiones.
+
+## Definición de terminado
+
+Un cambio está terminado cuando:
+
+- cita la decisión, requisito o caso de uso que implementa;
+- preserva las fronteras anteriores;
+- actualiza contratos y documentación afectados;
+- prueba caminos positivos, negativos y de autorización relevantes;
+- ejecuta las verificaciones proporcionales al cambio;
+- distingue lo comprobado de lo que sigue incierto;
+- no introduce nombres alternativos, abstracciones sin consumidor ni valores variables hardcodeados.
+
+Implemente un solo corte aprobado a la vez. Antes de cambiar comportamiento, explique entidades, estados, autorización, entrada, salida y errores.

@@ -1,7 +1,13 @@
-# ADR-001: Motor de Juego Externo en Rust (Bevy + Rapier) y Protocolo de Integración
+# ADR-0001: Motor de juego externo en Rust y protocolo de integración
+
+> [!WARNING]
+> Decisión sustituida parcialmente. La separación Go/Rust permanece vigente; la selección de Rapier fue reemplazada por [ADR-0002](0002-starfighter-avian-mvp.md).
 
 ## Estado
-Aprobado (2026-09-15)
+
+superseded (2026-09-19)
+
+Aceptada originalmente el 2026-09-15.
 
 ## Contexto
 El prototipo inicial de Agentrix incluía una implementación provisional en Go del juego de demostración (`ArenaBasicaEngine`) ejecutada dentro del mismo proceso del backend. Esta solución acoplaba la simulación al runtime de Go, impedía el uso de motores de física avanzados y mezclaba la autoridad de las reglas de juego con el plano de control administrativo.

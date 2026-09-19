@@ -1,16 +1,29 @@
-# Starfighter reference bots
+# Bots de referencia de Starfighter
 
-Three reference strategies, each a plain Python 3 script speaking the
-Agentrix `init` / `perception` / `action` / `end` JSON Lines protocol over
-stdin/stdout. They use only the Python standard library.
+Esta carpeta contiene tres estrategias de referencia escritas como scripts de
+Python 3. Hablan el protocolo JSON Lines `init` / `perception` / `action` /
+`end` por `stdin/stdout` y solo usan la biblioteca estándar.
 
-- `bot_random.py` -- uniformly random action every tick. Comparison floor.
-- `bot_hunter.py` -- aggressive: closes distance, turns toward and shoots
-  the nearest rival in radar range.
-- `bot_evasive.py` -- defensive: flees and raises shield when a rival
-  gets within its danger range, coasts and regenerates energy otherwise.
+- `bot_random.py`: selecciona una acción aleatoria por tick y sirve como piso
+  de comparación.
+- `bot_hunter.py`: se aproxima al rival más cercano, gira hacia él y dispara
+  cuando lo detecta en el radar.
+- `bot_evasive.py`: se aleja y activa el escudo ante peligro; en otro caso
+  conserva inercia y recupera energía.
 
-The Starfighter manifest selects `bot_hunter.py` or `bot_evasive.py` when a
-scheduled match lacks one or both participant submissions. The worker keeps
-each script alive for the complete match and terminates it immediately if a
-tick response exceeds the configured timeout.
+El manifiesto actual de Starfighter usa `bot_hunter.py` o `bot_evasive.py`
+como participantes de respaldo cuando una partida programada no tiene una de
+las entregas esperadas. Ese comportamiento pertenece al prototipo y no define
+por sí mismo la política futura de sustituciones.
+
+El worker mantiene cada proceso durante la partida. Si una respuesta excede
+el tiempo por tick o no cumple el protocolo, registra el estado correspondiente
+y lo entrega al motor; no inventa una acción válida silenciosamente.
+
+## Límite de seguridad actual
+
+Estos scripts son útiles para desarrollo local, pero su ejecución todavía no
+constituye un sandbox de producción. Bubblewrap es opcional y existe una ruta
+de ejecución directa con `python3`; tampoco están completos los límites de CPU,
+memoria, procesos y salida. Consulte
+[`docs/operations/security.md`](../../../docs/operations/security.md).

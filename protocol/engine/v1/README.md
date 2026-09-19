@@ -1,33 +1,26 @@
-# Contrato de Integración Agentrix — Motor de Simulación (v1)
+# Protocolo Agentrix ↔ motor v1
 
-- **Versión del protocolo:** `agentrix-engine/1`
-- **Público objetivo:** Desarrolladores del motor oficial (Rust / Bevy / Rapier).
-- **Modo de ejecución:** *Headless* (sin ventana, sin renderizado gráfico en el motor).
+Esta carpeta contiene los esquemas JSON Schema del protocolo
+`agentrix-engine/1`. El worker Go inicia el motor de Starfighter como un
+subproceso headless y ambos intercambian un objeto JSON por línea.
 
-Este documento especifica la interfaz de comunicación que debe implementar el motor de juego para integrarse con Agentrix sin acoplamiento a detalles internos de Go ni a la base de datos de la plataforma.
+Los esquemas son el contrato de datos. Este README describe además el flujo
+esperado y distingue sus garantías de las validaciones que todavía faltan.
 
----
+## Transporte
 
-## 1. Transporte y Convenciones de E/S
+| Canal | Dirección | Contenido |
+| --- | --- | --- |
+| `stdin` | Agentrix → motor | Mensajes JSON Lines del protocolo. |
+| `stdout` | Motor → Agentrix | Solo mensajes JSON Lines del protocolo. |
+| `stderr` | Motor → Agentrix | Logs y diagnósticos operativos. |
 
-La comunicación se establece a través de los descriptores estándar del subproceso:
+Cada mensaje ocupa una línea UTF-8 terminada en `\n`. El supervisor Go limita
+la línea leída a 1 MiB; superar ese límite termina la ejecución con error.
 
-| Descriptor | Dirección | Uso exclusivo |
-| :--- | :--- | :--- |
-| `stdin` | Agentrix $\rightarrow$ Motor | Comandos de control e información de ticks en formato JSON Lines. |
-| `stdout` | Motor $\rightarrow$ Agentrix | **Exclusivamente** mensajes del protocolo `agentrix-engine/1` en JSON Lines. **Prohibido emitir texto libre o logs por stdout.** |
-| `stderr` | Motor $\rightarrow$ Agentrix | Logs operativos, diagnósticos de Bevy/Rapier y mensajes de depuración. Agentrix capturará y acotará estos logs. |
+## Sobre común
 
-### Reglas de Formato
-1. **JSON Lines (JSONL):** Cada mensaje es un objeto JSON codificado en UTF-8 serializado en **una sola línea** terminada en `\n` (`0x0A`).
-2. **Sin JSON multilínea:** No se admiten saltos de línea dentro de un mensaje.
-3. **Límites de tamaño:** La longitud máxima por línea soportada por defecto es de **1 MB (1,048,576 bytes)**. Mensajes que excedan este tamaño serán truncados y provocarán un error de violación de protocolo.
-
----
-
-## 2. Estructura del Sobre (`Envelope`)
-
-Todo mensaje (en ambas direcciones) debe estar contenido en el sobre canónico definido en [`envelope.schema.json`](./envelope.schema.json):
+[`envelope.schema.json`](./envelope.schema.json) exige estos campos:
 
 ```json
 {
@@ -39,103 +32,69 @@ Todo mensaje (en ambas direcciones) debe estar contenido en el sobre canónico d
 }
 ```
 
-### Campos del Sobre
-- `protocolVersion` (*string*, obligatorio): Debe ser exactamente `"agentrix-engine/1"`. Si el motor recibe otra versión o Agentrix recibe otra versión, se produce un error fatal.
-- `type` (*string*, obligatorio): Uno de los tipos reconocidos por el protocolo.
-- `matchId` (*string*, obligatorio): Identificador de la partida. Cadena vacía `""` permitida únicamente antes de inicializar la partida (`engine_ready`, `shutdown`).
-- `sequence` (*integer*, obligatorio, $\ge 1$): Contador monotónico incremental independiente por emisor que inicia en `1`.
-- `payload` (*object*, obligatorio): Estructura de datos correspondiente al `type`.
+`sequence` comienza en `1` y debe aumentar por emisor. `matchId` puede estar
+vacío durante el saludo inicial y el cierre general; después de inicializar la
+partida identifica la ejecución activa.
 
----
+## Flujo
 
-## 3. Ciclo de Vida y Flujo de Mensajes
+1. El motor emite `engine_ready`.
+2. Agentrix envía `initialize_match`; el motor responde `match_initialized`
+   con `initialTick: 0`.
+3. Para cada transición, Agentrix envía `advance_tick` con la acción de
+   `tick N`; el motor devuelve `tick_completed` con el estado de `tick N+1`.
+4. Agentrix envía `finish_match`; el motor responde `match_completed`.
+5. Agentrix envía `shutdown`; el motor responde `shutdown_ack` y termina.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    participant A as Agentrix (Go Supervisor)
-    participant E as Motor (Rust / Bevy / Rapier)
+El motor autoritativo actual está implementado en Rust con Bevy y Avian2D. Go
+orquesta los procesos y persiste resultados, pero no interpreta la carga útil
+de una acción válida.
 
-    Note over E: Subproceso inicia (headless)
-    E->>A: engine_ready
-    A->>E: initialize_match (seed, fixedTimestepMs, maxTicks, players)
-    E->>A: match_initialized (initialTick: 0, stateHash, perceptions)
+## Mensajes
 
-    loop Cada acción de simulación (0 .. maxTicks-1)
-        Note over A: Supervisor evalúa agentes en sandboxes aislados
-        A->>E: advance_tick (tick, actions: {botId: {status, payload}})
-        Note over E: Bevy/Avian2D procesa físicas y reglas autoritativas
-        E->>A: tick_completed (tick + 1, publicSnapshot, perceptions)
-    end
+De Agentrix al motor:
 
-    A->>E: finish_match (reason: eliminated | timeout | score_limit)
-    E->>A: match_completed (finalTick, reason, winner, scores, rankings, finalStateHash)
+- [`initialize_match`](./initialize-match.schema.json): semilla, duración del
+  tick, límite de ticks, participantes y configuración del juego.
+- [`advance_tick`](./advance-tick.schema.json): acciones o fallos observados
+  (`valid`, `timeout`, `invalid_output`, `crashed`, `disqualified`).
+- [`finish_match`](./finish-match.schema.json): causa de cierre.
+- [`shutdown`](./shutdown.schema.json): cierre ordenado del subproceso.
 
-    A->>E: shutdown (reason)
-    E->>A: shutdown_ack (status: "ok")
-    Note over E: Proceso finaliza limpiamente (exit code 0)
-```
+Del motor a Agentrix:
 
----
+- [`engine_ready`](./engine-ready.schema.json): versión y capacidades.
+- [`match_initialized`](./match-initialized.schema.json): estado y
+  percepciones iniciales.
+- [`tick_completed`](./tick-completed.schema.json): eventos, hash, snapshot
+  público y percepciones del nuevo estado.
+- [`match_completed`](./match-completed.schema.json): resultado consolidado.
+- [`engine_error`](./engine-error.schema.json): error estructurado.
+- [`shutdown_ack`](./shutdown-ack.schema.json): confirmación del cierre.
 
-## 4. Tipos de Mensajes
+Los ejemplos válidos e inválidos están en [`examples/`](./examples/).
 
-### A. De Agentrix hacia el Motor (`stdin`)
+## Determinismo y frecuencia
 
-1. **`initialize_match`** ([Esquema](./initialize-match.schema.json)):
-   - Configura las condiciones de la partida: `matchId`, `gameId`, `seed`, `fixedTimestepMs`, `maxTicks`, `players` (array de IDs) y `config` opcional.
-2. **`advance_tick`** ([Esquema](./advance-tick.schema.json)):
-   - Indica el `tick` correlativo a ejecutar y entrega las acciones recolectadas.
-   - Cada participante tiene un `status`:
-     - `"valid"`: El bot envió un `payload` JSON opaco que solo interpreta Rust.
-     - `"timeout"`: El bot agotó su presupuesto de tiempo por tick.
-     - `"invalid_output"`: El bot respondió datos corruptos o no conformes a su contrato.
-     - `"crashed"`: El subproceso del bot finalizó abruptamente.
-     - `"disqualified"`: El bot fue descalificado por el supervisor.
-   - **Importante:** Agentrix nunca sustituye silenciosamente un fallo por una acción neutra como `REST`; el motor recibe el estado del agente y aplica las reglas físicas/competitivas correspondientes.
-3. **`finish_match`** ([Esquema](./finish-match.schema.json)):
-   - Sella la partida con una de las tres condiciones competitivas admitidas: `eliminated`, `timeout` o `score_limit`.
-4. **`shutdown`** ([Esquema](./shutdown.schema.json)):
-   - Ordena el cierre ordenado del subproceso del motor.
+El objetivo aceptado es una simulación de **60 Hz exactos**. La representación
+actual `fixedTimestepMs` solo admite milisegundos enteros y el manifiesto aún
+usa `17`; por tanto, la configuración y el contrato deben migrar a una
+representación exacta antes de certificar ese objetivo. Véase
+[`docs/roadmap/current.md`](../../../docs/roadmap/current.md).
 
-### B. Del Motor hacia Agentrix (`stdout`)
+Con la misma versión del motor, arquitectura compatible, semilla,
+configuración y secuencia de acciones, se espera la misma secuencia de estados,
+eventos, resultados y `stateHash`. La certificación cruzada y el núcleo
+compartido de simulación siguen pendientes.
 
-1. **`engine_ready`** ([Esquema](./engine-ready.schema.json)):
-   - Emitido inmediatamente al arrancar. Declara `engineVersion`, `supportedProtocols: ["agentrix-engine/1"]` y `capabilities`.
-2. **`match_initialized`** ([Esquema](./match-initialized.schema.json)):
-   - Confirma la creación del mundo, estado inicial `tick: 0`, hash criptográfico inicial y el primer lote de percepciones privadas para cada slot.
-3. **`tick_completed`** ([Esquema](./tick-completed.schema.json)):
-   - Estado resultante: `tick`, `events`, `stateHash`, `isOver`, `winner` (opcional), `publicSnapshot` autoritativo y `perceptions` privadas del mismo tick.
-4. **`match_completed`** ([Esquema](./match-completed.schema.json)):
-   - Cierre de la partida: `finalTick`, `reason` (`"eliminated"`, `"timeout"` o `"score_limit"`), `scores`, `rankings` y `finalStateHash`.
-5. **`engine_error`** ([Esquema](./engine-error.schema.json)):
-   - Reporte de fallo del motor: `code` estructurado, `message` humano redactado y `fatal` (si true, aborta el proceso).
-6. **`shutdown_ack`** ([Esquema](./shutdown-ack.schema.json)):
-   - Acuse de recibo antes de terminar con código de salida `0`.
+## Brechas conocidas de la implementación
 
----
+- El motor Rust todavía no valida de forma exhaustiva `protocolVersion`,
+  `sequence`, `matchId` y `gameId` en cada transición.
+- Los esquemas existen, pero no todos se validan automáticamente en tiempo de
+  ejecución.
+- No hay negociación de versión ni compatibilidad retroactiva.
+- El límite de logs y salida total del proceso no está endurecido.
+- El objetivo de 60 Hz exactos no está representado todavía por el contrato.
 
-## 5. Garantía de Determinismo y Reproducibilidad
-
-Bajo la misma versión del binario del motor, misma arquitectura de CPU, misma semilla (`seed`), misma configuración de timestep y la misma secuencia de acciones en `advance_tick`, el motor **debe generar exactamente la misma secuencia de eventos, los mismos puntajes y los mismos `stateHash`**.
-
-No se permite el uso de generadores aleatorios no anclados a la semilla provista ni lecturas del reloj del sistema para la toma de decisiones físicas dentro del bucle de simulación.
-
----
-
-## 6. Esquemas JSON y Ejemplos
-
-Los esquemas autoritativos se encuentran en esta misma carpeta:
-- `envelope.schema.json`
-- `initialize-match.schema.json`
-- `advance-tick.schema.json`
-- `engine-ready.schema.json`
-- `match-initialized.schema.json`
-- `tick-completed.schema.json`
-- `match-completed.schema.json`
-- `engine-error.schema.json`
-- `finish-match.schema.json`
-- `shutdown.schema.json`
-- `shutdown-ack.schema.json`
-
-Consulte `examples/valid/` y `examples/invalid/` para referencias prácticas de implementación.
+Estas brechas son trabajo pendiente, no garantías implícitas del protocolo.

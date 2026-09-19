@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Agentrix — Blueprint de producto y sistema
 
 **Versión:** 0.1  
@@ -20,7 +24,7 @@ Agentrix será una plataforma universitaria para organizar concursos en los que 
 
 **Fuente original:** [source/cuestionario_maestro_agentrix.md](source/cuestionario_maestro_agentrix.md), con las respuestas AR-001 a AR-111 declaradas como decididas.
 
-0. [00_ADAPTACION_AGENTRIX.md](00_ADAPTACION_AGENTRIX.md): relación entre el blueprint y el prototipo actual de Agentrix.
+0. [00_ADAPTACION_AGENTRIX.md](../audits/00_ADAPTACION_AGENTRIX.md): relación entre el blueprint y el prototipo actual de Agentrix.
 1. [01_revision_y_resoluciones.md](01_revision_y_resoluciones.md): decisiones firmes, contradicciones resueltas y parámetros aún configurables.
 2. [02_vision_y_alcance.md](02_vision_y_alcance.md): propósito, experiencia, alcance y límites.
 3. [03_dominio_y_modelo_clases.md](03_dominio_y_modelo_clases.md): glosario, entidades, relaciones, invariantes y diagramas de clases.
@@ -32,7 +36,9 @@ Agentrix será una plataforma universitaria para organizar concursos en los que 
 9. [09_mvp_y_hoja_de_ruta.md](09_mvp_y_hoja_de_ruta.md): primer corte vertical, etapas y riesgos.
 10. [10_trazabilidad_y_aprobacion.md](10_trazabilidad_y_aprobacion.md): correspondencia con el cuestionario y puerta de entrada a implementación.
 
-Para una lectura continua también está disponible [BLUEPRINT_COMPLETO.md](BLUEPRINT_COMPLETO.md). Reúne la fuente y estos documentos; si existiera una diferencia accidental, prevalecen los archivos separados.
+La copia concatenada `BLUEPRINT_COMPLETO.md` fue retirada durante la limpieza
+documental del 2026-09-19 porque duplicaba la fuente y estos documentos. El
+historial Git conserva su contenido.
 
 ## Jerarquía de decisiones
 

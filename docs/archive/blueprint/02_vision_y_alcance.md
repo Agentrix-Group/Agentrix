@@ -1,3 +1,7 @@
+> [!WARNING]
+> Documento histórico. No es una fuente vigente de requisitos ni arquitectura.
+> Consúltese `docs/index.md` y `docs/roadmap/current.md` para el estado actual.
+
 # Visión y alcance
 
 ## 1. Visión
@@ -126,4 +130,3 @@ La primera versión demuestra éxito cuando:
 - el código compila y sus pruebas automatizadas pasan.
 
 La primera edición demuestra éxito cuando el concurso completo llega a una final en vivo, los resultados pueden defenderse con evidencia y los participantes pueden observar cómo mejoraron sus agentes durante el periodo competitivo.
-

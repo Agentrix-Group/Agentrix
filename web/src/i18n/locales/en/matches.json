@@ -20,5 +20,11 @@
   },
   "messages": {
     "runError": "Failed to run match: {{error}}"
+  },
+  "filter": {
+    "all": "All",
+    "pending": "Pending",
+    "running": "Running",
+    "finished": "Finished"
   }
 }

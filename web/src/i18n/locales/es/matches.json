@@ -20,5 +20,11 @@
   },
   "messages": {
     "runError": "Error al ejecutar la partida: {{error}}"
+  },
+  "filter": {
+    "all": "Todas",
+    "pending": "Pendientes",
+    "running": "En curso",
+    "finished": "Finalizadas"
   }
 }

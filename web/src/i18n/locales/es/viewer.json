@@ -1,6 +1,7 @@
 {
   "title": "Visor de repeticiones de partidas",
   "selectPrompt": "Selecciona una partida para ver su repetición.",
+  "browseMatches": "Explorar partidas",
   "matchTitle": "Repetición de partida: {{matchId}}",
   "clearSelection": "Limpiar selección",
   "loading": "Preparando la repetición autoritativa…",

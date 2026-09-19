@@ -69,7 +69,7 @@ export function parseReplayNDJSON(raw) {
   return { metadata, snapshots, result };
 }
 
-export function ReplayViewer({ replayId }) {
+export function ReplayViewer({ replayId, onBrowseMatches }) {
   const { t, i18n } = useTranslation(['viewer', 'common']);
   const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
   const canvasRef = useRef(null);
@@ -130,6 +130,11 @@ export function ReplayViewer({ replayId }) {
       <div className="viewer-empty">
         <Swords size={32} aria-hidden="true" />
         <p>{t('viewer:selectPrompt')}</p>
+        {typeof onBrowseMatches === 'function' && (
+          <button className="btn btn-secondary" style={{ marginTop: '12px' }} onClick={onBrowseMatches}>
+            <Swords size={16} aria-hidden="true" /> {t('viewer:browseMatches')}
+          </button>
+        )}
       </div>
     );
   }

@@ -17,6 +17,10 @@
   "startsAt": "Inicio",
   "endsAt": "Cierre",
   "datePending": "Fecha por anunciar",
+  "matchesKicker": "Enfrentamientos en vivo",
+  "recentMatchesTitle": "Partidas recientes",
+  "recentMatchesDescription": "Explora las últimas partidas de Starfighter procesadas por el motor autoritativo.",
+  "noMatches": "Aún no se han ejecutado partidas recientes.",
   "status": {
     "published": "Publicado",
     "registration_open": "Inscripción abierta",

@@ -47,4 +47,24 @@ describe('Public contest discovery', () => {
     expect(await screen.findByText('Aún no hay concursos publicados')).toBeDefined();
     expect(listContests).toHaveBeenCalledTimes(2);
   });
+
+  it('renders recent matches and allows watching replays', async () => {
+    vi.spyOn(ApiService, 'listContests').mockResolvedValue([]);
+    vi.spyOn(ApiService, 'listMatches').mockResolvedValue([{
+      id: 'match-101',
+      game_id: 'starfighter',
+      status: 'finished',
+      seed: 42,
+      replay_id: 'rep-101',
+    }]);
+
+    const onWatchReplay = vi.fn();
+    render(<HomePage onWatchReplay={onWatchReplay} />);
+
+    expect(await screen.findByText('Partidas recientes')).toBeDefined();
+    expect(screen.getByText('Partida #match-10')).toBeDefined();
+    const replayBtn = screen.getByRole('button', { name: 'Ver repetición' });
+    fireEvent.click(replayBtn);
+    expect(onWatchReplay).toHaveBeenCalledWith('rep-101');
+  });
 });

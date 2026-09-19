@@ -8,6 +8,7 @@ export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
   const { t } = useTranslation(['matches', 'common']);
   const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('all');
 
   const loadMatches = () => {
     setLoading(true);
@@ -32,6 +33,11 @@ export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
     }
   };
 
+  const filteredMatches = matches.filter((m) => {
+    if (filter === 'all') return true;
+    return m.status === filter;
+  });
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -39,12 +45,28 @@ export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
         <button className="btn" onClick={loadMatches}><RefreshCw size={17} aria-hidden="true" /> {t('matches:refresh')}</button>
       </div>
 
+      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', margin: '16px 0 24px' }}>
+        {['all', 'pending', 'running', 'finished'].map((statusKey) => {
+          const count = statusKey === 'all' ? matches.length : matches.filter((m) => m.status === statusKey).length;
+          return (
+            <button
+              key={statusKey}
+              type="button"
+              className={`btn ${filter === statusKey ? '' : 'btn-secondary'}`}
+              onClick={() => setFilter(statusKey)}
+            >
+              {t(`matches:filter.${statusKey}`)} ({count})
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <p>{t('matches:loading')}</p>
       ) : (
         <div className="grid-cards">
-          {matches.length > 0 ? (
-            matches.map((m) => (
+          {filteredMatches.length > 0 ? (
+            filteredMatches.map((m) => (
               <MatchCard
                 key={m.id}
                 match={m}

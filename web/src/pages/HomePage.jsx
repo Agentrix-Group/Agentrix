@@ -1,13 +1,15 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, CalendarDays, CircleAlert, RefreshCw, Sparkles } from 'lucide-react';
+import { ArrowRight, CalendarDays, CircleAlert, RefreshCw, Sparkles, Swords } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { formatDate } from '../i18n/formatters.js';
+import { MatchCard } from '../components/MatchCard.jsx';
 
-export function HomePage() {
+export function HomePage({ onWatchReplay }) {
   const { t, i18n } = useTranslation('home');
   const language = i18n.language?.startsWith('en') ? 'en' : 'es';
   const [contests, setContests] = useState([]);
+  const [recentMatches, setRecentMatches] = useState([]);
   const [status, setStatus] = useState('loading');
 
   const loadContests = useCallback(async () => {
@@ -24,9 +26,21 @@ export function HomePage() {
     }
   }, []);
 
+  const loadRecentMatches = useCallback(async () => {
+    try {
+      const matches = await ApiService.listMatches();
+      if (Array.isArray(matches)) {
+        setRecentMatches(matches.slice(0, 6));
+      }
+    } catch {
+      setRecentMatches([]);
+    }
+  }, []);
+
   useEffect(() => {
     loadContests();
-  }, [loadContests]);
+    loadRecentMatches();
+  }, [loadContests, loadRecentMatches]);
 
   const renderDate = (value) => value ? (
     <time dateTime={value}>{formatDate(value, language)}</time>
@@ -115,6 +129,25 @@ export function HomePage() {
               </article>
             ))}
           </div>
+        )}
+      </section>
+      <section className="home-matches" id="recent-matches" aria-labelledby="matches-title" style={{ marginTop: '48px' }}>
+        <div className="section-heading">
+          <div>
+            <span className="section-kicker"><Swords size={16} aria-hidden="true" /> {t('matchesKicker')}</span>
+            <h2 id="matches-title">{t('recentMatchesTitle')}</h2>
+            <p>{t('recentMatchesDescription')}</p>
+          </div>
+        </div>
+
+        {recentMatches.length > 0 ? (
+          <div className="grid-cards">
+            {recentMatches.map((m) => (
+              <MatchCard key={m.id} match={m} onWatchReplay={onWatchReplay} />
+            ))}
+          </div>
+        ) : (
+          <div className="card">{t('noMatches')}</div>
         )}
       </section>
     </div>

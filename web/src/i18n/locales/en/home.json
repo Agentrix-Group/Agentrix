@@ -17,6 +17,10 @@
   "startsAt": "Starts",
   "endsAt": "Ends",
   "datePending": "Date to be announced",
+  "matchesKicker": "Live Engagements",
+  "recentMatchesTitle": "Recent Matches",
+  "recentMatchesDescription": "Explore the latest Starfighter matches processed by the authoritative engine.",
+  "noMatches": "No recent matches have been executed yet.",
   "status": {
     "published": "Published",
     "registration_open": "Registration open",

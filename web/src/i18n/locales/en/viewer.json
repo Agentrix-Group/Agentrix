@@ -1,6 +1,7 @@
 {
   "title": "Match Replay Viewer",
   "selectPrompt": "Select a match to watch its replay.",
+  "browseMatches": "Browse matches",
   "matchTitle": "Match Replay: {{matchId}}",
   "clearSelection": "Clear Selection",
   "loading": "Preparing the authoritative replay…",

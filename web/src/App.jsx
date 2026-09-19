@@ -56,7 +56,7 @@ export function App() {
 
       <main className="main-content">
         {activeTab === 'home' && (
-          <HomePage />
+          <HomePage onWatchReplay={handleWatchReplay} />
         )}
         {activeTab === 'agents' && (
           <AgentsPage currentUser={currentUser} />
@@ -77,7 +77,7 @@ export function App() {
                 </button>
               )}
             </div>
-            <ReplayViewer replayId={selectedReplayId} />
+            <ReplayViewer replayId={selectedReplayId} onBrowseMatches={() => setActiveTab('matches')} />
           </div>
         )}
         {activeTab === 'auth' && (

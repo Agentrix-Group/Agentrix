@@ -60,6 +60,14 @@ type botProcess struct {
 	disconnectOnce  sync.Once
 }
 
+func IsRootlessSandboxAvailable() bool {
+	if os.Getenv("AGENTRIX_DISABLE_SANDBOX") == "1" {
+		return false
+	}
+	_, err := exec.LookPath("bwrap")
+	return err == nil
+}
+
 func pythonCommand(codePath string) (*exec.Cmd, error) {
 	resolved := codePath
 	if _, err := os.Stat(resolved); err != nil {
@@ -72,6 +80,30 @@ func pythonCommand(codePath string) (*exec.Cmd, error) {
 	if !strings.EqualFold(filepath.Ext(resolved), ".py") {
 		return nil, fmt.Errorf("unsupported bot artifact %q: Agentrix MVP accepts only Python .py files", codePath)
 	}
+
+	absPath, err := filepath.Abs(resolved)
+	if err != nil {
+		absPath = resolved
+	}
+
+	if IsRootlessSandboxAvailable() {
+		// Rootless OCI isolation using bubblewrap:
+		// --die-with-parent: Prevents orphaned processes
+		// --ro-bind / /: Read-only filesystem
+		// --unshare-net: Network unreachable
+		// --dev /dev: Minimal devices
+		// --proc /proc: Isolated proc namespace
+		args := []string{
+			"--die-with-parent",
+			"--ro-bind", "/", "/",
+			"--unshare-net",
+			"--dev", "/dev",
+			"--proc", "/proc",
+			"python3", absPath,
+		}
+		return exec.Command("bwrap", args...), nil
+	}
+
 	return exec.Command("python3", resolved), nil
 }
 

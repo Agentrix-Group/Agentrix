@@ -455,6 +455,6 @@ Configuración:
 
 ### Fase 4: Admisión de Bots y Sandboxing (Corte 4)
 
-* [ ] Endpoint para recepción de archivos ZIP (`agentrix.json` + `bot.py`).
-* [ ] Validación estática previa y ejecución de tick de prueba (dry-run).
-* [ ] Configurar aislamiento rootless OCI sin acceso a red y sistema de archivos de solo lectura.
+* [x] Endpoint para recepción de archivos ZIP (`agentrix.json` + `bot.py`).
+* [x] Validación estática previa y ejecución de tick de prueba (dry-run).
+* [x] Configurar aislamiento rootless OCI sin acceso a red y sistema de archivos de solo lectura.

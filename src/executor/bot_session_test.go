@@ -158,3 +158,60 @@ print(json.dumps({"type":"action", "tick":msg["tick"], "action":{
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid Python syntax")
 }
+
+func TestBotSessionRootlessSandboxAislesNetworkAndFileSystem(t *testing.T) {
+	if !IsRootlessSandboxAvailable() {
+		t.Skip("rootless sandbox (bwrap) not available on host")
+	}
+
+	sandbox := NewSandbox(time.Second).(*agentSandbox)
+
+	// Bot attempting network connection must be blocked by network isolation
+	networkBot := writeProtocolBot(t, `import json, sys, socket
+init = json.loads(sys.stdin.readline())
+msg = json.loads(sys.stdin.readline())
+try:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(0.5)
+    s.connect(("1.1.1.1", 80))
+    action = {"thrust": "FORWARD"}
+except Exception as e:
+    # Network blocked as expected
+    action = {"thrust": "BLOCKED_NET", "error": type(e).__name__}
+print(json.dumps({"type": "action", "tick": msg["tick"], "action": action}), flush=True)
+`)
+	sessionNet, err := sandbox.StartSession(context.Background(), "match-net", map[string]string{"p1": networkBot}, 1, 0)
+	require.NoError(t, err)
+	defer sessionNet.Close(context.Background(), "", "test")
+
+	resNet := sessionNet.ExecuteTurn(context.Background(), 0, "p1", json.RawMessage(`{"tick":0}`))
+	require.Equal(t, engine.ActionStatusValid, resNet.Status)
+	var payloadNet map[string]interface{}
+	require.NoError(t, json.Unmarshal(resNet.Payload, &payloadNet))
+	require.Equal(t, "BLOCKED_NET", payloadNet["thrust"])
+	require.Equal(t, "OSError", payloadNet["error"])
+
+	// Bot attempting unauthorized filesystem write must fail due to read-only mount
+	writeBot := writeProtocolBot(t, `import json, sys
+init = json.loads(sys.stdin.readline())
+msg = json.loads(sys.stdin.readline())
+try:
+    with open("/malicious_write.txt", "w") as f:
+        f.write("exploit")
+    action = {"thrust": "EXPLOIT_SUCCESS"}
+except OSError as e:
+    action = {"thrust": "BLOCKED_FS", "error": type(e).__name__}
+print(json.dumps({"type": "action", "tick": msg["tick"], "action": action}), flush=True)
+`)
+	sessionWrite, err := sandbox.StartSession(context.Background(), "match-fs", map[string]string{"p1": writeBot}, 1, 0)
+	require.NoError(t, err)
+	defer sessionWrite.Close(context.Background(), "", "test")
+
+	resWrite := sessionWrite.ExecuteTurn(context.Background(), 0, "p1", json.RawMessage(`{"tick":0}`))
+	require.Equal(t, engine.ActionStatusValid, resWrite.Status)
+	var payloadWrite map[string]interface{}
+	require.NoError(t, json.Unmarshal(resWrite.Payload, &payloadWrite))
+	require.Equal(t, "BLOCKED_FS", payloadWrite["thrust"])
+	require.Equal(t, "OSError", payloadWrite["error"])
+}
+

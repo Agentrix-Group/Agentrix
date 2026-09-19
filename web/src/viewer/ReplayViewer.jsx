@@ -12,10 +12,7 @@ import {
 } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { formatNumber } from '../i18n/formatters.js';
-
-const PLAYER_COLORS = ['#2f8aa6', '#e07a67'];
-const WORLD_WIDTH = 2000;
-const WORLD_HEIGHT = 1000;
+import { drawStarfighterArena, PLAYER_COLORS } from '../renderers/starfighter/canvasRenderer.js';
 
 export function parseReplayNDJSON(raw) {
   const records = raw
@@ -72,96 +69,6 @@ export function parseReplayNDJSON(raw) {
   return { metadata, snapshots, result };
 }
 
-function drawArena(canvas, frame) {
-  const ctx = canvas.getContext('2d');
-  const width = canvas.width;
-  const height = canvas.height;
-  const snapshot = frame?.public_snapshot || {};
-  ctx.clearRect(0, 0, width, height);
-
-  const gradient = ctx.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, '#f7fcfd');
-  gradient.addColorStop(1, '#edf7f5');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, width, height);
-
-  ctx.fillStyle = '#bddde3';
-  for (let i = 0; i < 42; i += 1) {
-    const x = (i * 137 + 41) % width;
-    const y = (i * 73 + 29) % height;
-    ctx.globalAlpha = 0.25 + (i % 3) * 0.14;
-    ctx.beginPath();
-    ctx.arc(x, y, 1 + (i % 2), 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  const padding = 42;
-  const project = (position = {}) => ({
-    x: padding + ((Number(position.x) + WORLD_WIDTH / 2) / WORLD_WIDTH) * (width - padding * 2),
-    y: padding + ((WORLD_HEIGHT / 2 - Number(position.y)) / WORLD_HEIGHT) * (height - padding * 2),
-  });
-
-  ctx.strokeStyle = '#c8dfe2';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 10]);
-  ctx.strokeRect(padding, padding, width - padding * 2, height - padding * 2);
-  ctx.setLineDash([]);
-
-  (snapshot.bullets || []).forEach((bullet) => {
-    const point = project(bullet.position);
-    ctx.fillStyle = '#df8b68';
-    ctx.beginPath();
-    ctx.arc(point.x, point.y, 4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = 'rgba(223, 139, 104, .28)';
-    ctx.lineWidth = 6;
-    ctx.stroke();
-  });
-
-  (snapshot.fighters || []).forEach((fighter, index) => {
-    const point = project(fighter.position);
-    const rotation = Number(fighter.rotation || 0);
-    const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
-
-    if (fighter.shieldActive) {
-      ctx.strokeStyle = '#55b9c6';
-      ctx.fillStyle = 'rgba(85, 185, 198, .12)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 29, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
-
-    ctx.save();
-    ctx.translate(point.x, point.y);
-    ctx.rotate(rotation);
-    ctx.fillStyle = color;
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(25, 0);
-    ctx.lineTo(-16, -13);
-    ctx.lineTo(-9, 0);
-    ctx.lineTo(-16, 13);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    ctx.restore();
-
-    const health = Math.max(0, Math.min(100, Number(fighter.health ?? 0)));
-    ctx.fillStyle = '#dce8e8';
-    ctx.fillRect(point.x - 25, point.y + 34, 50, 5);
-    ctx.fillStyle = health > 35 ? '#61b69b' : '#df7d74';
-    ctx.fillRect(point.x - 25, point.y + 34, 50 * (health / 100), 5);
-    ctx.fillStyle = '#385466';
-    ctx.font = '600 11px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(String(fighter.playerId || '').slice(0, 10), point.x, point.y - 35);
-  });
-}
-
 export function ReplayViewer({ replayId }) {
   const { t, i18n } = useTranslation(['viewer', 'common']);
   const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
@@ -207,10 +114,10 @@ export function ReplayViewer({ replayId }) {
 
   const currentFrame = replay?.snapshots?.[frameIndex];
   useEffect(() => {
-    if (canvasRef.current && currentFrame) drawArena(canvasRef.current, currentFrame);
+    if (canvasRef.current && currentFrame) drawStarfighterArena(canvasRef.current, currentFrame);
   }, [currentFrame]);
 
-  const fighters = currentFrame?.public_snapshot?.fighters || [];
+  const fighters = currentFrame?.public_snapshot?.fighters || currentFrame?.public_snapshot?.entities || [];
   const events = currentFrame?.events || currentFrame?.public_snapshot?.events || [];
   const totalFrames = Math.max(0, (replay?.snapshots?.length || 1) - 1);
   const matchLabel = useMemo(

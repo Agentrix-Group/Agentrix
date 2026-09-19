@@ -449,9 +449,9 @@ Configuración:
 
 ### Fase 3: Visor Web de Starfighter (Corte 3)
 
-* [ ] Retirar el visualizador de cuadrícula 10x10 de Arena Básica.
-* [ ] Crear renderer en React con Canvas 2D/PixiJS consumiendo el flujo NDJSON.
-* [ ] Implementar barra de tiempo, scrubbing, pausa y velocidades (0.5x, 1x, 2x, 4x).
+* [x] Retirar el visualizador de cuadrícula 10x10 de Arena Básica.
+* [x] Crear renderer en React con Canvas 2D/PixiJS consumiendo el flujo NDJSON.
+* [x] Implementar barra de tiempo, scrubbing, pausa y velocidades (0.5x, 1x, 2x, 4x).
 
 ### Fase 4: Admisión de Bots y Sandboxing (Corte 4)
 

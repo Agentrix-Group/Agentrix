@@ -19,9 +19,6 @@ import (
 func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	ownerId := r.URL.Query().Get("owner_user_id")
-	if ownerId == "" {
-		ownerId = r.URL.Query().Get("participant_id")
-	}
 
 	var agents []model.Agent
 	var err error
@@ -69,16 +66,10 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	var authRole string
 	if claims, ok := ctx.Value(common.UserContextKey).(*model.Claims); ok {
 		authUserID = claims.UserID
-		if authUserID == "" {
-			authUserID = claims.ParticipantId
-		}
 		authRole = claims.RoleId
 	}
 
 	// Normalize owner_user_id
-	if agent.OwnerUserId == "" {
-		agent.OwnerUserId = agent.ParticipantId
-	}
 	if agent.OwnerUserId == "" {
 		agent.OwnerUserId = authUserID
 	} else if agent.OwnerUserId != authUserID && authRole != common.RoleAdmin && authUserID != "" {
@@ -86,7 +77,6 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		common.WriteDiagnosticError(w, ctx, common.MISSING_PERMISSION_ERROR, "Forbidden", "Cannot create agent for another user")
 		return
 	}
-	agent.ParticipantId = agent.OwnerUserId
 
 	if err := validateAgent(&agent); err != nil {
 		if agent.Name == "" || agent.GameId == "" {
@@ -131,7 +121,7 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			common.WriteDiagnosticError(w, ctx, common.GAME_NOT_FOUND_ERROR, "Game not found in database", fmt.Sprintf("Constraint %s violated: game not found in database", constraint))
 			return
 
-		case errors.Is(err, service.ErrUserNotFound), errors.Is(err, service.ErrParticipantNotFound):
+		case errors.Is(err, service.ErrUserNotFound):
 			fields = append(fields, tracer.Origin(tracer.OriginPlatform))
 			tracer.FailRequest(ctx, tracer.ScopeDatabase, "agent.create.failed", "Propietario del agente no existe", fields...)
 			common.WriteDiagnosticError(w, ctx, common.NOT_FOUND_ERROR, "Agent owner user not found", fmt.Sprintf("Constraint %s violated: user does not exist", constraint))

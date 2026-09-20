@@ -13,54 +13,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockParticipantRepo struct {
+type mockUserRepo struct {
 	repository.Repository
-	getByUsernameFn func(ctx context.Context, username string) (*model.Participant, error)
-	getByEmailFn    func(ctx context.Context, email string) (*model.Participant, error)
-	createFn        func(ctx context.Context, p *model.Participant) error
+	getByUsernameFn func(ctx context.Context, username string) (*model.User, error)
+	getByEmailFn    func(ctx context.Context, email string) (*model.User, error)
+	createFn        func(ctx context.Context, u *model.User) error
 }
 
-func (m *mockParticipantRepo) GetParticipantByUsername(ctx context.Context, username string) (*model.Participant, error) {
+func (m *mockUserRepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
 	if m.getByUsernameFn != nil {
 		return m.getByUsernameFn(ctx, username)
 	}
 	return nil, sql.ErrNoRows
 }
 
-func (m *mockParticipantRepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
-	return m.GetParticipantByUsername(ctx, username)
-}
-
-func (m *mockParticipantRepo) GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error) {
+func (m *mockUserRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	if m.getByEmailFn != nil {
 		return m.getByEmailFn(ctx, email)
 	}
 	return nil, sql.ErrNoRows
 }
 
-func (m *mockParticipantRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
-	return m.GetParticipantByEmail(ctx, email)
-}
-
-func (m *mockParticipantRepo) CreateParticipant(ctx context.Context, p *model.Participant) error {
+func (m *mockUserRepo) CreateUser(ctx context.Context, u *model.User) error {
 	if m.createFn != nil {
-		return m.createFn(ctx, p)
+		return m.createFn(ctx, u)
 	}
 	return nil
 }
 
-func (m *mockParticipantRepo) CreateUser(ctx context.Context, u *model.User) error {
-	return m.CreateParticipant(ctx, u)
-}
-
-func TestParticipantService_Login(t *testing.T) {
+func TestUserService_Login(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
 	rawPassword := "validPass123"
 	hashed := fmt.Sprintf("%x", sha512.Sum512([]byte(rawPassword)))
 
-	activeUser := &model.Participant{
+	activeUser := &model.User{
 		Id:       "p1",
 		Username: "botcoder",
 		Email:    "botcoder@example.com",
@@ -69,7 +57,7 @@ func TestParticipantService_Login(t *testing.T) {
 		Active:   true,
 	}
 
-	inactiveUser := &model.Participant{
+	inactiveUser := &model.User{
 		Id:       "p2",
 		Username: "inactivebot",
 		Email:    "inactive@example.com",
@@ -79,8 +67,8 @@ func TestParticipantService_Login(t *testing.T) {
 	}
 
 	t.Run("Valid credentials succeed", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				if username == "botcoder" {
 					return activeUser, nil
 				}
@@ -96,8 +84,8 @@ func TestParticipantService_Login(t *testing.T) {
 	})
 
 	t.Run("Invalid password fails", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return activeUser, nil
 			},
 		}
@@ -110,8 +98,8 @@ func TestParticipantService_Login(t *testing.T) {
 	})
 
 	t.Run("Unknown username fails", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
 		}
@@ -124,8 +112,8 @@ func TestParticipantService_Login(t *testing.T) {
 	})
 
 	t.Run("Inactive account is rejected", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return inactiveUser, nil
 			},
 		}
@@ -138,7 +126,7 @@ func TestParticipantService_Login(t *testing.T) {
 	})
 
 	t.Run("Empty fields fail", func(t *testing.T) {
-		svc := NewService(&mockParticipantRepo{}, nil, nil)
+		svc := NewService(&mockUserRepo{}, nil, nil)
 
 		user, err := svc.Login(ctx, "", "")
 		r.Error(err)
@@ -147,33 +135,33 @@ func TestParticipantService_Login(t *testing.T) {
 	})
 }
 
-func TestParticipantService_Register(t *testing.T) {
+func TestUserService_Register(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
 	t.Run("Valid registration succeeds and hashes password", func(t *testing.T) {
-		var created *model.Participant
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		var created *model.User
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
-			getByEmailFn: func(ctx context.Context, email string) (*model.Participant, error) {
+			getByEmailFn: func(ctx context.Context, email string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
-			createFn: func(ctx context.Context, p *model.Participant) error {
-				created = p
+			createFn: func(ctx context.Context, u *model.User) error {
+				created = u
 				return nil
 			},
 		}
 		svc := NewService(repo, nil, nil)
 
-		p := &model.Participant{
+		u := &model.User{
 			Username: "newcoder",
 			Email:    "newcoder@example.com",
 			Password: "securePassword123",
 		}
 
-		err := svc.Register(ctx, p)
+		err := svc.Register(ctx, u)
 		r.NoError(err)
 		r.NotNil(created)
 		r.Equal("newcoder", created.Username)
@@ -188,80 +176,80 @@ func TestParticipantService_Register(t *testing.T) {
 	})
 
 	t.Run("Supplied role_id is ignored and forced to participant", func(t *testing.T) {
-		var created *model.Participant
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		var created *model.User
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
-			getByEmailFn: func(ctx context.Context, email string) (*model.Participant, error) {
+			getByEmailFn: func(ctx context.Context, email string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
-			createFn: func(ctx context.Context, p *model.Participant) error {
-				created = p
+			createFn: func(ctx context.Context, u *model.User) error {
+				created = u
 				return nil
 			},
 		}
 		svc := NewService(repo, nil, nil)
 
-		p := &model.Participant{
+		u := &model.User{
 			Username: "sneakyadmin",
 			Email:    "sneaky@example.com",
 			Password: "securePassword123",
 			RoleId:   "admin", // Malicious attempt to self-assign admin role
 		}
 
-		err := svc.Register(ctx, p)
+		err := svc.Register(ctx, u)
 		r.NoError(err)
 		r.NotNil(created)
 		r.Equal("participant", created.RoleId) // Must be forced to participant
 	})
 
 	t.Run("Duplicate username is rejected", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
-				return &model.Participant{Id: "existing-id", Username: username}, nil
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
+				return &model.User{Id: "existing-id", Username: username}, nil
 			},
 		}
 		svc := NewService(repo, nil, nil)
 
-		p := &model.Participant{
+		u := &model.User{
 			Username: "existinguser",
 			Email:    "diff@example.com",
 			Password: "password123",
 		}
 
-		err := svc.Register(ctx, p)
+		err := svc.Register(ctx, u)
 		r.Error(err)
 		r.True(errors.Is(err, ErrUsernameAlreadyExists))
 	})
 
 	t.Run("Duplicate email is rejected", func(t *testing.T) {
-		repo := &mockParticipantRepo{
-			getByUsernameFn: func(ctx context.Context, username string) (*model.Participant, error) {
+		repo := &mockUserRepo{
+			getByUsernameFn: func(ctx context.Context, username string) (*model.User, error) {
 				return nil, sql.ErrNoRows
 			},
-			getByEmailFn: func(ctx context.Context, email string) (*model.Participant, error) {
-				return &model.Participant{Id: "existing-email-id", Email: email}, nil
+			getByEmailFn: func(ctx context.Context, email string) (*model.User, error) {
+				return &model.User{Id: "existing-email-id", Email: email}, nil
 			},
 		}
 		svc := NewService(repo, nil, nil)
 
-		p := &model.Participant{
+		u := &model.User{
 			Username: "brandnew",
 			Email:    "existing@example.com",
 			Password: "password123",
 		}
 
-		err := svc.Register(ctx, p)
+		err := svc.Register(ctx, u)
 		r.Error(err)
 		r.True(errors.Is(err, ErrEmailAlreadyExists))
 	})
 
 	t.Run("Invalid username format is rejected", func(t *testing.T) {
-		svc := NewService(&mockParticipantRepo{}, nil, nil)
+		svc := NewService(&mockUserRepo{}, nil, nil)
 
 		// Too short
-		err := svc.Register(ctx, &model.Participant{
+		err := svc.Register(ctx, &model.User{
 			Username: "ab",
 			Email:    "valid@example.com",
 			Password: "password123",
@@ -270,7 +258,7 @@ func TestParticipantService_Register(t *testing.T) {
 		r.True(errors.Is(err, ErrInvalidUsername))
 
 		// Invalid characters
-		err = svc.Register(ctx, &model.Participant{
+		err = svc.Register(ctx, &model.User{
 			Username: "user!name#",
 			Email:    "valid@example.com",
 			Password: "password123",
@@ -280,9 +268,9 @@ func TestParticipantService_Register(t *testing.T) {
 	})
 
 	t.Run("Invalid email format is rejected", func(t *testing.T) {
-		svc := NewService(&mockParticipantRepo{}, nil, nil)
+		svc := NewService(&mockUserRepo{}, nil, nil)
 
-		err := svc.Register(ctx, &model.Participant{
+		err := svc.Register(ctx, &model.User{
 			Username: "validuser",
 			Email:    "not-an-email",
 			Password: "password123",
@@ -292,9 +280,9 @@ func TestParticipantService_Register(t *testing.T) {
 	})
 
 	t.Run("Short password is rejected", func(t *testing.T) {
-		svc := NewService(&mockParticipantRepo{}, nil, nil)
+		svc := NewService(&mockUserRepo{}, nil, nil)
 
-		err := svc.Register(ctx, &model.Participant{
+		err := svc.Register(ctx, &model.User{
 			Username: "validuser",
 			Email:    "valid@example.com",
 			Password: "12345",

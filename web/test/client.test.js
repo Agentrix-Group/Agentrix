@@ -24,7 +24,7 @@ describe('Central HTTP Client (ADR-0009 / F0.4)', () => {
     expect(buildUrl('/contests')).toBe('/contests');
     expect(buildUrl('matches')).toBe('/matches');
     expect(buildUrl('/matches', { contest_id: 'c-1', limit: 10 })).toBe('/matches?contest_id=c-1&limit=10');
-    expect(buildUrl('/agents', { participant_id: 'user 1 & 2' })).toBe('/agents?participant_id=user+1+%26+2');
+    expect(buildUrl('/agents', { owner_user_id: 'user 1 & 2' })).toBe('/agents?owner_user_id=user+1+%26+2');
     expect(buildUrl('/contests', { empty: '', undef: undefined, nul: null })).toBe('/contests');
   });
 

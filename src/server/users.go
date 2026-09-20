@@ -54,9 +54,8 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	user.Password = "" // Omit password hash in response
 	user.Capabilities = resolveCapabilities(user.RoleId)
 	common.WriteObjectResponse(w, http.StatusOK, LoginResponse{
-		Token:       token,
-		User:        user,
-		Participant: user, // For backward compatibility with legacy frontend
+		Token: token,
+		User:  user,
 	})
 }
 
@@ -122,9 +121,6 @@ func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := claims.UserID
-	if userID == "" {
-		userID = claims.ParticipantId
-	}
 
 	token, err := s.Auth.GenerateAuthToken(userID, claims.RoleId)
 	if err != nil {
@@ -145,9 +141,6 @@ func (s *Server) checkSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := claims.UserID
-	if userID == "" {
-		userID = claims.ParticipantId
-	}
 
 	user, err := s.Service.GetUser(ctx, userID)
 	if err != nil {
@@ -169,9 +162,6 @@ func (s *Server) getMyAgents(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := claims.UserID
-	if userID == "" {
-		userID = claims.ParticipantId
-	}
 
 	agents, err := s.Service.ListAgentsByOwner(ctx, userID)
 	if err != nil {

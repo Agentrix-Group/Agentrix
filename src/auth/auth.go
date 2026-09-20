@@ -56,9 +56,8 @@ func (a *Auth) GenerateAuthToken(userId, roleId string) (*model.Token, error) {
 
 func (a *Auth) generateToken(userId, roleId string, expiry time.Time, secret []byte) (string, error) {
 	claims := model.Claims{
-		UserID:        userId,
-		ParticipantId: userId,
-		RoleId:        roleId,
+		UserID: userId,
+		RoleId: roleId,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    Issuer,
 			Subject:   userId,
@@ -94,14 +93,7 @@ func (a *Auth) validateToken(tokenString string, secret []byte) (*model.Claims, 
 
 	if claims, ok := token.Claims.(*model.Claims); ok && token.Valid {
 		if claims.UserID == "" {
-			if claims.ParticipantId != "" {
-				claims.UserID = claims.ParticipantId
-			} else {
-				claims.UserID = claims.Subject
-			}
-		}
-		if claims.ParticipantId == "" {
-			claims.ParticipantId = claims.UserID
+			claims.UserID = claims.Subject
 		}
 		return claims, nil
 	}

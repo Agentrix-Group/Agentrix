@@ -28,15 +28,6 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodPut:   common.AdminPermission,
 		http.MethodPatch: common.AdminPermission,
 	},
-	"/api/v1/participants": {
-		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.AdminPermission,
-	},
-	"/api/v1/participants/{id}": {
-		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
-	},
 	"/api/v1/contests": {
 		http.MethodPost: common.AdminPermission,
 	},
@@ -159,9 +150,6 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 
 		actorID := claims.UserID
-		if actorID == "" {
-			actorID = claims.ParticipantId
-		}
 		ctx = context.WithValue(ctx, common.UserContextKey, claims)
 		ctx = tracer.WithActorID(ctx, actorID)
 		next.ServeHTTP(w, r.WithContext(ctx))
@@ -186,9 +174,6 @@ func (s *Server) permissionMiddleware(next http.Handler) http.Handler {
 		}
 
 		actorID := claims.UserID
-		if actorID == "" {
-			actorID = claims.ParticipantId
-		}
 
 		hasPermission, err := s.Service.HasPermission(ctx, actorID, requiredPermission)
 		if err != nil {

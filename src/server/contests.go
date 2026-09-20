@@ -118,9 +118,6 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	userID := claims.UserID
-	if userID == "" {
-		userID = claims.ParticipantId
-	}
 
 	entry, ranking, err := s.Service.EnrollAgent(ctx, userID, contestId, req.AgentId)
 	if err != nil {

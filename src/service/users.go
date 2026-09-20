@@ -25,7 +25,6 @@ var (
 	ErrInvalidEmail          = errors.New("invalid email address format")
 	ErrInvalidPassword       = errors.New("password must be at least 6 characters")
 	ErrUserNotFound          = repository.ErrUserNotFound
-	ErrParticipantNotFound   = ErrUserNotFound
 )
 
 // UserService defines user and authentication use cases (ATD-015).
@@ -37,16 +36,7 @@ type UserService interface {
 	UpdateUser(ctx context.Context, user *model.User) error
 	ActivateUser(ctx context.Context, id string, isActive bool) error
 	HasPermission(ctx context.Context, userId, permission string) (bool, error)
-
-	// Backward compatibility
-	ListParticipants(ctx context.Context) ([]model.Participant, error)
-	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
-	UpdateParticipant(ctx context.Context, participant *model.Participant) error
-	ActivateParticipant(ctx context.Context, id string, isActive bool) error
 }
-
-// ParticipantService alias for backward compatibility
-type ParticipantService = UserService
 
 func isValidUsername(u string) bool {
 	if len(u) < 3 || len(u) > 50 {
@@ -147,32 +137,16 @@ func (s *service) ListUsers(ctx context.Context) ([]model.User, error) {
 	return s.repo.ListUsers(ctx)
 }
 
-func (s *service) ListParticipants(ctx context.Context) ([]model.Participant, error) {
-	return s.ListUsers(ctx)
-}
-
 func (s *service) GetUser(ctx context.Context, id string) (*model.User, error) {
 	return s.repo.GetUser(ctx, id)
-}
-
-func (s *service) GetParticipant(ctx context.Context, id string) (*model.Participant, error) {
-	return s.GetUser(ctx, id)
 }
 
 func (s *service) UpdateUser(ctx context.Context, user *model.User) error {
 	return s.repo.UpdateUser(ctx, user)
 }
 
-func (s *service) UpdateParticipant(ctx context.Context, participant *model.Participant) error {
-	return s.UpdateUser(ctx, participant)
-}
-
 func (s *service) ActivateUser(ctx context.Context, id string, isActive bool) error {
 	return s.repo.ActivateUser(ctx, id, isActive)
-}
-
-func (s *service) ActivateParticipant(ctx context.Context, id string, isActive bool) error {
-	return s.ActivateUser(ctx, id, isActive)
 }
 
 type rolePermCache struct {

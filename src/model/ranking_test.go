@@ -16,7 +16,7 @@ func TestRankingJSONSerialization(t *testing.T) {
 		Id:            "rank-1",
 		ContestId:     "contest-1",
 		AgentId:       "agent-1",
-		ParticipantId: "part-1",
+		UserId:        "user-1",
 		Score:         1250,
 		MatchesPlayed: 10,
 		Wins:          7,

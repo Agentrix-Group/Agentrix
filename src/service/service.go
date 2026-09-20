@@ -21,12 +21,6 @@ type Service interface {
 	ActivateUser(ctx context.Context, id string, isActive bool) error
 	HasPermission(ctx context.Context, userId, permission string) (bool, error)
 
-	// Participant backward-compatibility aliases
-	ListParticipants(ctx context.Context) ([]model.Participant, error)
-	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
-	UpdateParticipant(ctx context.Context, participant *model.Participant) error
-	ActivateParticipant(ctx context.Context, id string, isActive bool) error
-
 	// Contests & Categories
 	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
 	GetPublicContest(ctx context.Context, id string) (*model.Contest, error)
@@ -51,7 +45,6 @@ type Service interface {
 	// Agents
 	ListAgents(ctx context.Context) ([]model.Agent, error)
 	ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error)
-	ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error)
 	GetAgent(ctx context.Context, id string) (*model.Agent, error)
 	CreateAgent(ctx context.Context, agent *model.Agent) error
 	UpdateAgent(ctx context.Context, agent *model.Agent) error
@@ -61,7 +54,7 @@ type Service interface {
 	ListSubmissions(ctx context.Context) ([]model.Submission, error)
 	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
 	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
-	CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error)
+	CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error)
 
 	// Matches
 	ListMatches(ctx context.Context) ([]model.Match, error)

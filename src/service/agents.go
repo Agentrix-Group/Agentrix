@@ -23,10 +23,6 @@ func (s *service) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]
 	return s.repo.ListAgentsByOwner(ctx, ownerUserId)
 }
 
-func (s *service) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
-	return s.ListAgentsByOwner(ctx, participantId)
-}
-
 func (s *service) GetAgent(ctx context.Context, id string) (*model.Agent, error) {
 	return s.repo.GetAgent(ctx, id)
 }

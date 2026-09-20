@@ -83,9 +83,6 @@ func (s *Server) uploadSubmissionBundle(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	userID := claims.UserID
-	if userID == "" {
-		userID = claims.ParticipantId
-	}
 	submission, err := s.Service.CreateSubmissionBundle(ctx, userID, claims.RoleId, agentID, archive)
 	if err != nil {
 		switch {

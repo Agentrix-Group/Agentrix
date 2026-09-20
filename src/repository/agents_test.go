@@ -20,10 +20,10 @@ func TestAgentsRepositoryDisconnected(t *testing.T) {
 	r.Error(err)
 	r.Nil(agents)
 
-	// ListAgentsByParticipant
-	agentsByPart, err := repo.ListAgentsByParticipant(ctx, "part-1")
+	// ListAgentsByOwner
+	agentsByOwner, err := repo.ListAgentsByOwner(ctx, "user-1")
 	r.Error(err)
-	r.Nil(agentsByPart)
+	r.Nil(agentsByOwner)
 
 	// GetAgent
 	agent, err := repo.GetAgent(ctx, "agent-1")

@@ -10,9 +10,6 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./script/database/00_init_postgresql.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
-      - ./script/database/01_contests_postgresql.sql:/docker-entrypoint-initdb.d/01_contests.sql:ro
-      - ./script/database/02_match_jobs_postgresql.sql:/docker-entrypoint-initdb.d/02_match_jobs.sql:ro
-      - ./script/database/03_match_runs_postgresql.sql:/docker-entrypoint-initdb.d/03_match_runs.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d agentrix"]
       interval: 5s

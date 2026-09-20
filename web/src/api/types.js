@@ -17,7 +17,7 @@
  */
 
 /**
- * @typedef {Object} Participant
+ * @typedef {Object} User
  * @property {string} id
  * @property {string} username
  * @property {string} [email]
@@ -43,7 +43,7 @@
  * @property {string} name
  * @property {string} [description]
  * @property {string} [game_id]
- * @property {string} [participant_id]
+ * @property {string} [owner_user_id]
  * @property {string} [created_at]
  */
 
@@ -85,7 +85,7 @@
  * @property {string} id
  * @property {number} rank
  * @property {string} agent_id
- * @property {string} participant_id
+ * @property {string} user_id
  * @property {number} score
  * @property {number} matches_played
  * @property {number} wins

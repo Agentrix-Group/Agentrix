@@ -196,7 +196,7 @@ describe('Auth, Session and Capabilities (ADR-0009 / Sprint FQ-1)', () => {
     it('preserves redirect destination upon successful login', async () => {
       const loginSpy = vi.spyOn(ApiService, 'login').mockResolvedValue({
         token: { access_token: 'acc', refresh_token: 'ref' },
-        participant: { id: 'p1', username: 'pro' },
+        user: { id: 'p1', username: 'pro' },
       });
       vi.spyOn(ApiService, 'getCurrentUser').mockResolvedValue({ id: 'p1', username: 'pro' });
 

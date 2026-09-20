@@ -15,7 +15,6 @@ var (
 
 	ErrGameNotFound        = errors.New("game not found")
 	ErrUserNotFound        = errors.New("user not found")
-	ErrParticipantNotFound = ErrUserNotFound
 	ErrAgentAlreadyExists  = errors.New("agent already exists")
 	ErrForeignKeyViolation = errors.New("foreign key violation")
 	ErrSchemaIncompatible  = errors.New("database schema incompatible or missing tables")
@@ -58,7 +57,7 @@ func ClassifyDBError(err error) error {
 					SafeMessage:    "game does not exist",
 				}
 			}
-			if pgErr.ConstraintName == "agents_participant_id_fkey" || pgErr.ConstraintName == "agents_owner_user_id_fkey" {
+			if pgErr.ConstraintName == "agents_owner_user_id_fkey" {
 				return &DBError{
 					Err:            ErrUserNotFound,
 					SQLState:       pgErr.Code,

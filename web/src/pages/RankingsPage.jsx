@@ -91,7 +91,7 @@ export function RankingsPage({ initialContestId = '' }) {
     if (query) {
       filtered = filtered.filter((r) =>
         (r.agent_id && r.agent_id.toLowerCase().includes(query)) ||
-        (r.participant_id && r.participant_id.toLowerCase().includes(query))
+        (r.user_id && r.user_id.toLowerCase().includes(query))
       );
     }
 
@@ -273,7 +273,7 @@ export function RankingsPage({ initialContestId = '' }) {
               <tr key={r.id || `${r.agent_id}-${index}`}>
                 <td><strong>#{r.rank !== undefined ? r.rank : index + 1}</strong></td>
                 <td>{r.agent_id}</td>
-                <td>{r.participant_id}</td>
+                <td>{r.user_id}</td>
                 <td><strong>{formatNumber(r.score, currentLang)}</strong></td>
                 <td>{formatNumber(r.matches_played, currentLang)}</td>
                 <td>

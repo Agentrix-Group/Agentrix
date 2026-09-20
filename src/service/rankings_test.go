@@ -67,7 +67,7 @@ func (m *mockRankingsRepo) GetAgent(ctx context.Context, id string) (*model.Agen
 	if m.getAgentFn != nil {
 		return m.getAgentFn(ctx, id)
 	}
-	return &model.Agent{Id: id, ParticipantId: "part-1"}, nil
+	return &model.Agent{Id: id, OwnerUserId: "user-1"}, nil
 }
 
 func (m *mockRankingsRepo) UpsertRanking(ctx context.Context, ranking *model.Ranking) error {
@@ -104,7 +104,7 @@ func TestRankingsService(t *testing.T) {
 			return &model.Submission{Id: id, AgentId: "agent-2"}, nil
 		},
 		getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
-			return &model.Agent{Id: id, ParticipantId: "part-" + id}, nil
+			return &model.Agent{Id: id, OwnerUserId: "user-" + id}, nil
 		},
 	}
 

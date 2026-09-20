@@ -7,13 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateParticipant(t *testing.T) {
+func TestValidateUser(t *testing.T) {
 	r := require.New(t)
 
-	r.Error(validateParticipant(nil))
-	r.Error(validateParticipant(&model.Participant{}))
-	r.Error(validateParticipant(&model.Participant{Username: "alice"}))
-	r.NoError(validateParticipant(&model.Participant{Username: "alice", Email: "alice@test.com"}))
+	r.Error(validateUser(nil))
+	r.Error(validateUser(&model.User{}))
+	r.Error(validateUser(&model.User{Username: "alice"}))
+	r.NoError(validateUser(&model.User{Username: "alice", Email: "alice@test.com"}))
 }
 
 func TestValidateContest(t *testing.T) {

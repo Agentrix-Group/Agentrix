@@ -1,7 +1,7 @@
 paths:
   /api/v1/auth/login:
     post:
-      summary: Authenticate participant and obtain JWT token
+      summary: Authenticate user and obtain JWT token
       tags:
         - Authentication
       requestBody:
@@ -24,7 +24,7 @@ paths:
 
   /api/v1/auth/register:
     post:
-      summary: Register a new participant
+      summary: Register a new user
       tags:
         - Authentication
       requestBody:
@@ -35,7 +35,7 @@ paths:
               $ref: './components/models.yaml#/RegisterRequest'
       responses:
         '201':
-          description: Participant registered
+          description: User registered
           content:
             application/json:
               schema:
@@ -69,17 +69,17 @@ paths:
 
   /api/v1/me:
     get:
-      summary: Get authenticated participant session
+      summary: Get authenticated user session
       tags:
         - Authentication
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: Current participant profile
+          description: Current user profile
           content:
             application/json:
               schema:
-                $ref: './components/models.yaml#/Participant'
+                $ref: './components/models.yaml#/User'
         '401':
           $ref: './components/errors.yaml#/Unauthorized'

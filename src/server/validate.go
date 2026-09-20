@@ -16,10 +16,6 @@ func validateUser(u *model.User) error {
 	return nil
 }
 
-func validateParticipant(p *model.Participant) error {
-	return validateUser(p)
-}
-
 func validateLoginRequest(username, password string) error {
 	if username == "" || password == "" {
 		return errors.New("username and password are required")

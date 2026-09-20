@@ -29,7 +29,7 @@ func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]mo
 
 	type agentStats struct {
 		AgentId       string
-		ParticipantId string
+		UserId        string
 		Score         int
 		MatchesPlayed int
 		Wins          int
@@ -59,8 +59,8 @@ func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]mo
 			st, exists := statsMap[agent.Id]
 			if !exists {
 				st = &agentStats{
-					AgentId:       agent.Id,
-					ParticipantId: agent.ParticipantId,
+					AgentId: agent.Id,
+					UserId:  agent.OwnerUserId,
 				}
 				statsMap[agent.Id] = st
 			}
@@ -97,7 +97,7 @@ func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]mo
 			Id:            uuid.New().String(),
 			ContestId:     contestId,
 			AgentId:       st.AgentId,
-			ParticipantId: st.ParticipantId,
+			UserId:        st.UserId,
 			Score:         st.Score,
 			MatchesPlayed: st.MatchesPlayed,
 			Wins:          st.Wins,

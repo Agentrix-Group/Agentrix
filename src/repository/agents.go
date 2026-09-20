@@ -27,7 +27,6 @@ func (r *repository) ListAgents(ctx context.Context) ([]model.Agent, error) {
 		if err := rows.Scan(&a.Id, &a.OwnerUserId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
 			return nil, err
 		}
-		a.ParticipantId = a.OwnerUserId
 		agents = append(agents, a)
 	}
 
@@ -54,14 +53,9 @@ func (r *repository) ListAgentsByOwner(ctx context.Context, ownerUserId string) 
 		if err := rows.Scan(&a.Id, &a.OwnerUserId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
 			return nil, err
 		}
-		a.ParticipantId = a.OwnerUserId
 		agents = append(agents, a)
 	}
 	return agents, nil
-}
-
-func (r *repository) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
-	return r.ListAgentsByOwner(ctx, participantId)
 }
 
 func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, error) {
@@ -83,7 +77,6 @@ func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, err
 		return nil, err
 	}
 
-	a.ParticipantId = a.OwnerUserId
 	return &a, nil
 }
 
@@ -93,15 +86,10 @@ func (r *repository) CreateAgent(ctx context.Context, agent *model.Agent) error 
 		return err
 	}
 
-	ownerID := agent.OwnerUserId
-	if ownerID == "" {
-		ownerID = agent.ParticipantId
-	}
-
 	query := `INSERT INTO agents (id, owner_user_id, game_id, name, description, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
-		agent.Id, ownerID, agent.GameId, agent.Name,
+		agent.Id, agent.OwnerUserId, agent.GameId, agent.Name,
 		agent.Description, agent.Active, agent.CreatedAt,
 	)
 	if err != nil {

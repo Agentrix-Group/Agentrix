@@ -9,11 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestParticipantAndAuthModels(t *testing.T) {
+func TestUserAndAuthModels(t *testing.T) {
 	r := require.New(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	p := Participant{
+	u := User{
 		Id:        "user-1",
 		Username:  "jdaniel",
 		Email:     "jd@example.com",
@@ -28,12 +28,12 @@ func TestParticipantAndAuthModels(t *testing.T) {
 		},
 	}
 
-	data, err := json.Marshal(p)
+	data, err := json.Marshal(u)
 	r.NoError(err)
 	r.Contains(string(data), `"username":"jdaniel"`)
 	r.Contains(string(data), `"email":"jd@example.com"`)
 
-	var parsed Participant
+	var parsed User
 	err = json.Unmarshal(data, &parsed)
 	r.NoError(err)
 	r.Equal("user-1", parsed.Id)
@@ -43,15 +43,15 @@ func TestParticipantAndAuthModels(t *testing.T) {
 
 	// Claims test
 	claims := Claims{
-		ParticipantId: "user-1",
-		RoleId:        "admin",
+		UserID: "user-1",
+		RoleId: "admin",
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour)),
 		},
 	}
 	claimsData, err := json.Marshal(claims)
 	r.NoError(err)
-	r.Contains(string(claimsData), `"participant_id":"user-1"`)
+	r.Contains(string(claimsData), `"user_id":"user-1"`)
 	r.Contains(string(claimsData), `"role_id":"admin"`)
 
 	// Login & Register requests

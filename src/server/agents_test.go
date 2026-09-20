@@ -17,12 +17,12 @@ import (
 
 type mockAgentsService struct {
 	service.Service
-	listAgentsFn              func(ctx context.Context) ([]model.Agent, error)
-	listAgentsByParticipantFn func(ctx context.Context, participantId string) ([]model.Agent, error)
-	getAgentFn                func(ctx context.Context, id string) (*model.Agent, error)
-	createAgentFn             func(ctx context.Context, agent *model.Agent) error
-	updateAgentFn             func(ctx context.Context, agent *model.Agent) error
-	activateAgentFn           func(ctx context.Context, id string, isActive bool) error
+	listAgentsFn          func(ctx context.Context) ([]model.Agent, error)
+	listAgentsByOwnerFn   func(ctx context.Context, ownerUserId string) ([]model.Agent, error)
+	getAgentFn            func(ctx context.Context, id string) (*model.Agent, error)
+	createAgentFn         func(ctx context.Context, agent *model.Agent) error
+	updateAgentFn         func(ctx context.Context, agent *model.Agent) error
+	activateAgentFn       func(ctx context.Context, id string, isActive bool) error
 }
 
 func (m *mockAgentsService) ListAgents(ctx context.Context) ([]model.Agent, error) {
@@ -32,15 +32,11 @@ func (m *mockAgentsService) ListAgents(ctx context.Context) ([]model.Agent, erro
 	return nil, nil
 }
 
-func (m *mockAgentsService) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
-	if m.listAgentsByParticipantFn != nil {
-		return m.listAgentsByParticipantFn(ctx, participantId)
+func (m *mockAgentsService) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
+	if m.listAgentsByOwnerFn != nil {
+		return m.listAgentsByOwnerFn(ctx, ownerUserId)
 	}
 	return nil, nil
-}
-
-func (m *mockAgentsService) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
-	return m.ListAgentsByParticipant(ctx, ownerUserId)
 }
 
 func (m *mockAgentsService) GetAgent(ctx context.Context, id string) (*model.Agent, error) {
@@ -78,8 +74,8 @@ func TestServerAgentsHandlers(t *testing.T) {
 		listAgentsFn: func(ctx context.Context) ([]model.Agent, error) {
 			return []model.Agent{{Id: "a1", Name: "Agent1"}}, nil
 		},
-		listAgentsByParticipantFn: func(ctx context.Context, participantId string) ([]model.Agent, error) {
-			return []model.Agent{{Id: "a1", ParticipantId: participantId}}, nil
+		listAgentsByOwnerFn: func(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
+			return []model.Agent{{Id: "a1", OwnerUserId: ownerUserId}}, nil
 		},
 		getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
 			if id == "not-found" {
@@ -97,8 +93,8 @@ func TestServerAgentsHandlers(t *testing.T) {
 	server.listAgents(rec, req)
 	r.Equal(http.StatusOK, rec.Code)
 
-	// 2. listAgents (by participant)
-	req = httptest.NewRequest(http.MethodGet, "/agents?participant_id=p1", nil)
+	// 2. listAgents (by owner)
+	req = httptest.NewRequest(http.MethodGet, "/agents?owner_user_id=p1", nil)
 	rec = httptest.NewRecorder()
 	server.listAgents(rec, req)
 	r.Equal(http.StatusOK, rec.Code)
@@ -118,7 +114,7 @@ func TestServerAgentsHandlers(t *testing.T) {
 	r.Equal(http.StatusNotFound, rec.Code)
 
 	// 5. createAgent (valid)
-	body, _ := json.Marshal(model.Agent{Name: "NewAgent", ParticipantId: "p1", GameId: "starfighter"})
+	body, _ := json.Marshal(model.Agent{Name: "NewAgent", OwnerUserId: "p1", GameId: "starfighter"})
 	req = httptest.NewRequest(http.MethodPost, "/agents", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	server.createAgent(rec, req)

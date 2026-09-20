@@ -27,7 +27,6 @@ func (r *repository) ListRankings(ctx context.Context) ([]model.Ranking, error) 
 		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
 			return nil, err
 		}
-		rk.ParticipantId = rk.UserId
 		rankings = append(rankings, rk)
 	}
 
@@ -54,7 +53,6 @@ func (r *repository) ListRankingsByContest(ctx context.Context, contestId string
 		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
 			return nil, err
 		}
-		rk.ParticipantId = rk.UserId
 		rankings = append(rankings, rk)
 	}
 
@@ -80,7 +78,6 @@ func (r *repository) GetRanking(ctx context.Context, id string) (*model.Ranking,
 		return nil, err
 	}
 
-	rk.ParticipantId = rk.UserId
 	return &rk, nil
 }
 
@@ -103,7 +100,6 @@ func (r *repository) GetRankingByContestAndAgent(ctx context.Context, contestId,
 		return nil, err
 	}
 
-	rk.ParticipantId = rk.UserId
 	return &rk, nil
 }
 
@@ -113,27 +109,24 @@ func (r *repository) UpsertRanking(ctx context.Context, ranking *model.Ranking) 
 		return err
 	}
 
-	userID := ranking.UserId
-	if userID == "" {
-		userID = ranking.ParticipantId
-	}
-
 	query := `
 		INSERT INTO rankings (id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		ON CONFLICT (contest_id, agent_id) DO UPDATE SET
+		ON CONFLICT (contest_id, agent_id)
+		DO UPDATE SET
+			user_id = EXCLUDED.user_id,
 			score = EXCLUDED.score,
 			matches_played = EXCLUDED.matches_played,
 			wins = EXCLUDED.wins,
 			losses = EXCLUDED.losses,
 			draws = EXCLUDED.draws,
-			"rank" = EXCLUDED."rank",
-			updated_at = EXCLUDED.updated_at`
+			"rank" = EXCLUDED.rank,
+			updated_at = EXCLUDED.updated_at
+	`
 
 	_, err = db.ExecContext(ctx, query,
-		ranking.Id, ranking.ContestId, ranking.AgentId, userID,
-		ranking.Score, ranking.MatchesPlayed, ranking.Wins, ranking.Losses,
-		ranking.Draws, ranking.Rank, ranking.UpdatedAt,
+		ranking.Id, ranking.ContestId, ranking.AgentId, ranking.UserId,
+		ranking.Score, ranking.MatchesPlayed, ranking.Wins, ranking.Losses, ranking.Draws, ranking.Rank, ranking.UpdatedAt,
 	)
 	if err != nil {
 		return err

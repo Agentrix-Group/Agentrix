@@ -30,13 +30,9 @@ type User struct {
 	Capabilities []string  `json:"capabilities,omitempty"`
 }
 
-// Participant is a type alias to User for backward compatibility
-type Participant = User
-
 type Claims struct {
-	UserID        string `json:"user_id"`
-	ParticipantId string `json:"participant_id,omitempty"`
-	RoleId        string `json:"role_id"`
+	UserID string `json:"user_id"`
+	RoleId string `json:"role_id"`
 	jwt.RegisteredClaims
 }
 
@@ -53,9 +49,8 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token       *Token `json:"token"`
-	User        *User  `json:"user"`
-	Participant *User  `json:"participant,omitempty"` // For backward compatibility with legacy consumers
+	Token *Token `json:"token"`
+	User  *User  `json:"user"`
 }
 
 type RegisterRequest struct {

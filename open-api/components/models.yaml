@@ -44,8 +44,6 @@ LoginResponse:
       $ref: '#/Token'
     user:
       $ref: '#/User'
-    participant:
-      $ref: '#/Participant'
 
 RegisterRequest:
   type: object
@@ -216,9 +214,6 @@ Agent:
       type: string
     owner_user_id:
       type: string
-    participant_id:
-      type: string
-      description: Legacy alias of owner_user_id
     game_id:
       const: starfighter
     name:
@@ -308,9 +303,6 @@ Ranking:
       type: string
     user_id:
       type: string
-    participant_id:
-      type: string
-      description: Legacy alias of user_id
     score:
       type: integer
     matches_played:

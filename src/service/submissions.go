@@ -43,7 +43,7 @@ const (
 	agentProtocolVersion = "1.0"
 )
 
-func (s *service) CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error) {
 	if len(archive) == 0 || len(archive) > maxBundleBytes {
 		return nil, fmt.Errorf("%w: ZIP must be between 1 byte and 2 MiB", ErrInvalidBotBundle)
 	}
@@ -54,11 +54,7 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, participantId, rol
 		}
 		return nil, err
 	}
-	ownerID := agent.OwnerUserId
-	if ownerID == "" {
-		ownerID = agent.ParticipantId
-	}
-	if roleId != common.RoleAdmin && ownerID != participantId {
+	if roleId != common.RoleAdmin && agent.OwnerUserId != userId {
 		return nil, ErrAgentNotOwned
 	}
 	if agent.GameId != "starfighter" {

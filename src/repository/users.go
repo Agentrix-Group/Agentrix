@@ -40,22 +40,12 @@ type Repository interface {
 	HasPermission(ctx context.Context, userId string, permission string) (bool, error)
 	GetRolePermissions(ctx context.Context, roleId string) ([]string, error)
 
-	// Participant backward-compatibility aliases
-	ListParticipants(ctx context.Context) ([]model.Participant, error)
-	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
-	GetParticipantByUsername(ctx context.Context, username string) (*model.Participant, error)
-	GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error)
-	CreateParticipant(ctx context.Context, participant *model.Participant) error
-	UpdateParticipant(ctx context.Context, participant *model.Participant) error
-	ActivateParticipant(ctx context.Context, id string, isActive bool) error
-
 	// Games
 	GetGame(ctx context.Context, id string) (*model.Game, error)
 
 	// Agents
 	ListAgents(ctx context.Context) ([]model.Agent, error)
 	ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error)
-	ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error)
 	GetAgent(ctx context.Context, id string) (*model.Agent, error)
 	CreateAgent(ctx context.Context, agent *model.Agent) error
 	UpdateAgent(ctx context.Context, agent *model.Agent) error
@@ -116,9 +106,6 @@ type UserRepository interface {
 	UserWriter
 }
 
-// ParticipantRepository alias for compatibility
-type ParticipantRepository = UserRepository
-
 type repository struct {
 	conn *connection.Connection
 }
@@ -176,10 +163,6 @@ func (r *repository) ListUsers(ctx context.Context) ([]model.User, error) {
 	return users, nil
 }
 
-func (r *repository) ListParticipants(ctx context.Context) ([]model.Participant, error) {
-	return r.ListUsers(ctx)
-}
-
 func (r *repository) GetUser(ctx context.Context, id string) (*model.User, error) {
 	db, err := r.getDb()
 	if err != nil {
@@ -200,10 +183,6 @@ func (r *repository) GetUser(ctx context.Context, id string) (*model.User, error
 	}
 
 	return &u, nil
-}
-
-func (r *repository) GetParticipant(ctx context.Context, id string) (*model.Participant, error) {
-	return r.GetUser(ctx, id)
 }
 
 func (r *repository) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
@@ -228,10 +207,6 @@ func (r *repository) GetUserByUsername(ctx context.Context, username string) (*m
 	return &u, nil
 }
 
-func (r *repository) GetParticipantByUsername(ctx context.Context, username string) (*model.Participant, error) {
-	return r.GetUserByUsername(ctx, username)
-}
-
 func (r *repository) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	db, err := r.getDb()
 	if err != nil {
@@ -254,10 +229,6 @@ func (r *repository) GetUserByEmail(ctx context.Context, email string) (*model.U
 	return &u, nil
 }
 
-func (r *repository) GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error) {
-	return r.GetUserByEmail(ctx, email)
-}
-
 func (r *repository) CreateUser(ctx context.Context, user *model.User) error {
 	db, err := r.getDb()
 	if err != nil {
@@ -277,10 +248,6 @@ func (r *repository) CreateUser(ctx context.Context, user *model.User) error {
 	return nil
 }
 
-func (r *repository) CreateParticipant(ctx context.Context, participant *model.Participant) error {
-	return r.CreateUser(ctx, participant)
-}
-
 func (r *repository) UpdateUser(ctx context.Context, user *model.User) error {
 	db, err := r.getDb()
 	if err != nil {
@@ -297,10 +264,6 @@ func (r *repository) UpdateUser(ctx context.Context, user *model.User) error {
 	return nil
 }
 
-func (r *repository) UpdateParticipant(ctx context.Context, participant *model.Participant) error {
-	return r.UpdateUser(ctx, participant)
-}
-
 func (r *repository) ActivateUser(ctx context.Context, id string, isActive bool) error {
 	db, err := r.getDb()
 	if err != nil {
@@ -311,10 +274,6 @@ func (r *repository) ActivateUser(ctx context.Context, id string, isActive bool)
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err
-}
-
-func (r *repository) ActivateParticipant(ctx context.Context, id string, isActive bool) error {
-	return r.ActivateUser(ctx, id, isActive)
 }
 
 func (r *repository) HasPermission(ctx context.Context, userId string, permission string) (bool, error) {

@@ -104,7 +104,7 @@ func (m *mockSubmissionRepo) CreateSubmission(ctx context.Context, s *model.Subm
 
 func TestCreateSubmissionBundle(t *testing.T) {
 	ctx := context.Background()
-	ownedAgent := &model.Agent{Id: "agent-1", ParticipantId: "part-1", GameId: "starfighter"}
+	ownedAgent := &model.Agent{Id: "agent-1", OwnerUserId: "user-1", GameId: "starfighter"}
 	var created *model.Submission
 	repo := &mockSubmissionRepo{
 		getAgentFn: func(context.Context, string) (*model.Agent, error) { return ownedAgent, nil },
@@ -118,7 +118,7 @@ func TestCreateSubmissionBundle(t *testing.T) {
 		"import json, sys\n",
 	)
 	svc := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{})
-	submission, err := svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", bundle)
+	submission, err := svc.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", bundle)
 	require.NoError(t, err)
 	require.Same(t, created, submission)
 	require.Equal(t, "python", submission.Language)
@@ -128,20 +128,20 @@ func TestCreateSubmissionBundle(t *testing.T) {
 		`{"name":"Candidate","entrypoint":"main.js","protocol_version":"1.0"}`,
 		"print('bad manifest')\n",
 	)
-	_, err = svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", badBundle)
+	_, err = svc.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", badBundle)
 	require.ErrorIs(t, err, ErrInvalidBotBundle)
 
 	unknownFieldBundle := makeBotBundle(t,
 		`{"name":"Candidate","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python"}`,
 		"print('unexpected manifest field')\n",
 	)
-	_, err = svc.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", unknownFieldBundle)
+	_, err = svc.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", unknownFieldBundle)
 	require.ErrorIs(t, err, ErrInvalidBotBundle)
 
 	rejecting := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{err: errors.New("tick timeout")})
-	_, err = rejecting.CreateSubmissionBundle(ctx, "part-1", common.RoleParticipant, "agent-1", bundle)
+	_, err = rejecting.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", bundle)
 	require.ErrorIs(t, err, ErrAdmissionFailed)
 
-	_, err = svc.CreateSubmissionBundle(ctx, "another-participant", common.RoleParticipant, "agent-1", bundle)
+	_, err = svc.CreateSubmissionBundle(ctx, "another-user", common.RoleParticipant, "agent-1", bundle)
 	require.ErrorIs(t, err, ErrAgentNotOwned)
 }

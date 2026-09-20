@@ -30,12 +30,10 @@ func TestPhase2_CanonicalUserAndAgentAttribution(t *testing.T) {
 	r.NoError(err)
 	r.GreaterOrEqual(ver, int64(1))
 
-	// Verify schema changes: table users exists, participants does not exist
-	var usersTableExists, participantsTableExists bool
+	// Verify schema changes: table users exists
+	var usersTableExists bool
 	_ = conn.Db.QueryRow(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='users')`).Scan(&usersTableExists)
-	_ = conn.Db.QueryRow(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema='public' AND table_name='participants')`).Scan(&participantsTableExists)
 	r.True(usersTableExists, "Table users must exist")
-	r.False(participantsTableExists, "Table participants must have been renamed to users")
 
 	// Verify column owner_user_id in agents
 	var hasOwnerUserId bool
@@ -81,9 +79,8 @@ func TestPhase2_CanonicalUserAndAgentAttribution(t *testing.T) {
 	r.Equal(http.StatusOK, recLogin.Code)
 
 	var loginResp struct {
-		Token       *model.Token `json:"token"`
-		User        *model.User  `json:"user"`
-		Participant *model.User  `json:"participant"`
+		Token *model.Token `json:"token"`
+		User  *model.User  `json:"user"`
 	}
 	r.NoError(json.Unmarshal(recLogin.Body.Bytes(), &loginResp))
 	r.NotNil(loginResp.Token)
@@ -100,7 +97,6 @@ func TestPhase2_CanonicalUserAndAgentAttribution(t *testing.T) {
 	r.NoError(err)
 	r.Equal(bobID, claims.UserID)
 	r.Equal(bobID, claims.Subject)
-	r.Equal(bobID, claims.ParticipantId)
 
 	// 4. Create an agent as Bob (no owner_user_id passed in body; must auto-bind to Bob)
 	createAgentBody, _ := json.Marshal(map[string]interface{}{
@@ -134,7 +130,6 @@ func TestPhase2_CanonicalUserAndAgentAttribution(t *testing.T) {
 	r.Len(myAgents, 1)
 	r.Equal("BobViper", myAgents[0].Name)
 	r.Equal(bobID, myAgents[0].OwnerUserId)
-	r.Equal(bobID, myAgents[0].ParticipantId)
 
 	// 6. Security authorization test:
 	// Bob attempts to create an agent for another user (Alice)

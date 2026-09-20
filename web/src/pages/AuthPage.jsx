@@ -75,7 +75,7 @@ export function AuthPage({ onLoginSuccess }) {
         setFieldErrors({});
       } else {
         const res = await login(username.trim(), password);
-        const user = res?.participant || null;
+        const user = res?.user || null;
         if (onLoginSuccess) {
           onLoginSuccess(user, redirectTarget);
         } else {

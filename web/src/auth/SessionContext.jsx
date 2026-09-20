@@ -52,8 +52,8 @@ export function SessionProvider({ children }) {
   const login = useCallback(async (username, password) => {
     setSessionExpired(false);
     const res = await ApiService.login(username, password);
-    if (res?.participant) {
-      setCurrentUser(res.participant);
+    if (res?.user) {
+      setCurrentUser(res.user);
     } else {
       await loadCurrentUser();
     }

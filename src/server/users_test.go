@@ -13,64 +13,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockServerService struct {
+type mockUserServerService struct {
 	service.Service
-	loginFn             func(ctx context.Context, username, password string) (*model.Participant, error)
-	registerFn          func(ctx context.Context, p *model.Participant) error
-	getParticipantFn    func(ctx context.Context, id string) (*model.Participant, error)
-	hasPermissionFn     func(ctx context.Context, participantId, permission string) (bool, error)
+	loginFn             func(ctx context.Context, username, password string) (*model.User, error)
+	registerFn          func(ctx context.Context, u *model.User) error
+	getUserFn           func(ctx context.Context, id string) (*model.User, error)
+	hasPermissionFn     func(ctx context.Context, userId, permission string) (bool, error)
 	getPublicContestFn  func(ctx context.Context, id string) (*model.Contest, error)
-	enrollAgentFn       func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	enrollAgentFn       func(ctx context.Context, userId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error)
 	listContestAgentsFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
 
-func (m *mockServerService) Login(ctx context.Context, username, password string) (*model.Participant, error) {
+func (m *mockUserServerService) Login(ctx context.Context, username, password string) (*model.User, error) {
 	if m.loginFn != nil {
 		return m.loginFn(ctx, username, password)
 	}
 	return nil, service.ErrInvalidCredentials
 }
 
-func (m *mockServerService) Register(ctx context.Context, p *model.Participant) error {
+func (m *mockUserServerService) Register(ctx context.Context, u *model.User) error {
 	if m.registerFn != nil {
-		return m.registerFn(ctx, p)
+		return m.registerFn(ctx, u)
 	}
 	return nil
 }
 
-func (m *mockServerService) GetParticipant(ctx context.Context, id string) (*model.Participant, error) {
-	if m.getParticipantFn != nil {
-		return m.getParticipantFn(ctx, id)
+func (m *mockUserServerService) GetUser(ctx context.Context, id string) (*model.User, error) {
+	if m.getUserFn != nil {
+		return m.getUserFn(ctx, id)
 	}
 	return nil, nil
 }
 
-func (m *mockServerService) GetUser(ctx context.Context, id string) (*model.User, error) {
-	return m.GetParticipant(ctx, id)
-}
-
-func (m *mockServerService) HasPermission(ctx context.Context, participantId, permission string) (bool, error) {
+func (m *mockUserServerService) HasPermission(ctx context.Context, userId, permission string) (bool, error) {
 	if m.hasPermissionFn != nil {
-		return m.hasPermissionFn(ctx, participantId, permission)
+		return m.hasPermissionFn(ctx, userId, permission)
 	}
 	return true, nil
 }
 
-func (m *mockServerService) GetPublicContest(ctx context.Context, id string) (*model.Contest, error) {
+func (m *mockUserServerService) GetPublicContest(ctx context.Context, id string) (*model.Contest, error) {
 	if m.getPublicContestFn != nil {
 		return m.getPublicContestFn(ctx, id)
 	}
 	return nil, service.ErrContestNotFound
 }
 
-func (m *mockServerService) EnrollAgent(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+func (m *mockUserServerService) EnrollAgent(ctx context.Context, userId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
 	if m.enrollAgentFn != nil {
-		return m.enrollAgentFn(ctx, participantId, contestId, agentId)
+		return m.enrollAgentFn(ctx, userId, contestId, agentId)
 	}
 	return nil, nil, nil
 }
 
-func (m *mockServerService) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {
+func (m *mockUserServerService) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {
 	if m.listContestAgentsFn != nil {
 		return m.listContestAgentsFn(ctx, contestId)
 	}
@@ -80,16 +76,16 @@ func (m *mockServerService) ListContestAgents(ctx context.Context, contestId str
 func TestAuthEndpoints(t *testing.T) {
 	r := require.New(t)
 
-	mockUser := &model.Participant{
-		Id:       "p-100",
+	mockUser := &model.User{
+		Id:       "u-100",
 		Username: "probot",
 		Email:    "probot@example.com",
 		RoleId:   "participant",
 		Active:   true,
 	}
 
-	mockSvc := &mockServerService{
-		loginFn: func(ctx context.Context, username, password string) (*model.Participant, error) {
+	mockSvc := &mockUserServerService{
+		loginFn: func(ctx context.Context, username, password string) (*model.User, error) {
 			if username == "probot" && password == "secret123" {
 				return mockUser, nil
 			}
@@ -98,20 +94,20 @@ func TestAuthEndpoints(t *testing.T) {
 			}
 			return nil, service.ErrInvalidCredentials
 		},
-		registerFn: func(ctx context.Context, p *model.Participant) error {
-			if p.Username == "duplicate" {
+		registerFn: func(ctx context.Context, u *model.User) error {
+			if u.Username == "duplicate" {
 				return service.ErrUsernameAlreadyExists
 			}
-			if p.Email == "duplicate@example.com" {
+			if u.Email == "duplicate@example.com" {
 				return service.ErrEmailAlreadyExists
 			}
-			if len(p.Password) < 6 {
+			if len(u.Password) < 6 {
 				return service.ErrInvalidPassword
 			}
 			return nil
 		},
-		getParticipantFn: func(ctx context.Context, id string) (*model.Participant, error) {
-			if id == "p-100" {
+		getUserFn: func(ctx context.Context, id string) (*model.User, error) {
+			if id == "u-100" {
 				return mockUser, nil
 			}
 			return nil, nil
@@ -138,9 +134,9 @@ func TestAuthEndpoints(t *testing.T) {
 		r.NotNil(resp.Token)
 		r.NotEmpty(resp.Token.AccessToken)
 		r.Equal("Bearer", resp.Token.TokenType)
-		r.NotNil(resp.Participant)
-		r.Equal("probot", resp.Participant.Username)
-		r.Empty(resp.Participant.Password) // Password omitted
+		r.NotNil(resp.User)
+		r.Equal("probot", resp.User.Username)
+		r.Empty(resp.User.Password) // Password omitted
 	})
 
 	t.Run("POST /api/v1/auth/login wrong password returns 401", func(t *testing.T) {
@@ -226,7 +222,7 @@ func TestAuthEndpoints(t *testing.T) {
 	})
 
 	t.Run("GET /api/v1/me with valid Bearer token returns 200 OK and profile", func(t *testing.T) {
-		token, err := srv.Auth.GenerateAuthToken("p-100", "participant")
+		token, err := srv.Auth.GenerateAuthToken("u-100", "participant")
 		r.NoError(err)
 
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
@@ -236,7 +232,7 @@ func TestAuthEndpoints(t *testing.T) {
 		srv.Handler.ServeHTTP(rec, req)
 
 		r.Equal(http.StatusOK, rec.Code)
-		var user model.Participant
+		var user model.User
 		err = json.Unmarshal(rec.Body.Bytes(), &user)
 		r.NoError(err)
 		r.Equal("probot", user.Username)

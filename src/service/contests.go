@@ -17,7 +17,7 @@ var (
 	ErrContestNotFound      = errors.New("contest not found")
 	ErrRegistrationClosed   = errors.New("contest is not currently open for registration")
 	ErrAgentNotFound        = errors.New("agent not found")
-	ErrUnauthorizedAgent    = errors.New("agent does not belong to the authenticated participant")
+	ErrUnauthorizedAgent    = errors.New("agent does not belong to the authenticated user")
 	ErrGameMismatch         = errors.New("agent is not configured for the contest's game")
 	ErrAgentAlreadyEnrolled = errors.New("agent is already enrolled in this contest")
 	ErrUnsupportedGame      = errors.New("Agentrix MVP supports only starfighter")
@@ -32,7 +32,7 @@ type ContestService interface {
 	CreateContest(ctx context.Context, contest *model.Contest) error
 	UpdateContest(ctx context.Context, contest *model.Contest) error
 	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, participantId string, contestId string, agentId string) (*model.Ranking, error)
+	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error)
 	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
 
@@ -130,9 +130,6 @@ func (s *service) EnrollAgent(ctx context.Context, userId string, contestId stri
 	}
 
 	ownerID := agent.OwnerUserId
-	if ownerID == "" {
-		ownerID = agent.ParticipantId
-	}
 
 	// Verify user ownership unless admin
 	if userId != "" && ownerID != userId {
@@ -183,7 +180,6 @@ func (s *service) EnrollAgent(ctx context.Context, userId string, contestId stri
 		ContestId:     contestId,
 		AgentId:       agentId,
 		UserId:        ownerID,
-		ParticipantId: ownerID,
 		Score:         0,
 		MatchesPlayed: 0,
 		Wins:          0,

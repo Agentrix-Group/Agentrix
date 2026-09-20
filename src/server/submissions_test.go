@@ -16,14 +16,14 @@ import (
 
 type mockSubmissionsService struct {
 	service.Service
-	createBundleFn  func(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error)
+	createBundleFn  func(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error)
 	getSubmissionFn func(ctx context.Context, id string) (*model.Submission, error)
-	hasPermissionFn func(ctx context.Context, participantId, permission string) (bool, error)
+	hasPermissionFn func(ctx context.Context, userId, permission string) (bool, error)
 }
 
-func (m *mockSubmissionsService) CreateSubmissionBundle(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+func (m *mockSubmissionsService) CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error) {
 	if m.createBundleFn != nil {
-		return m.createBundleFn(ctx, participantId, roleId, agentId, archive)
+		return m.createBundleFn(ctx, userId, roleId, agentId, archive)
 	}
 	return nil, service.ErrInvalidBotBundle
 }
@@ -43,8 +43,8 @@ func TestServerUploadSubmissionBundle(t *testing.T) {
 	require.NoError(t, writer.Close())
 
 	mockSvc := &mockSubmissionsService{
-		createBundleFn: func(ctx context.Context, participantId, roleId, agentId string, archive []byte) (*model.Submission, error) {
-			require.Equal(t, "user-1", participantId)
+		createBundleFn: func(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error) {
+			require.Equal(t, "user-1", userId)
 			require.Equal(t, "agent-1", agentId)
 			require.NotEmpty(t, archive)
 			return &model.Submission{Id: "sub-zip", AgentId: agentId, Language: "python", Status: "ready"}, nil
@@ -94,9 +94,9 @@ func (m *mockSubmissionsService) GetSubmission(ctx context.Context, id string) (
 	return nil, service.ErrSubmissionNotFound
 }
 
-func (m *mockSubmissionsService) HasPermission(ctx context.Context, participantId, permission string) (bool, error) {
+func (m *mockSubmissionsService) HasPermission(ctx context.Context, userId, permission string) (bool, error) {
 	if m.hasPermissionFn != nil {
-		return m.hasPermissionFn(ctx, participantId, permission)
+		return m.hasPermissionFn(ctx, userId, permission)
 	}
 	return true, nil
 }

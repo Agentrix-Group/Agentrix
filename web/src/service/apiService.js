@@ -39,8 +39,8 @@ export const ApiService = {
   getUser: (id) => api.get(`/users/${encodeURIComponent(id)}`),
 
   // Agents
-  listAgents: (userIdOrParticipantId) =>
-    api.get(buildUrl('/agents', userIdOrParticipantId ? { owner_user_id: userIdOrParticipantId, participant_id: userIdOrParticipantId } : {})),
+  listAgents: (ownerUserId) =>
+    api.get(buildUrl('/agents', ownerUserId ? { owner_user_id: ownerUserId } : {})),
   listMyAgents: () => api.get('/me/agents'),
   createAgent: (agentData) => api.post('/agents', agentData),
 

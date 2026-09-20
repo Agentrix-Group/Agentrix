@@ -17,7 +17,7 @@ type mockContestRepo struct {
 	listPublicContestsFn    func(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
 	getContestFn            func(ctx context.Context, id string) (*model.Contest, error)
 	getAgentFn              func(ctx context.Context, id string) (*model.Agent, error)
-	hasPermissionFn         func(ctx context.Context, participantId, permission string) (bool, error)
+	hasPermissionFn         func(ctx context.Context, userId, permission string) (bool, error)
 	getRankingFn            func(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
 	upsertRankingFn         func(ctx context.Context, ranking *model.Ranking) error
 	listRankingsByContestFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
@@ -47,9 +47,9 @@ func (m *mockContestRepo) GetAgent(ctx context.Context, id string) (*model.Agent
 	return nil, sql.ErrNoRows
 }
 
-func (m *mockContestRepo) HasPermission(ctx context.Context, participantId, permission string) (bool, error) {
+func (m *mockContestRepo) HasPermission(ctx context.Context, userId, permission string) (bool, error) {
 	if m.hasPermissionFn != nil {
-		return m.hasPermissionFn(ctx, participantId, permission)
+		return m.hasPermissionFn(ctx, userId, permission)
 	}
 	return false, nil
 }
@@ -265,17 +265,17 @@ func TestEnrollAgent(t *testing.T) {
 	}
 
 	validAgent := &model.Agent{
-		Id:            "agent-1",
-		ParticipantId: "part-1",
-		GameId:        "starfighter",
-		Active:        true,
+		Id:          "agent-1",
+		OwnerUserId: "part-1",
+		GameId:      "starfighter",
+		Active:      true,
 	}
 
 	diffGameAgent := &model.Agent{
-		Id:            "agent-2",
-		ParticipantId: "part-1",
-		GameId:        "other-game",
-		Active:        true,
+		Id:          "agent-2",
+		OwnerUserId: "part-1",
+		GameId:      "other-game",
+		Active:      true,
 	}
 
 	t.Run("Successful enrollment", func(t *testing.T) {
@@ -311,7 +311,7 @@ func TestEnrollAgent(t *testing.T) {
 		r.NotNil(ranking)
 		r.Equal("contest-1", ranking.ContestId)
 		r.Equal("agent-1", ranking.AgentId)
-		r.Equal("part-1", ranking.ParticipantId)
+		r.Equal("part-1", ranking.UserId)
 		r.Equal(0, ranking.Score)
 		r.Equal(1, ranking.Rank)
 		r.NotNil(savedRanking)
@@ -336,7 +336,7 @@ func TestEnrollAgent(t *testing.T) {
 		r.Nil(ranking)
 	})
 
-	t.Run("Fails if agent belongs to another participant", func(t *testing.T) {
+	t.Run("Fails if agent belongs to another user", func(t *testing.T) {
 		repo := &mockContestRepo{
 			getContestFn: func(ctx context.Context, id string) (*model.Contest, error) {
 				return openContest, nil
@@ -344,7 +344,7 @@ func TestEnrollAgent(t *testing.T) {
 			getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
 				return validAgent, nil
 			},
-			hasPermissionFn: func(ctx context.Context, participantId, permission string) (bool, error) {
+			hasPermissionFn: func(ctx context.Context, userId, permission string) (bool, error) {
 				return false, nil
 			},
 		}

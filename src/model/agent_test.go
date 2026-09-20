@@ -13,15 +13,15 @@ func TestAgentJSONSerialization(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	agent := Agent{
-		Id:            "agent-1",
-		ParticipantId: "part-1",
-		GameId:        "game-1",
-		Name:          "AlphaBot",
-		Description:   "First test agent",
-		Active:        true,
-		CreatedAt:     now,
-		Participant: &Participant{
-			Id:       "part-1",
+		Id:          "agent-1",
+		OwnerUserId: "user-1",
+		GameId:      "game-1",
+		Name:        "AlphaBot",
+		Description: "First test agent",
+		Active:      true,
+		CreatedAt:   now,
+		OwnerUser: &User{
+			Id:       "user-1",
 			Username: "player1",
 		},
 		Game: &Game{
@@ -42,8 +42,8 @@ func TestAgentJSONSerialization(t *testing.T) {
 	r.Equal("agent-1", parsed.Id)
 	r.Equal("AlphaBot", parsed.Name)
 	r.True(parsed.Active)
-	r.NotNil(parsed.Participant)
-	r.Equal("player1", parsed.Participant.Username)
+	r.NotNil(parsed.OwnerUser)
+	r.Equal("player1", parsed.OwnerUser.Username)
 	r.NotNil(parsed.Game)
 	r.Equal("Arena", parsed.Game.Name)
 }

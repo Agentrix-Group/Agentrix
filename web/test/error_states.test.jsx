@@ -37,7 +37,7 @@ describe('Error States and Recovery (ADR-0009 / F0.6)', () => {
             id: 'rank-1',
             rank: 1,
             agent_id: 'bot-omega',
-            participant_id: 'player-1',
+            user_id: 'player-1',
             score: 1500,
             matches_played: 10,
             wins: 8,

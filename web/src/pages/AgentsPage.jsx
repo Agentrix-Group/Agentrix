@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ApiService } from '../service/apiService.js';
 import { formatDateTime, formatNumber } from '../i18n/formatters.js';
-import { Bot, FileArchive, ShieldCheck, UploadCloud, UserPlus } from 'lucide-react';
+import { Bot, ShieldCheck, UploadCloud, UserPlus, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { BundleDropzone } from '../components/BundleDropzone.jsx';
+import { StarterKitCard } from '../components/StarterKitCard.jsx';
+import { AdmissionStatusBanner, sanitizeAdmissionError } from '../components/AdmissionStatusBanner.jsx';
 
 export function AgentsPage({ currentUser }) {
   const { t, i18n } = useTranslation(['agents', 'common', 'errors']);
@@ -18,6 +21,14 @@ export function AgentsPage({ currentUser }) {
   const [selectedContestId, setSelectedContestId] = useState('');
   const [statusMsg, setStatusMsg] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
+
+  // FQ-2 Admission states
+  const [validationError, setValidationError] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [admissionStage, setAdmissionStage] = useState('idle'); // 'idle' | 'uploading' | 'validating' | 'ready' | 'rejected'
+  const [rejectionError, setRejectionError] = useState(null);
+  const [expandedRejectionIds, setExpandedRejectionIds] = useState(new Set());
+  const pollTimerRef = useRef(null);
 
   const loadAgents = () => {
     if (!currentUser) return;
@@ -46,18 +57,32 @@ export function AgentsPage({ currentUser }) {
       });
   };
 
+  const loadSubmissions = (agentId) => {
+    if (!agentId) return;
+    ApiService.listSubmissions(agentId)
+      .then((subs) => setSubmissions(subs || []))
+      .catch(() => setSubmissions([]));
+  };
+
   useEffect(() => {
     loadAgents();
     loadContests();
+    return () => {
+      if (pollTimerRef.current) {
+        clearTimeout(pollTimerRef.current);
+      }
+    };
   }, [currentUser]);
 
   const selectAgent = (agent) => {
     setSelectedAgent(agent);
     setStatusMsg('');
     setErrorMsg('');
-    ApiService.listSubmissions(agent.id)
-      .then((subs) => setSubmissions(subs || []))
-      .catch(() => setSubmissions([]));
+    setValidationError(null);
+    setAdmissionStage('idle');
+    setRejectionError(null);
+    setBundle(null);
+    loadSubmissions(agent.id);
   };
 
   const handleCreateAgent = async (e) => {
@@ -81,19 +106,87 @@ export function AgentsPage({ currentUser }) {
     }
   };
 
+  const pollSubmissionAdmission = async (submissionId, agentId) => {
+    setAdmissionStage('validating');
+    const maxAttempts = 15;
+    const intervalMs = 1500;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => {
+          pollTimerRef.current = setTimeout(resolve, intervalMs);
+        });
+      }
+
+      try {
+        const sub = await ApiService.getSubmission(submissionId);
+        if (!sub) continue;
+
+        if (sub.status === 'ready') {
+          setAdmissionStage('ready');
+          setStatusMsg(t('agents:messages.submitSuccess', { version: sub.version || 'new' }));
+          setBundle(null);
+          setIsSubmitting(false);
+          loadSubmissions(agentId);
+          return;
+        }
+
+        if (sub.status === 'rejected' || sub.status === 'failed') {
+          setAdmissionStage('rejected');
+          setRejectionError(sub.error_detail || t('agents:messages.submitError'));
+          setErrorMsg(t('agents:messages.submitError'));
+          setIsSubmitting(false);
+          loadSubmissions(agentId);
+          return;
+        }
+      } catch {
+        // Continue polling until maxAttempts
+      }
+    }
+
+    // Timeout
+    setAdmissionStage('idle');
+    setErrorMsg(t('agents:messages.admissionTimeout'));
+    setIsSubmitting(false);
+    loadSubmissions(agentId);
+  };
+
   const handleSubmitCode = async (e) => {
     e.preventDefault();
-    if (!selectedAgent || !bundle) return;
+    if (!selectedAgent || !bundle || isSubmitting) return;
+
     setStatusMsg('');
     setErrorMsg('');
+    setRejectionError(null);
+    setIsSubmitting(true);
+    setAdmissionStage('uploading');
 
     try {
       const res = await ApiService.uploadBotBundle(selectedAgent.id, bundle);
-      setStatusMsg(t('agents:messages.submitSuccess', { version: res.version || 'new' }));
-      setBundle(null);
-      ApiService.listSubmissions(selectedAgent.id).then((subs) => setSubmissions(subs || []));
+      const status = res.status || 'ready';
+
+      if (status === 'validating' || status === 'pending' || status === 'pending_validation') {
+        // Asynchronous admission pipeline: start polling
+        await pollSubmissionAdmission(res.id, selectedAgent.id);
+      } else if (status === 'ready') {
+        setAdmissionStage('ready');
+        setStatusMsg(t('agents:messages.submitSuccess', { version: res.version || 'new' }));
+        setBundle(null);
+        setIsSubmitting(false);
+        loadSubmissions(selectedAgent.id);
+      } else {
+        // Rejected or failed
+        setAdmissionStage('rejected');
+        setRejectionError(res.error_detail || t('agents:messages.submitError'));
+        setErrorMsg(t('agents:messages.submitError'));
+        setIsSubmitting(false);
+        loadSubmissions(selectedAgent.id);
+      }
     } catch (err) {
-      setErrorMsg(err.message || t('agents:messages.submitError'));
+      setAdmissionStage('rejected');
+      setRejectionError(err.message || t('agents:messages.submitError'));
+      setErrorMsg(t('agents:messages.submitError'));
+      setIsSubmitting(false);
     }
   };
 
@@ -113,6 +206,18 @@ export function AgentsPage({ currentUser }) {
     }
   };
 
+  const toggleRejectionRow = (subId) => {
+    setExpandedRejectionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(subId)) {
+        next.delete(subId);
+      } else {
+        next.add(subId);
+      }
+      return next;
+    });
+  };
+
   if (!currentUser) {
     return (
       <div className="card" style={{ textAlign: 'center', margin: '40px auto', maxWidth: '400px' }}>
@@ -122,8 +227,22 @@ export function AgentsPage({ currentUser }) {
     );
   }
 
-  const getStatusText = (status) => {
-    return t(`common:status.${status}`, { defaultValue: status });
+  const renderStatusBadge = (status) => {
+    switch (status) {
+      case 'ready':
+        return <span className="badge badge-ready">{t('agents:submission.status.ready', { defaultValue: 'Admitido' })}</span>;
+      case 'validating':
+        return <span className="badge badge-validating">{t('agents:submission.status.validating', { defaultValue: 'Validando...' })}</span>;
+      case 'pending':
+        return <span className="badge badge-pending">{t('agents:submission.status.pending', { defaultValue: 'Pendiente' })}</span>;
+      case 'pending_validation':
+        return <span className="badge badge-pending">{t('agents:submission.status.pending_validation', { defaultValue: 'Pendiente de validación' })}</span>;
+      case 'rejected':
+      case 'failed':
+        return <span className="badge badge-rejected">{t('agents:submission.status.rejected', { defaultValue: 'Rechazado' })}</span>;
+      default:
+        return <span className="badge badge-pending">{status}</span>;
+    }
   };
 
   return (
@@ -134,12 +253,12 @@ export function AgentsPage({ currentUser }) {
       </p>
 
       {statusMsg && (
-        <div style={{ padding: '12px', background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: '6px', margin: '16px 0' }}>
+        <div role="status" style={{ padding: '12px', background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: '6px', margin: '16px 0' }}>
           {statusMsg}
         </div>
       )}
-      {errorMsg && (
-        <div style={{ padding: '12px', background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: '6px', margin: '16px 0' }}>
+      {errorMsg && !rejectionError && (
+        <div role="alert" style={{ padding: '12px', background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: '6px', margin: '16px 0' }}>
           {errorMsg}
         </div>
       )}
@@ -220,32 +339,56 @@ export function AgentsPage({ currentUser }) {
                 <p style={{ color: 'var(--text-secondary)' }}>{selectedAgent.description || t('agents:details.noDescription')}</p>
               </div>
 
+              {/* Starter Template Box */}
+              <StarterKitCard />
+
+              {/* Upload Dropzone Card */}
               <div className="card" style={{ marginBottom: '24px' }}>
                 <h3 style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
                   <UploadCloud size={20} /> {t('agents:submission.uploadTitle')}
                 </h3>
+
                 <form onSubmit={handleSubmitCode} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <label className="bundle-dropzone">
-                    <FileArchive size={30} aria-hidden="true" />
-                    <strong>{bundle ? bundle.name : t('agents:submission.chooseZip')}</strong>
-                    <span>{t('agents:submission.zipHelp')}</span>
-                    <input
-                      type="file"
-                      accept=".zip,application/zip"
-                      onChange={(event) => setBundle(event.target.files?.[0] || null)}
-                      required
-                    />
-                  </label>
+                  <BundleDropzone
+                    bundle={bundle}
+                    onFileSelect={setBundle}
+                    disabled={isSubmitting}
+                    validationError={validationError}
+                    setValidationError={setValidationError}
+                  />
+
                   <div className="admission-note">
                     <ShieldCheck size={18} />
                     <span>{t('agents:submission.admissionCheck')}</span>
                   </div>
-                  <button type="submit" className="btn" disabled={!bundle}>
-                    <UploadCloud size={17} /> {t('agents:submission.publish')}
+
+                  {/* Async admission stage & rejection feedback */}
+                  <AdmissionStatusBanner
+                    stage={admissionStage}
+                    errorDetail={rejectionError}
+                    onDismiss={() => {
+                      setAdmissionStage('idle');
+                      setRejectionError(null);
+                    }}
+                  />
+
+                  <button
+                    type="submit"
+                    className="btn"
+                    disabled={!bundle || isSubmitting || !!validationError}
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    <UploadCloud size={17} />
+                    {isSubmitting
+                      ? (admissionStage === 'validating'
+                          ? t('agents:submission.validationStages.validating')
+                          : t('agents:submission.validationStages.uploading'))
+                      : t('agents:submission.publish')}
                   </button>
                 </form>
               </div>
 
+              {/* History Card */}
               <div className="card">
                 <h3>{t('agents:submission.history')}</h3>
                 {submissions.length > 0 ? (
@@ -255,20 +398,62 @@ export function AgentsPage({ currentUser }) {
                         <th>{t('agents:submission.table.version')}</th>
                         <th>{t('agents:submission.table.language')}</th>
                         <th>{t('agents:submission.table.status')}</th>
+                        <th>{t('agents:submission.table.active')}</th>
                         <th>{t('agents:submission.table.id')}</th>
                         <th>{t('agents:submission.table.created')}</th>
+                        <th>{t('agents:submission.table.actions')}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {submissions.map((s) => (
-                        <tr key={s.id}>
-                          <td><strong>v{s.version}</strong></td>
-                          <td>{s.language}</td>
-                          <td><span className="badge badge-finished">{getStatusText(s.status)}</span></td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>#{s.id ? s.id.slice(0, 8) : '—'}</td>
-                          <td style={{ fontSize: '0.8rem' }}>{formatDateTime(s.created_at, currentLang)}</td>
-                        </tr>
-                      ))}
+                      {submissions.map((s, index) => {
+                        const isLatestReady = s.status === 'ready' && index === submissions.findIndex((item) => item.status === 'ready');
+                        const isExpanded = expandedRejectionIds.has(s.id);
+                        const isRejected = s.status === 'rejected' || s.status === 'failed';
+
+                        return (
+                          <React.Fragment key={s.id}>
+                            <tr>
+                              <td><strong>v{s.version}</strong></td>
+                              <td>{s.language}</td>
+                              <td>{renderStatusBadge(s.status)}</td>
+                              <td>
+                                {isLatestReady && s.active ? (
+                                  <span className="badge badge-active">{t('agents:submission.table.active')}</span>
+                                ) : (
+                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>—</span>
+                                )}
+                              </td>
+                              <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>#{s.id ? s.id.slice(0, 8) : '—'}</td>
+                              <td style={{ fontSize: '0.8rem' }}>{formatDateTime(s.created_at, currentLang)}</td>
+                              <td>
+                                {isRejected && (
+                                  <button
+                                    type="button"
+                                    className="btn btn-compact"
+                                    style={{ padding: '2px 8px', fontSize: '0.78rem' }}
+                                    onClick={() => toggleRejectionRow(s.id)}
+                                  >
+                                    {isExpanded
+                                      ? t('agents:submission.table.hideReason')
+                                      : t('agents:submission.table.viewReason')}
+                                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                            {isRejected && isExpanded && (
+                              <tr>
+                                <td colSpan="7" style={{ background: '#fff1f2', padding: '10px 14px' }}>
+                                  <div style={{ color: '#9f1239', fontSize: '0.82rem' }}>
+                                    <strong>{t('agents:submission.rejection.title')}: </strong>
+                                    <span>{s.error_detail ? sanitizeAdmissionError(s.error_detail) : t('agents:submission.rejection.rule2')}</span>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
                     </tbody>
                   </table>
                 ) : (

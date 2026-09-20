@@ -33,9 +33,13 @@
   },
   "status": {
     "pending": "Pendiente",
+    "pending_validation": "Pendiente de validación",
+    "validating": "Validando",
+    "ready": "Admitido",
     "running": "En ejecución",
     "finished": "Finalizada",
     "failed": "Fallida",
+    "rejected": "Rechazada",
     "upcoming": "Próximamente",
     "draft": "Borrador",
     "published": "Publicado",

@@ -29,14 +29,41 @@
     "chooseZip": "Choose the ZIP package",
     "zipHelp": "It must contain agentrix.json and bot.py at the root. Maximum 2 MiB.",
     "admissionCheck": "Agentrix checks syntax, initialization, and the tick 0 response.",
+    "starterTitle": "Starfighter Starter Template",
+    "downloadStarter": "Download Starfighter Starter Kit (.zip)",
+    "starterHelp": "Ready-to-admit ZIP package with reference agentrix.json and bot.py.",
+    "viewSpec": "View package specification",
+    "hideSpec": "Hide package specification",
+    "manifestDesc": "agentrix.json must declare name, entrypoint: 'bot.py', and protocol_version: '1.0'.",
+    "botDesc": "bot.py must handle 'init' message and respond with 'action' at tick 0.",
+    "selectedFile": "Selected file: {{name}} ({{size}})",
+    "clearFile": "Remove file",
+    "validationStages": {
+      "uploading": "Uploading ZIP package...",
+      "validating": "Validating in sandbox (syntax, initialization, and tick 0)...",
+      "ready": "Admission completed successfully",
+      "rejected": "Admission rejected"
+    },
+    "rejection": {
+      "title": "Bot validation failed",
+      "guidanceTitle": "Checklist to resolve validation failure:",
+      "rule1": "agentrix.json must exist at ZIP root with entrypoint='bot.py' and protocol_version='1.0'.",
+      "rule2": "bot.py must contain valid Python syntax and reply to tick 0 within timeout.",
+      "rule3": "Must not use libraries outside Python standard library or make blocking/network calls.",
+      "downloadReference": "Download the Starter Kit to inspect the required structure."
+    },
     "history": "Version History",
     "emptyHistory": "No code versions uploaded yet.",
     "table": {
       "version": "Version",
       "language": "Language",
       "status": "Status",
+      "active": "Active",
       "id": "Identifier",
-      "created": "Created"
+      "created": "Created",
+      "actions": "Actions",
+      "viewReason": "View reason",
+      "hideReason": "Hide reason"
     }
   },
   "messages": {
@@ -45,6 +72,9 @@
     "submitSuccess": "Python bot v{{version}} admitted successfully.",
     "submitError": "The bot did not pass admission",
     "enrollSuccess": "Enrolled '{{name}}' in contest '{{contest}}'!",
-    "enrollError": "Failed to enroll agent"
+    "enrollError": "Failed to enroll agent",
+    "invalidZipType": "Only .zip package files are accepted.",
+    "fileTooLarge": "File exceeds the maximum allowed limit of 2 MiB.",
+    "admissionTimeout": "Validation took longer than expected. Check version history."
   }
 }

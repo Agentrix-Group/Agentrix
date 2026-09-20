@@ -41,6 +41,7 @@ export const ApiService = {
   // Submissions
   listSubmissions: (agentId) =>
     api.get(buildUrl('/submissions', agentId ? { agent_id: agentId } : {})),
+  getSubmission: (id) => api.get(`/submissions/${encodeURIComponent(id)}`),
   uploadBotBundle: (agentId, file) => {
     const form = new FormData();
     form.append('agent_id', agentId);

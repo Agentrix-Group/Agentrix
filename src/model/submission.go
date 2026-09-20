@@ -8,10 +8,11 @@ type Submission struct {
 	Version   int       `json:"version,omitempty" db:"version"`
 	CodePath  string    `json:"-" db:"code_path"`
 	Language  string    `json:"language,omitempty" db:"language"`
-	Status    string    `json:"status,omitempty" db:"status"`
-	Active    bool      `json:"active,omitempty" db:"active"`
-	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
-	Agent     *Agent    `json:"agent,omitempty"`
+	Status      string    `json:"status,omitempty" db:"status"`
+	Active      bool      `json:"active,omitempty" db:"active"`
+	ErrorDetail string    `json:"error_detail,omitempty" db:"-"`
+	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at"`
+	Agent       *Agent    `json:"agent,omitempty"`
 }
 
 type AgentPackageManifest struct {

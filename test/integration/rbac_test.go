@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPhase3_DynamicRBACAndPermissionEnforcement(t *testing.T) {
+func TestIntegration_RBAC_DynamicEnforcement(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
-	dbName := fmt.Sprintf("agentrix_test_phase3_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_rbac_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 

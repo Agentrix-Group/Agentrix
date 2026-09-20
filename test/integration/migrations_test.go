@@ -17,12 +17,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Tests Phase 1: Fresh database migration from scratch
-func TestPhase1_FreshDatabaseMigration(t *testing.T) {
+// Tests: Fresh database migration from scratch
+func TestIntegration_Migrations_FreshDatabase(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
-	dbName := fmt.Sprintf("agentrix_p1_fresh_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_fresh_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
@@ -93,12 +93,12 @@ func TestPhase1_FreshDatabaseMigration(t *testing.T) {
 	r.Equal(ver, ver2, "Version must remain identical after second migration run")
 }
 
-// Tests Phase 1: Canonical schema migration and seed integrity
-func TestPhase1_CanonicalDatabaseBootstrapAndIntegrity(t *testing.T) {
+// Tests: Canonical schema migration and seed integrity
+func TestIntegration_Migrations_CanonicalDatabaseBootstrapAndIntegrity(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
-	dbName := fmt.Sprintf("agentrix_p1_bootstrap_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_bootstrap_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
@@ -155,11 +155,11 @@ func TestPhase1_CanonicalDatabaseBootstrapAndIntegrity(t *testing.T) {
 	r.NoError(err, "Re-executing seeds must succeed idempotently")
 }
 
-// Tests Phase 1: Health probes /health/live and /health/ready
-func TestPhase1_HealthAndReadinessProbes(t *testing.T) {
+// Tests: Health probes /health/live and /health/ready
+func TestIntegration_Migrations_HealthAndReadinessProbes(t *testing.T) {
 	r := require.New(t)
 
-	dbName := fmt.Sprintf("agentrix_p1_health_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_health_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 

@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPhase4_ContestEntriesAndLeaderboardSeparation(t *testing.T) {
+func TestIntegration_Contests_EntriesAndLeaderboardSeparation(t *testing.T) {
 	r := require.New(t)
 	_ = context.Background()
 
-	dbName := fmt.Sprintf("agentrix_test_phase4_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_contests_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
@@ -50,7 +50,7 @@ func TestPhase4_ContestEntriesAndLeaderboardSeparation(t *testing.T) {
 		INSERT INTO users (id, username, email, password, role_id, active) VALUES 
 		('u-pilot-01', 'pilot_alice', 'alice@agentrix.local', 'hash', 'player', TRUE),
 		('u-pilot-02', 'pilot_bob', 'bob@agentrix.local', 'hash', 'player', TRUE),
-		('u-admin-01', 'admin_phase4', 'admin4@agentrix.local', 'hash', 'admin', TRUE);
+		('u-admin-01', 'admin_contests', 'admin@agentrix.local', 'hash', 'admin', TRUE);
 	`)
 	r.NoError(err)
 

@@ -18,11 +18,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPhase5_IdempotentStarfighterBootstrapAndBundleAdmission(t *testing.T) {
+func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 	r := require.New(t)
 	_ = context.Background()
 
-	dbName := fmt.Sprintf("agentrix_test_phase5_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_bootstrap_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
@@ -171,7 +171,6 @@ func TestPhase5_IdempotentStarfighterBootstrapAndBundleAdmission(t *testing.T) {
 		part, _ := writer.CreateFormFile("bundle", "bot_bundle.zip")
 		_, _ = part.Write(bundleBytes)
 		_ = writer.Close()
-
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions/upload", &body)
 		req.Header.Set("Authorization", "Bearer "+pilotAlphaToken)
 		req.Header.Set("Content-Type", writer.FormDataContentType())

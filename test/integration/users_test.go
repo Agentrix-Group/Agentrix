@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPhase2_CanonicalUserAndAgentAttribution(t *testing.T) {
+func TestIntegration_Users_CanonicalAttributionAndAuth(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
 
-	dbName := fmt.Sprintf("agentrix_test_phase2_%d", time.Now().UnixNano()%1000000)
+	dbName := fmt.Sprintf("agentrix_users_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 

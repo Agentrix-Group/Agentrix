@@ -82,7 +82,11 @@ export function AppContent() {
       <main className="main-content">
         <ErrorBoundary>
           {route === 'home' && (
-            <HomePage onWatchReplay={handleWatchReplay} />
+            <HomePage
+              onWatchReplay={handleWatchReplay}
+              currentUser={currentUser}
+              onSelectContestRankings={() => navigate('/rankings')}
+            />
           )}
           {route === 'agents' && (
             <ProtectedRoute>

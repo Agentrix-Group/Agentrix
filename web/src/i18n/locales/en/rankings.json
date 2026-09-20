@@ -1,12 +1,25 @@
 {
   "title": "Tournament Leaderboard",
   "empty": "No rankings data available yet.",
+  "emptySearch": "No results matching your search.",
+  "contestFilter": "Filter by contest:",
+  "allContests": "All Contests (Global)",
+  "searchPlaceholder": "Search by agent or participant...",
+  "sortBy": "Sort by:",
+  "liveBadge": "Live update",
+  "sortOptions": {
+    "score": "Score (highest to lowest)",
+    "wins": "Wins",
+    "matches": "Matches played",
+    "winRate": "Win Rate %"
+  },
   "table": {
     "rank": "Rank",
     "agent": "Agent",
     "participant": "Participant",
     "score": "Score",
     "matches": "Matches",
-    "wdl": "W / D / L"
+    "wdl": "W / D / L",
+    "winRate": "Win Rate %"
   }
 }

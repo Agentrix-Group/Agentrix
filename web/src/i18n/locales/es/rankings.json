@@ -1,12 +1,25 @@
 {
   "title": "Clasificación del torneo",
   "empty": "Aún no hay datos de clasificación disponibles.",
+  "emptySearch": "No hay resultados que coincidan con la búsqueda.",
+  "contestFilter": "Filtrar por concurso:",
+  "allContests": "Todos los concursos (Global)",
+  "searchPlaceholder": "Buscar por agente o participante...",
+  "sortBy": "Ordenar por:",
+  "liveBadge": "Actualización en vivo",
+  "sortOptions": {
+    "score": "Puntuación (mayor a menor)",
+    "wins": "Victorias",
+    "matches": "Partidas jugadas",
+    "winRate": "% Victorias"
+  },
   "table": {
     "rank": "Puesto",
     "agent": "Agente",
     "participant": "Participante",
     "score": "Puntuación",
     "matches": "Partidas",
-    "wdl": "V / E / D"
+    "wdl": "V / E / D",
+    "winRate": "% Victoria"
   }
 }

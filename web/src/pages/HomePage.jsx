@@ -1,17 +1,21 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ArrowRight, CalendarDays, CircleAlert, RefreshCw, Sparkles, Swords } from 'lucide-react';
+import { ArrowRight, CalendarDays, CircleAlert, RefreshCw, Sparkles, Swords, Trophy, CheckCircle2 } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { formatDate } from '../i18n/formatters.js';
 import { MatchCard } from '../components/MatchCard.jsx';
+import { EnrollAgentModal } from '../components/EnrollAgentModal.jsx';
 
-export function HomePage({ onWatchReplay }) {
-  const { t, i18n } = useTranslation('home');
+export function HomePage({ onWatchReplay, currentUser, onSelectContestRankings }) {
+  const { t, i18n } = useTranslation(['home', 'common']);
   const language = i18n.language?.startsWith('en') ? 'en' : 'es';
   const [contests, setContests] = useState([]);
   const [recentMatches, setRecentMatches] = useState([]);
   const [recentMatchesStatus, setRecentMatchesStatus] = useState('loading');
   const [status, setStatus] = useState('loading');
+  const [isEnrollModalOpen, setIsEnrollModalOpen] = useState(false);
+  const [activeEnrollContest, setActiveEnrollContest] = useState(null);
+  const [enrollSuccessMsg, setEnrollSuccessMsg] = useState('');
 
   const loadContests = useCallback(async () => {
     setStatus('loading');
@@ -48,6 +52,15 @@ export function HomePage({ onWatchReplay }) {
     loadRecentMatches();
   }, [loadContests, loadRecentMatches]);
 
+  const handleOpenEnroll = (contest) => {
+    setActiveEnrollContest(contest);
+    setIsEnrollModalOpen(true);
+  };
+
+  const handleEnrolled = () => {
+    setEnrollSuccessMsg(t('home:enrollModal.success'));
+  };
+
   const renderDate = (value) => value ? (
     <time dateTime={value}>{formatDate(value, language)}</time>
   ) : t('datePending');
@@ -74,6 +87,31 @@ export function HomePage({ onWatchReplay }) {
           <span className="orbit-dot orbit-dot-three" />
         </div>
       </section>
+
+      {enrollSuccessMsg && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="card"
+          style={{
+            margin: '20px 0',
+            borderLeft: '4px solid var(--success, #22c55e)',
+            background: 'var(--success-bg, rgba(34, 197, 94, 0.1))',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <CheckCircle2 size={20} color="var(--success, #22c55e)" aria-hidden="true" />
+            <span>{enrollSuccessMsg}</span>
+          </div>
+          <button type="button" className="btn btn-secondary" onClick={() => setEnrollSuccessMsg('')}>
+            {t('common:buttons.close')}
+          </button>
+        </div>
+      )}
 
       <section className="home-contests" id="contests" aria-labelledby="contests-title" aria-busy={status === 'loading'}>
         <div className="section-heading">
@@ -132,6 +170,29 @@ export function HomePage({ onWatchReplay }) {
                   <span>{t('startsAt')}: {renderDate(contest.starts_at)}</span>
                   <span>{t('endsAt')}: {renderDate(contest.ends_at)}</span>
                 </div>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '16px', flexWrap: 'wrap' }}>
+                  {currentUser && (contest.state === 'registration_open' || contest.state === 'published' || contest.state === 'in_progress') && (
+                    <button
+                      type="button"
+                      className="btn btn-compact"
+                      style={{ fontSize: '0.84rem', padding: '6px 12px', display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                      onClick={() => handleOpenEnroll(contest)}
+                    >
+                      <Trophy size={14} aria-hidden="true" />
+                      <span>{t('enrollButton')}</span>
+                    </button>
+                  )}
+                  {typeof onSelectContestRankings === 'function' && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact"
+                      style={{ fontSize: '0.84rem', padding: '6px 12px' }}
+                      onClick={() => onSelectContestRankings(contest.id)}
+                    >
+                      {t('viewRankings')}
+                    </button>
+                  )}
+                </div>
               </article>
             ))}
           </div>
@@ -179,6 +240,13 @@ export function HomePage({ onWatchReplay }) {
           <div className="card">{t('noMatches')}</div>
         )}
       </section>
+
+      <EnrollAgentModal
+        isOpen={isEnrollModalOpen}
+        contest={activeEnrollContest}
+        onClose={() => setIsEnrollModalOpen(false)}
+        onEnrolled={handleEnrolled}
+      />
     </div>
   );
 }

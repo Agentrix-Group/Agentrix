@@ -32,5 +32,21 @@
     "archived": "Archived",
     "suspended": "Suspended",
     "cancelled": "Cancelled"
+  },
+  "enrollButton": "Enroll Agent",
+  "viewRankings": "View Leaderboard",
+  "enrollModal": {
+    "title": "Enroll Agent in Contest",
+    "selectAgent": "Select your agent:",
+    "placeholder": "Choose a registered agent...",
+    "noAgents": "You don't have any registered agents yet.",
+    "readyNotice": "Only agents with at least one validated 'ready' bundle can compete.",
+    "noReadySubmissions": "This agent does not have a version ready for competition ('ready' state).",
+    "submit": "Confirm Enrollment",
+    "submitting": "Enrolling agent...",
+    "cancel": "Cancel",
+    "success": "Agent enrolled in contest successfully!",
+    "alreadyEnrolled": "This agent is already enrolled in this contest.",
+    "closed": "Enrollment for this contest is not currently available."
   }
 }

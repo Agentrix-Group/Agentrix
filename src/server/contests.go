@@ -117,7 +117,12 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ranking, err := s.Service.EnrollAgent(ctx, claims.ParticipantId, contestId, req.AgentId)
+	userID := claims.UserID
+	if userID == "" {
+		userID = claims.ParticipantId
+	}
+
+	entry, ranking, err := s.Service.EnrollAgent(ctx, userID, contestId, req.AgentId)
 	if err != nil {
 		if errors.Is(err, service.ErrContestNotFound) || errors.Is(err, service.ErrAgentNotFound) {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, err.Error())
@@ -144,8 +149,31 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 	common.WriteObjectResponse(w, http.StatusCreated, model.EnrollAgentResponse{
 		HttpStatusCode: http.StatusCreated,
 		Message:        "Agent enrolled in contest successfully",
+		Entry:          entry,
 		Ranking:        ranking,
 	})
+}
+
+func (s *Server) listContestEntries(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	contestId := mux.Vars(r)["id"]
+
+	entries, err := s.Service.ListContestEntries(ctx, contestId)
+	if err != nil {
+		if errors.Is(err, service.ErrContestNotFound) || err == sql.ErrNoRows {
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Contest not found")
+			return
+		}
+		tracer.FailRequest(ctx, tracer.ScopeDatabase, "contest.entries.failed", "No se pudieron consultar las inscripciones del concurso",
+			tracer.String("contest_id", contestId), tracer.Err(err))
+		common.WriteErrorResponse(w, common.DATABASE_ERROR)
+		return
+	}
+
+	if entries == nil {
+		entries = make([]model.ContestEntry, 0)
+	}
+	common.WriteObjectResponse(w, http.StatusOK, entries)
 }
 
 func (s *Server) listContestAgents(w http.ResponseWriter, r *http.Request) {

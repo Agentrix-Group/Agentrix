@@ -6,14 +6,18 @@ import (
 	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
-func validateParticipant(p *model.Participant) error {
-	if p == nil {
-		return errors.New("participant data is required")
+func validateUser(u *model.User) error {
+	if u == nil {
+		return errors.New("user data is required")
 	}
-	if p.Username == "" || p.Email == "" {
+	if u.Username == "" || u.Email == "" {
 		return errors.New("username and email are required")
 	}
 	return nil
+}
+
+func validateParticipant(p *model.Participant) error {
+	return validateUser(p)
 }
 
 func validateLoginRequest(username, password string) error {

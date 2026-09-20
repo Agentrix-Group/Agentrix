@@ -16,6 +16,18 @@ import (
 )
 
 var RoutePermissions = map[string]map[string]string{
+	"/api/v1/me/agents": {
+		http.MethodGet: common.ReadPermission,
+	},
+	"/api/v1/users": {
+		http.MethodGet:  common.ReadPermission,
+		http.MethodPost: common.AdminPermission,
+	},
+	"/api/v1/users/{id}": {
+		http.MethodGet:   common.ReadPermission,
+		http.MethodPut:   common.AdminPermission,
+		http.MethodPatch: common.AdminPermission,
+	},
 	"/api/v1/participants": {
 		http.MethodGet:  common.ReadPermission,
 		http.MethodPost: common.AdminPermission,
@@ -34,6 +46,10 @@ var RoutePermissions = map[string]map[string]string{
 		http.MethodPatch: common.AdminPermission,
 	},
 	"/api/v1/contests/{id}/agents": {
+		http.MethodGet:  common.ReadPermission,
+		http.MethodPost: common.SubmitAgentPermission,
+	},
+	"/api/v1/contests/{id}/entries": {
 		http.MethodGet:  common.ReadPermission,
 		http.MethodPost: common.SubmitAgentPermission,
 	},
@@ -142,8 +158,12 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
+		actorID := claims.UserID
+		if actorID == "" {
+			actorID = claims.ParticipantId
+		}
 		ctx = context.WithValue(ctx, common.UserContextKey, claims)
-		ctx = tracer.WithActorID(ctx, claims.ParticipantId)
+		ctx = tracer.WithActorID(ctx, actorID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -165,13 +185,12 @@ func (s *Server) permissionMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Admins bypass permission check
-		if claims.RoleId == common.RoleAdmin {
-			next.ServeHTTP(w, r)
-			return
+		actorID := claims.UserID
+		if actorID == "" {
+			actorID = claims.ParticipantId
 		}
 
-		hasPermission, err := s.Service.HasPermission(ctx, claims.ParticipantId, requiredPermission)
+		hasPermission, err := s.Service.HasPermission(ctx, actorID, requiredPermission)
 		if err != nil {
 			tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.permission.failed", "No se pudo comprobar el permiso",
 				tracer.String("permission", requiredPermission), tracer.Err(err))

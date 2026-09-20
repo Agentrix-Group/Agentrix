@@ -20,7 +20,8 @@ type mockContestService struct {
 	service.Service
 	listPublicContestsFn func(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
 	getPublicContestFn   func(ctx context.Context, id string) (*model.Contest, error)
-	enrollAgentFn        func(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error)
+	enrollAgentFn        func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	listContestEntriesFn func(ctx context.Context, contestId string) ([]model.ContestEntry, error)
 	listContestAgentsFn  func(ctx context.Context, contestId string) ([]model.Ranking, error)
 	hasPermissionFn      func(ctx context.Context, participantId, permission string) (bool, error)
 }
@@ -39,9 +40,16 @@ func (m *mockContestService) GetPublicContest(ctx context.Context, id string) (*
 	return nil, service.ErrContestNotFound
 }
 
-func (m *mockContestService) EnrollAgent(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error) {
+func (m *mockContestService) EnrollAgent(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
 	if m.enrollAgentFn != nil {
 		return m.enrollAgentFn(ctx, participantId, contestId, agentId)
+	}
+	return nil, nil, nil
+}
+
+func (m *mockContestService) ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
+	if m.listContestEntriesFn != nil {
+		return m.listContestEntriesFn(ctx, contestId)
 	}
 	return nil, nil
 }
@@ -249,15 +257,21 @@ func TestEnrollAgent_Endpoint(t *testing.T) {
 
 	t.Run("Enrolling agent with valid Bearer token returns 201 Created", func(t *testing.T) {
 		mockSvc := &mockContestService{
-			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error) {
-				return &model.Ranking{
-					Id:            "rank-1",
-					ContestId:     contestId,
-					AgentId:       agentId,
-					ParticipantId: participantId,
-					Score:         0,
-					Rank:          1,
-				}, nil
+			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+				return &model.ContestEntry{
+						Id:        "entry-1",
+						ContestId: contestId,
+						AgentId:   agentId,
+						UserId:    participantId,
+						Status:    model.ContestEntryStatusEnrolled,
+					}, &model.Ranking{
+						Id:            "rank-1",
+						ContestId:     contestId,
+						AgentId:       agentId,
+						ParticipantId: participantId,
+						Score:         0,
+						Rank:          1,
+					}, nil
 			},
 			hasPermissionFn: func(ctx context.Context, participantId, permission string) (bool, error) {
 				return true, nil
@@ -284,6 +298,8 @@ func TestEnrollAgent_Endpoint(t *testing.T) {
 		r.NoError(err)
 		r.Equal(http.StatusCreated, resp.HttpStatusCode)
 		r.NotNil(resp.Ranking)
+		r.NotNil(resp.Entry)
+		r.Equal("entry-1", resp.Entry.Id)
 		r.Equal("c-123", resp.Ranking.ContestId)
 		r.Equal("agent-99", resp.Ranking.AgentId)
 	})
@@ -305,8 +321,8 @@ func TestEnrollAgent_Endpoint(t *testing.T) {
 
 	t.Run("Enrolling when registration closed returns 400 Bad Request", func(t *testing.T) {
 		mockSvc := &mockContestService{
-			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error) {
-				return nil, service.ErrRegistrationClosed
+			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+				return nil, nil, service.ErrRegistrationClosed
 			},
 			hasPermissionFn: func(ctx context.Context, participantId, permission string) (bool, error) {
 				return true, nil
@@ -331,8 +347,8 @@ func TestEnrollAgent_Endpoint(t *testing.T) {
 
 	t.Run("Enrolling duplicate agent returns 409 Conflict", func(t *testing.T) {
 		mockSvc := &mockContestService{
-			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error) {
-				return nil, service.ErrAgentAlreadyEnrolled
+			enrollAgentFn: func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+				return nil, nil, service.ErrAgentAlreadyEnrolled
 			},
 			hasPermissionFn: func(ctx context.Context, participantId, permission string) (bool, error) {
 				return true, nil
@@ -388,5 +404,40 @@ func TestListContestAgents_Endpoint(t *testing.T) {
 		r.Len(rankings, 1)
 		r.Equal("r-1", rankings[0].Id)
 		r.Equal("agent-1", rankings[0].AgentId)
+	})
+}
+
+func TestListContestEntries_Endpoint(t *testing.T) {
+	r := require.New(t)
+
+	t.Run("Returns 200 OK and list of contest entries", func(t *testing.T) {
+		mockSvc := &mockContestService{
+			listContestEntriesFn: func(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
+				return []model.ContestEntry{
+					{
+						Id:        "entry-1",
+						ContestId: contestId,
+						AgentId:   "agent-1",
+						UserId:    "user-1",
+						Status:    model.ContestEntryStatusEnrolled,
+					},
+				}, nil
+			},
+		}
+
+		srv := NewServer(mockSvc)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/contests/c-100/entries", nil)
+		rec := httptest.NewRecorder()
+
+		srv.Handler.ServeHTTP(rec, req)
+
+		r.Equal(http.StatusOK, rec.Code)
+		var entries []model.ContestEntry
+		err := json.Unmarshal(rec.Body.Bytes(), &entries)
+		r.NoError(err)
+		r.Len(entries, 1)
+		r.Equal("entry-1", entries[0].Id)
+		r.Equal("agent-1", entries[0].AgentId)
+		r.Equal("user-1", entries[0].UserId)
 	})
 }

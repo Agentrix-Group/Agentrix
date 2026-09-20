@@ -54,7 +54,11 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, participantId, rol
 		}
 		return nil, err
 	}
-	if roleId != common.RoleAdmin && agent.ParticipantId != participantId {
+	ownerID := agent.OwnerUserId
+	if ownerID == "" {
+		ownerID = agent.ParticipantId
+	}
+	if roleId != common.RoleAdmin && ownerID != participantId {
 		return nil, ErrAgentNotOwned
 	}
 	if agent.GameId != "starfighter" {

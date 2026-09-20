@@ -31,17 +31,17 @@ func NewAuth(accessSecret, refreshSecret string) *Auth {
 	}
 }
 
-func (a *Auth) GenerateAuthToken(participantId, roleId string) (*model.Token, error) {
+func (a *Auth) GenerateAuthToken(userId, roleId string) (*model.Token, error) {
 	now := time.Now()
 	accessExpiry := now.Add(AccessTokenDuration)
 	refreshExpiry := now.Add(RefreshTokenDuration)
 
-	accessToken, err := a.generateToken(participantId, roleId, accessExpiry, a.accessSecret)
+	accessToken, err := a.generateToken(userId, roleId, accessExpiry, a.accessSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate access token: %v", err)
 	}
 
-	refreshToken, err := a.generateToken(participantId, roleId, refreshExpiry, a.refreshSecret)
+	refreshToken, err := a.generateToken(userId, roleId, refreshExpiry, a.refreshSecret)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate refresh token: %v", err)
 	}
@@ -54,13 +54,14 @@ func (a *Auth) GenerateAuthToken(participantId, roleId string) (*model.Token, er
 	}, nil
 }
 
-func (a *Auth) generateToken(participantId, roleId string, expiry time.Time, secret []byte) (string, error) {
+func (a *Auth) generateToken(userId, roleId string, expiry time.Time, secret []byte) (string, error) {
 	claims := model.Claims{
-		ParticipantId: participantId,
+		UserID:        userId,
+		ParticipantId: userId,
 		RoleId:        roleId,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    Issuer,
-			Subject:   participantId,
+			Subject:   userId,
 			ExpiresAt: jwt.NewNumericDate(expiry),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			NotBefore: jwt.NewNumericDate(time.Now()),
@@ -92,6 +93,16 @@ func (a *Auth) validateToken(tokenString string, secret []byte) (*model.Claims, 
 	}
 
 	if claims, ok := token.Claims.(*model.Claims); ok && token.Valid {
+		if claims.UserID == "" {
+			if claims.ParticipantId != "" {
+				claims.UserID = claims.ParticipantId
+			} else {
+				claims.UserID = claims.Subject
+			}
+		}
+		if claims.ParticipantId == "" {
+			claims.ParticipantId = claims.UserID
+		}
 		return claims, nil
 	}
 

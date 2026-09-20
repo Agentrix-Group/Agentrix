@@ -13,6 +13,7 @@ type mockAgentsRepo struct {
 	repository.Repository
 	listAgentsFn              func(ctx context.Context) ([]model.Agent, error)
 	listAgentsByParticipantFn func(ctx context.Context, participantId string) ([]model.Agent, error)
+	listAgentsByOwnerFn       func(ctx context.Context, ownerUserId string) ([]model.Agent, error)
 	getAgentFn                func(ctx context.Context, id string) (*model.Agent, error)
 	createAgentFn             func(ctx context.Context, agent *model.Agent) error
 	updateAgentFn             func(ctx context.Context, agent *model.Agent) error
@@ -29,6 +30,16 @@ func (m *mockAgentsRepo) ListAgents(ctx context.Context) ([]model.Agent, error) 
 func (m *mockAgentsRepo) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
 	if m.listAgentsByParticipantFn != nil {
 		return m.listAgentsByParticipantFn(ctx, participantId)
+	}
+	return m.ListAgentsByOwner(ctx, participantId)
+}
+
+func (m *mockAgentsRepo) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
+	if m.listAgentsByOwnerFn != nil {
+		return m.listAgentsByOwnerFn(ctx, ownerUserId)
+	}
+	if m.listAgentsByParticipantFn != nil {
+		return m.listAgentsByParticipantFn(ctx, ownerUserId)
 	}
 	return nil, nil
 }

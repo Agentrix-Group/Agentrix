@@ -1,26 +1,26 @@
 paths:
-  /api/v1/participants:
+  /api/v1/users:
     get:
-      summary: List registered participants
+      summary: List registered users
       tags:
-        - Participants
+        - Users
       security:
         - bearerAuth: []
       responses:
         '200':
-          description: List of participants
+          description: List of users
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: './components/models.yaml#/Participant'
+                  $ref: './components/models.yaml#/User'
 
-  /api/v1/participants/{id}:
+  /api/v1/users/{id}:
     get:
-      summary: Get participant profile by ID
+      summary: Get user profile by ID
       tags:
-        - Participants
+        - Users
       security:
         - bearerAuth: []
       parameters:
@@ -31,15 +31,17 @@ paths:
             type: string
       responses:
         '200':
-          description: Participant profile
+          description: User profile
           content:
             application/json:
               schema:
-                $ref: './components/models.yaml#/Participant'
+                $ref: './components/models.yaml#/User'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
     put:
-      summary: Update participant profile
+      summary: Update user profile
       tags:
-        - Participants
+        - Users
       security:
         - bearerAuth: []
       parameters:
@@ -53,18 +55,18 @@ paths:
         content:
           application/json:
             schema:
-              $ref: './components/models.yaml#/Participant'
+              $ref: './components/models.yaml#/User'
       responses:
         '200':
-          description: Participant updated
+          description: User updated
           content:
             application/json:
               schema:
                 $ref: './components/models.yaml#/SuccessResponse'
     patch:
-      summary: Activate or deactivate participant
+      summary: Activate or deactivate user
       tags:
-        - Participants
+        - Users
       security:
         - bearerAuth: []
       parameters:
@@ -80,8 +82,28 @@ paths:
             type: boolean
       responses:
         '200':
-          description: Participant status updated
+          description: User status updated
           content:
             application/json:
               schema:
                 $ref: './components/models.yaml#/SuccessResponse'
+
+  /api/v1/me/agents:
+    get:
+      summary: List agents owned by current authenticated user
+      tags:
+        - Users
+        - Agents
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of agents owned by authenticated user
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Agent'
+        '401':
+          $ref: './components/errors.yaml#/Unauthorized'

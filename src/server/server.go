@@ -49,6 +49,11 @@ func (s *Server) buildHandler() http.Handler {
 	router.Use(s.corsMiddleware)
 	router.Use(s.requestLoggingMiddleware)
 
+	// Health & Readiness Probes (Phase 1 / ATD-020)
+	router.HandleFunc("/health/live", s.livenessProbe).Methods(http.MethodGet, http.MethodOptions)
+	router.HandleFunc("/health/ready", s.readinessProbe).Methods(http.MethodGet, http.MethodOptions)
+	router.HandleFunc("/health", s.livenessProbe).Methods(http.MethodGet, http.MethodOptions)
+
 	api := router.PathPrefix("/api/v1").Subrouter()
 
 	// Public endpoints
@@ -61,6 +66,7 @@ func (s *Server) buildHandler() http.Handler {
 	api.HandleFunc("/contests", s.listPublicContests).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/contests/{id}", s.getPublicContest).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/contests/{id}/agents", s.listContestAgents).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}/entries", s.listContestEntries).Methods(http.MethodGet, http.MethodOptions)
 
 	// Public spectator routes (Blueprint Section 4: matches, rankings, replays)
 	api.HandleFunc("/matches", s.listMatches).Methods(http.MethodGet, http.MethodOptions)
@@ -77,18 +83,20 @@ func (s *Server) buildHandler() http.Handler {
 
 	// User session
 	protected.HandleFunc("/me", s.checkSession).Methods(http.MethodGet, http.MethodOptions)
+	protected.HandleFunc("/me/agents", s.getMyAgents).Methods(http.MethodGet, http.MethodOptions)
 
-	// Participants
-	protected.HandleFunc("/participants", s.listParticipants).Methods(http.MethodGet)
-	protected.HandleFunc("/participants/{id}", s.getParticipant).Methods(http.MethodGet)
-	protected.HandleFunc("/participants/{id}", s.updateParticipant).Methods(http.MethodPut)
-	protected.HandleFunc("/participants/{id}", s.activateParticipant).Methods(http.MethodPatch)
+	// Users (Canonical Identity)
+	protected.HandleFunc("/users", s.listUsers).Methods(http.MethodGet)
+	protected.HandleFunc("/users/{id}", s.getUser).Methods(http.MethodGet)
+	protected.HandleFunc("/users/{id}", s.updateUser).Methods(http.MethodPut)
+	protected.HandleFunc("/users/{id}", s.activateUser).Methods(http.MethodPatch)
 
 	// Contests
 	protected.HandleFunc("/contests", s.createContest).Methods(http.MethodPost)
 	protected.HandleFunc("/contests/{id}", s.updateContest).Methods(http.MethodPut)
 	protected.HandleFunc("/contests/{id}", s.activateContest).Methods(http.MethodPatch)
 	protected.HandleFunc("/contests/{id}/agents", s.enrollAgent).Methods(http.MethodPost)
+	protected.HandleFunc("/contests/{id}/entries", s.enrollAgent).Methods(http.MethodPost)
 
 	// Categories
 	protected.HandleFunc("/categories", s.listCategories).Methods(http.MethodGet)

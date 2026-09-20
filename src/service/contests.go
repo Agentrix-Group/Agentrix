@@ -100,62 +100,90 @@ func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Conte
 	return c, nil
 }
 
-func (s *service) EnrollAgent(ctx context.Context, participantId string, contestId string, agentId string) (*model.Ranking, error) {
+func (s *service) EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error) {
 	contest, err := s.repo.GetContest(ctx, contestId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, ErrContestNotFound
+			return nil, nil, ErrContestNotFound
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !contest.Active {
-		return nil, ErrContestNotFound
+		return nil, nil, ErrContestNotFound
 	}
 
 	if contest.State != model.ContestStateRegistrationOpen {
-		return nil, ErrRegistrationClosed
+		return nil, nil, ErrRegistrationClosed
 	}
 
 	agent, err := s.repo.GetAgent(ctx, agentId)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, ErrAgentNotFound
+			return nil, nil, ErrAgentNotFound
 		}
-		return nil, err
+		return nil, nil, err
 	}
 
 	if !agent.Active {
-		return nil, ErrAgentNotFound
+		return nil, nil, ErrAgentNotFound
 	}
 
-	// Verify participant ownership unless admin
-	if participantId != "" && agent.ParticipantId != participantId {
-		isAdmin, permErr := s.repo.HasPermission(ctx, participantId, common.AdminPermission)
+	ownerID := agent.OwnerUserId
+	if ownerID == "" {
+		ownerID = agent.ParticipantId
+	}
+
+	// Verify user ownership unless admin
+	if userId != "" && ownerID != userId {
+		isAdmin, permErr := s.repo.HasPermission(ctx, userId, common.AdminPermission)
 		if permErr != nil || !isAdmin {
-			return nil, ErrUnauthorizedAgent
+			return nil, nil, ErrUnauthorizedAgent
 		}
 	}
 
 	// Verify game compatibility
 	if contest.GameId != "" && agent.GameId != "" && contest.GameId != agent.GameId {
-		return nil, ErrGameMismatch
+		return nil, nil, ErrGameMismatch
 	}
 
-	// Verify agent not already enrolled
+	// Verify agent not already enrolled in contest_entries or rankings
+	existingEntry, err := s.repo.GetContestEntry(ctx, contestId, agentId)
+	if err != nil && err != sql.ErrNoRows {
+		return nil, nil, err
+	}
+	if existingEntry != nil {
+		return nil, nil, ErrAgentAlreadyEnrolled
+	}
 	existingRanking, err := s.repo.GetRankingByContestAndAgent(ctx, contestId, agentId)
 	if err != nil && err != sql.ErrNoRows {
-		return nil, err
+		return nil, nil, err
 	}
 	if existingRanking != nil {
-		return nil, ErrAgentAlreadyEnrolled
+		return nil, nil, ErrAgentAlreadyEnrolled
 	}
 
+	// 1. Create ContestEntry
+	entry := &model.ContestEntry{
+		Id:         uuid.New().String(),
+		ContestId:  contestId,
+		AgentId:    agentId,
+		UserId:     ownerID,
+		Status:     "enrolled",
+		EnrolledAt: time.Now().UTC(),
+		Agent:      agent,
+	}
+	if err := s.repo.CreateContestEntry(ctx, entry); err != nil {
+		return nil, nil, err
+	}
+
+	// 2. Create or Upsert initial Ranking row for leaderboard
 	ranking := &model.Ranking{
 		Id:            uuid.New().String(),
 		ContestId:     contestId,
 		AgentId:       agentId,
-		ParticipantId: agent.ParticipantId,
+		UserId:        ownerID,
+		ParticipantId: ownerID,
 		Score:         0,
 		MatchesPlayed: 0,
 		Wins:          0,
@@ -163,14 +191,34 @@ func (s *service) EnrollAgent(ctx context.Context, participantId string, contest
 		Draws:         0,
 		Rank:          1,
 		UpdatedAt:     time.Now().UTC(),
+		Agent:         agent,
 	}
 
 	err = s.repo.UpsertRanking(ctx, ranking)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	return entry, ranking, nil
+}
+
+func (s *service) ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
+	_, err := s.repo.GetContest(ctx, contestId)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrContestNotFound
+		}
 		return nil, err
 	}
 
-	return ranking, nil
+	entries, err := s.repo.ListContestEntries(ctx, contestId)
+	if err != nil {
+		return nil, err
+	}
+	if entries == nil {
+		entries = make([]model.ContestEntry, 0)
+	}
+	return entries, nil
 }
 
 func (s *service) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {

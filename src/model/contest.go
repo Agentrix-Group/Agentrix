@@ -71,12 +71,30 @@ type PublicContestsFilter struct {
 	IncludeArchived bool
 }
 
+const (
+	ContestEntryStatusEnrolled     = "enrolled"
+	ContestEntryStatusDisqualified = "disqualified"
+	ContestEntryStatusWithdrawn    = "withdrawn"
+)
+
+type ContestEntry struct {
+	Id         string    `json:"id" db:"id"`
+	ContestId  string    `json:"contest_id" db:"contest_id"`
+	AgentId    string    `json:"agent_id" db:"agent_id"`
+	UserId     string    `json:"user_id" db:"user_id"`
+	Status     string    `json:"status" db:"status"`
+	EnrolledAt time.Time `json:"enrolled_at" db:"enrolled_at"`
+	Agent      *Agent    `json:"agent,omitempty"`
+	User       *User     `json:"user,omitempty"`
+}
+
 type EnrollAgentRequest struct {
 	AgentId string `json:"agent_id"`
 }
 
 type EnrollAgentResponse struct {
-	HttpStatusCode int      `json:"httpStatusCode"`
-	Message        string   `json:"message"`
-	Ranking        *Ranking `json:"ranking,omitempty"`
+	HttpStatusCode int           `json:"httpStatusCode"`
+	Message        string        `json:"message"`
+	Entry          *ContestEntry `json:"entry,omitempty"`
+	Ranking        *Ranking      `json:"ranking,omitempty"`
 }

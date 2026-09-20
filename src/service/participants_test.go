@@ -27,6 +27,10 @@ func (m *mockParticipantRepo) GetParticipantByUsername(ctx context.Context, user
 	return nil, sql.ErrNoRows
 }
 
+func (m *mockParticipantRepo) GetUserByUsername(ctx context.Context, username string) (*model.User, error) {
+	return m.GetParticipantByUsername(ctx, username)
+}
+
 func (m *mockParticipantRepo) GetParticipantByEmail(ctx context.Context, email string) (*model.Participant, error) {
 	if m.getByEmailFn != nil {
 		return m.getByEmailFn(ctx, email)
@@ -34,11 +38,19 @@ func (m *mockParticipantRepo) GetParticipantByEmail(ctx context.Context, email s
 	return nil, sql.ErrNoRows
 }
 
+func (m *mockParticipantRepo) GetUserByEmail(ctx context.Context, email string) (*model.User, error) {
+	return m.GetParticipantByEmail(ctx, email)
+}
+
 func (m *mockParticipantRepo) CreateParticipant(ctx context.Context, p *model.Participant) error {
 	if m.createFn != nil {
 		return m.createFn(ctx, p)
 	}
 	return nil
+}
+
+func (m *mockParticipantRepo) CreateUser(ctx context.Context, u *model.User) error {
+	return m.CreateParticipant(ctx, u)
 }
 
 func TestParticipantService_Login(t *testing.T) {

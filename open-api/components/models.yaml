@@ -42,6 +42,8 @@ LoginResponse:
   properties:
     token:
       $ref: '#/Token'
+    user:
+      $ref: '#/User'
     participant:
       $ref: '#/Participant'
 
@@ -64,6 +66,28 @@ RegisterRequest:
     - email
     - password
 
+ContestEntry:
+  type: object
+  properties:
+    id:
+      type: string
+    contest_id:
+      type: string
+    agent_id:
+      type: string
+    user_id:
+      type: string
+    status:
+      type: string
+      enum: [enrolled, disqualified, withdrawn]
+    enrolled_at:
+      type: string
+      format: date-time
+    agent:
+      $ref: '#/Agent'
+    user:
+      $ref: '#/User'
+
 EnrollAgentRequest:
   type: object
   properties:
@@ -82,11 +106,12 @@ EnrollAgentResponse:
     message:
       type: string
       example: "Agent enrolled in contest successfully"
+    entry:
+      $ref: '#/ContestEntry'
     ranking:
       $ref: '#/Ranking'
 
-
-Participant:
+User:
   type: object
   properties:
     id:
@@ -189,8 +214,11 @@ Agent:
   properties:
     id:
       type: string
+    owner_user_id:
+      type: string
     participant_id:
       type: string
+      description: Legacy alias of owner_user_id
     game_id:
       const: starfighter
     name:
@@ -278,8 +306,11 @@ Ranking:
       type: string
     agent_id:
       type: string
+    user_id:
+      type: string
     participant_id:
       type: string
+      description: Legacy alias of user_id
     score:
       type: integer
     matches_played:

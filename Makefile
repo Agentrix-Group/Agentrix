@@ -14,8 +14,8 @@ DB_USER ?= postgres
 DB_NAME ?= agentrix
 
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-all agentrix-setup db-setup db-status db-reset db-seed \
-        build build-all build-engine build-engines lint test test-race coverage run clean \
+.PHONY: help setup setup-all agentrix-setup db-setup db-migrate db-status db-reset db-seed db-bootstrap \
+        build build-all build-engine build-engines lint test test-race test-integration coverage run clean \
         web-install web-build web-dev
 
 # Show available targets
@@ -27,9 +27,10 @@ help:
 	@echo "    make setup-all      - Full setup (Go deps + PostgreSQL + Frontend npm)"
 	@echo "    make agentrix-setup - Install Go dependencies (tidy + download)"
 	@echo ""
-	@echo "  Database (PostgreSQL):"
+	@echo "  Database (PostgreSQL & Goose):"
+	@echo "    make db-migrate     - Apply forward-only database migrations"
+	@echo "    make db-status      - Check connection, schema version, and pending migrations"
 	@echo "    make db-setup       - Initialize database schema and seeds"
-	@echo "    make db-status      - Check PostgreSQL connectivity"
 	@echo "    make db-seed        - Reapply seed data (00_seeds_postgresql.sql)"
 	@echo "    make db-reset       - Recreate database from scratch (drop, schema, seeds)"
 	@echo ""
@@ -37,6 +38,7 @@ help:
 	@echo "    make lint           - Format (gofmt) and analyze (go vet) code"
 	@echo "    make test           - Run all tests in parallel"
 	@echo "    make test-race      - Run all tests with race detector enabled"
+	@echo "    make test-integration - Run integration tests with PostgreSQL"
 	@echo "    make coverage       - Generate coverage profile and display percentage"
 	@echo ""
 	@echo "  Compilation & Execution:"
@@ -73,17 +75,27 @@ db-setup:
 	@echo "Setting up PostgreSQL database..."
 	@$(DB_SCRIPT) || (echo "Database setup failed!" && exit 1)
 
-# Check PostgreSQL connection status
+# Apply forward-only database migrations
+db-migrate:
+	@echo "Applying forward-only database migrations..."
+	@go run ./cmd/migrate up
+
+# Check PostgreSQL connection status, schema version, and pending migrations
 db-status:
 	@echo "Checking PostgreSQL connection on $(DB_HOST):$(DB_PORT)..."
 	@pg_isready -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) || (echo "PostgreSQL is not reachable!" && exit 1)
-	@echo "PostgreSQL is online and accepting connections."
+	@go run ./cmd/migrate status
 
 # Reapply seed data only
 db-seed:
 	@echo "Applying seed data to $(DB_NAME)..."
 	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f ./script/data/00_seeds_postgresql.sql
 	@echo "Seeds applied successfully!"
+
+# Idempotently bootstrap Starfighter demo environment (migrations + seeds + bots + demo match & replay)
+db-bootstrap:
+	@echo "Bootstrapping Starfighter demo environment..."
+	@go run ./cmd/bootstrap
 
 # Reset database completely (drop database, re-run DDL and seeds)
 db-reset:
@@ -131,6 +143,11 @@ test-race:
 	@echo "Running tests with race detector..."
 	go test -race -v $(GO_PACKAGES)
 	@echo "Race detection test complete!"
+
+# Run integration tests against PostgreSQL
+test-integration:
+	@echo "Running integration tests against PostgreSQL..."
+	@GOCACHE=/tmp/agentrix-go-cache go test -v ./test/integration/...
 
 # Run tests with coverage
 coverage:

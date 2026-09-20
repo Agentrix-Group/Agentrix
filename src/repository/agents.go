@@ -13,7 +13,7 @@ func (r *repository) ListAgents(ctx context.Context) ([]model.Agent, error) {
 		return nil, err
 	}
 
-	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE active = TRUE ORDER BY created_at DESC`
+	query := `SELECT id, owner_user_id, game_id, name, COALESCE(description, ''), active, created_at FROM agents WHERE active = TRUE ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -24,24 +24,25 @@ func (r *repository) ListAgents(ctx context.Context) ([]model.Agent, error) {
 	var agents []model.Agent
 	for rows.Next() {
 		var a model.Agent
-		if err := rows.Scan(&a.Id, &a.ParticipantId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.Id, &a.OwnerUserId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
 			return nil, err
 		}
+		a.ParticipantId = a.OwnerUserId
 		agents = append(agents, a)
 	}
 
 	return agents, nil
 }
 
-func (r *repository) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
+func (r *repository) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
 	db, err := r.getDb()
 	if err != nil {
 		return nil, err
 	}
 
-	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE participant_id = $1 AND active = TRUE ORDER BY created_at DESC`
+	query := `SELECT id, owner_user_id, game_id, name, COALESCE(description, ''), active, created_at FROM agents WHERE owner_user_id = $1 AND active = TRUE ORDER BY created_at DESC`
 
-	rows, err := db.QueryContext(ctx, query, participantId)
+	rows, err := db.QueryContext(ctx, query, ownerUserId)
 	if err != nil {
 		return nil, err
 	}
@@ -50,12 +51,17 @@ func (r *repository) ListAgentsByParticipant(ctx context.Context, participantId 
 	var agents []model.Agent
 	for rows.Next() {
 		var a model.Agent
-		if err := rows.Scan(&a.Id, &a.ParticipantId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.Id, &a.OwnerUserId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt); err != nil {
 			return nil, err
 		}
+		a.ParticipantId = a.OwnerUserId
 		agents = append(agents, a)
 	}
 	return agents, nil
+}
+
+func (r *repository) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
+	return r.ListAgentsByOwner(ctx, participantId)
 }
 
 func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, error) {
@@ -64,11 +70,11 @@ func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, err
 		return nil, err
 	}
 
-	query := `SELECT id, participant_id, game_id, name, description, active, created_at FROM agents WHERE id = $1 AND active = TRUE`
+	query := `SELECT id, owner_user_id, game_id, name, COALESCE(description, ''), active, created_at FROM agents WHERE id = $1 AND active = TRUE`
 
 	var a model.Agent
 	err = db.QueryRowContext(ctx, query, id).Scan(
-		&a.Id, &a.ParticipantId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt,
+		&a.Id, &a.OwnerUserId, &a.GameId, &a.Name, &a.Description, &a.Active, &a.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -77,6 +83,7 @@ func (r *repository) GetAgent(ctx context.Context, id string) (*model.Agent, err
 		return nil, err
 	}
 
+	a.ParticipantId = a.OwnerUserId
 	return &a, nil
 }
 
@@ -86,14 +93,19 @@ func (r *repository) CreateAgent(ctx context.Context, agent *model.Agent) error 
 		return err
 	}
 
-	query := `INSERT INTO agents (id, participant_id, game_id, name, description, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
+	ownerID := agent.OwnerUserId
+	if ownerID == "" {
+		ownerID = agent.ParticipantId
+	}
+
+	query := `INSERT INTO agents (id, owner_user_id, game_id, name, description, active, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
-		agent.Id, agent.ParticipantId, agent.GameId, agent.Name,
+		agent.Id, ownerID, agent.GameId, agent.Name,
 		agent.Description, agent.Active, agent.CreatedAt,
 	)
 	if err != nil {
-		return err
+		return ClassifyDBError(err)
 	}
 
 	return nil

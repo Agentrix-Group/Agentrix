@@ -25,9 +25,9 @@ else
     echo "Database '$DB_NAME' already exists."
 fi
 
-# Apply DDL schema
-echo "Applying DDL schema (00_init_postgresql.sql)..."
-psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -f "$SCRIPT_DIR/database/00_init_postgresql.sql"
+# Apply migrations
+echo "Applying canonical database schema via Goose..."
+(cd "$SCRIPT_DIR/.." && go run ./cmd/migrate up)
 
 # Apply Seeds
 echo "Applying seed data (00_seeds_postgresql.sql)..."

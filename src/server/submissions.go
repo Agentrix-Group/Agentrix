@@ -82,7 +82,11 @@ func (s *Server) uploadSubmissionBundle(w http.ResponseWriter, r *http.Request) 
 		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "could not read bundle ZIP")
 		return
 	}
-	submission, err := s.Service.CreateSubmissionBundle(ctx, claims.ParticipantId, claims.RoleId, agentID, archive)
+	userID := claims.UserID
+	if userID == "" {
+		userID = claims.ParticipantId
+	}
+	submission, err := s.Service.CreateSubmissionBundle(ctx, userID, claims.RoleId, agentID, archive)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrAgentNotFound):

@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
 
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/model"
@@ -10,14 +12,20 @@ import (
 )
 
 type Service interface {
-	// Auth & Participants
-	Login(ctx context.Context, username, password string) (*model.Participant, error)
-	Register(ctx context.Context, participant *model.Participant) error
+	// Auth & Users
+	Login(ctx context.Context, username, password string) (*model.User, error)
+	Register(ctx context.Context, user *model.User) error
+	ListUsers(ctx context.Context) ([]model.User, error)
+	GetUser(ctx context.Context, id string) (*model.User, error)
+	UpdateUser(ctx context.Context, user *model.User) error
+	ActivateUser(ctx context.Context, id string, isActive bool) error
+	HasPermission(ctx context.Context, userId, permission string) (bool, error)
+
+	// Participant backward-compatibility aliases
 	ListParticipants(ctx context.Context) ([]model.Participant, error)
 	GetParticipant(ctx context.Context, id string) (*model.Participant, error)
 	UpdateParticipant(ctx context.Context, participant *model.Participant) error
 	ActivateParticipant(ctx context.Context, id string, isActive bool) error
-	HasPermission(ctx context.Context, participantId, permission string) (bool, error)
 
 	// Contests & Categories
 	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
@@ -27,7 +35,8 @@ type Service interface {
 	CreateContest(ctx context.Context, contest *model.Contest) error
 	UpdateContest(ctx context.Context, contest *model.Contest) error
 	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, participantId string, contestId string, agentId string) (*model.Ranking, error)
+	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error)
 	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
 	ListCategories(ctx context.Context) ([]model.Category, error)
 	GetCategory(ctx context.Context, id string) (*model.Category, error)
@@ -41,6 +50,7 @@ type Service interface {
 
 	// Agents
 	ListAgents(ctx context.Context) ([]model.Agent, error)
+	ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error)
 	ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error)
 	GetAgent(ctx context.Context, id string) (*model.Agent, error)
 	CreateAgent(ctx context.Context, agent *model.Agent) error
@@ -85,6 +95,9 @@ type Service interface {
 	StreamReplay(ctx context.Context, id string) ([]byte, error)
 	PublishReplay(ctx context.Context, replayID string) (*model.Replay, error)
 	DiscardReplay(ctx context.Context, replayID string) error
+
+	// Readiness
+	CheckReadiness(ctx context.Context) (map[string]any, error)
 }
 
 type service struct {
@@ -108,4 +121,49 @@ func NewService(repo repository.Repository, artifacts connection.ArtifactStore, 
 		svc.validator = validators[0]
 	}
 	return svc
+}
+
+func (s *service) CheckReadiness(ctx context.Context) (map[string]any, error) {
+	checks := make(map[string]any)
+
+	// 1. Database Ping
+	if s.repo == nil {
+		checks["database"] = "DOWN: repository is nil"
+		return checks, errors.New("repository is nil")
+	}
+	if err := s.repo.Ping(ctx); err != nil {
+		checks["database"] = "DOWN: " + err.Error()
+		return checks, fmt.Errorf("database unavailable: %w", err)
+	}
+	checks["database"] = "UP"
+
+	// 2. Schema compatibility
+	if err := s.repo.CheckSchema(ctx); err != nil {
+		checks["schema"] = "DOWN: " + err.Error()
+		return checks, fmt.Errorf("schema incompatible: %w", err)
+	}
+	checks["schema"] = "UP"
+
+	// 3. Artifact Store
+	if s.artifacts != nil {
+		testFile := ".health_check"
+		if _, err := s.artifacts.Save(ctx, testFile, []byte("ok")); err != nil {
+			checks["artifacts"] = "DOWN: " + err.Error()
+			return checks, fmt.Errorf("artifacts store not writable: %w", err)
+		}
+		_ = s.artifacts.Delete(ctx, testFile)
+		checks["artifacts"] = "UP"
+	} else {
+		checks["artifacts"] = "DEGRADED"
+	}
+
+	// 4. Starfighter game registered in DB
+	g, err := s.repo.GetGame(ctx, "starfighter")
+	if err != nil || g == nil || !g.Active {
+		checks["starfighter"] = "DOWN: game starfighter not registered or inactive in database"
+		return checks, errors.New("required game 'starfighter' is not active in database")
+	}
+	checks["starfighter"] = "UP"
+
+	return checks, nil
 }

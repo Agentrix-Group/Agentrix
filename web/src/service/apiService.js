@@ -26,6 +26,7 @@ export const ApiService = {
   listContests: () => api.get('/contests'),
   getContest: (id) => api.get(`/contests/${encodeURIComponent(id)}`),
   listContestAgents: (contestId) => api.get(`/contests/${encodeURIComponent(contestId)}/agents`),
+  listContestEntries: (contestId) => api.get(`/contests/${encodeURIComponent(contestId)}/entries`),
   enrollAgent: (contestId, agentId) =>
     api.post(`/contests/${encodeURIComponent(contestId)}/agents`, { agent_id: agentId }),
 
@@ -33,9 +34,14 @@ export const ApiService = {
   listGames: () => api.get('/games'),
   getGame: (id) => api.get(`/games/${encodeURIComponent(id)}`),
 
+  // Users
+  listUsers: () => api.get('/users'),
+  getUser: (id) => api.get(`/users/${encodeURIComponent(id)}`),
+
   // Agents
-  listAgents: (participantId) =>
-    api.get(buildUrl('/agents', participantId ? { participant_id: participantId } : {})),
+  listAgents: (userIdOrParticipantId) =>
+    api.get(buildUrl('/agents', userIdOrParticipantId ? { owner_user_id: userIdOrParticipantId, participant_id: userIdOrParticipantId } : {})),
+  listMyAgents: () => api.get('/me/agents'),
   createAgent: (agentData) => api.post('/agents', agentData),
 
   // Submissions

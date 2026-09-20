@@ -17,11 +17,13 @@ paths:
   /api/v1/me:
     $ref: './auth.yaml#/paths/~1api~1v1~1me'
 
-  # Participants
-  /api/v1/participants:
-    $ref: './participants.yaml#/paths/~1api~1v1~1participants'
-  /api/v1/participants/{id}:
-    $ref: './participants.yaml#/paths/~1api~1v1~1participants~1{id}'
+  # Users (Canonical Identity)
+  /api/v1/users:
+    $ref: './users.yaml#/paths/~1api~1v1~1users'
+  /api/v1/users/{id}:
+    $ref: './users.yaml#/paths/~1api~1v1~1users~1{id}'
+  /api/v1/me/agents:
+    $ref: './users.yaml#/paths/~1api~1v1~1me~1agents'
 
   # Contests
   /api/v1/contests:
@@ -30,6 +32,8 @@ paths:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}'
   /api/v1/contests/{id}/agents:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1agents'
+  /api/v1/contests/{id}/entries:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1entries'
 
   # Categories
   /api/v1/categories:

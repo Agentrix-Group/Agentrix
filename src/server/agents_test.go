@@ -39,6 +39,10 @@ func (m *mockAgentsService) ListAgentsByParticipant(ctx context.Context, partici
 	return nil, nil
 }
 
+func (m *mockAgentsService) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
+	return m.ListAgentsByParticipant(ctx, ownerUserId)
+}
+
 func (m *mockAgentsService) GetAgent(ctx context.Context, id string) (*model.Agent, error) {
 	if m.getAgentFn != nil {
 		return m.getAgentFn(ctx, id)

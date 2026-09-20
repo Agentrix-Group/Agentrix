@@ -13,7 +13,7 @@ func (r *repository) GetGame(ctx context.Context, id string) (*model.Game, error
 		return nil, err
 	}
 
-	query := `SELECT id, name, description, manifest_path, min_players, max_players, active, created_at FROM games WHERE id = $1 AND active = TRUE`
+	query := `SELECT id, name, COALESCE(description, ''), COALESCE(manifest_path, ''), COALESCE(min_players, 2), COALESCE(max_players, 4), active, created_at FROM games WHERE id = $1 AND active = TRUE`
 
 	var g model.Game
 	err = db.QueryRowContext(ctx, query, id).Scan(

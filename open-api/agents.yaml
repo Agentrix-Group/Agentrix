@@ -7,11 +7,17 @@ paths:
       security:
         - bearerAuth: []
       parameters:
+        - name: owner_user_id
+          in: query
+          required: false
+          schema:
+            type: string
         - name: participant_id
           in: query
           required: false
           schema:
             type: string
+          description: Legacy alias of owner_user_id
       responses:
         '200':
           description: List of agent bots

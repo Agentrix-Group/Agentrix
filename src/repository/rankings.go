@@ -13,7 +13,7 @@ func (r *repository) ListRankings(ctx context.Context) ([]model.Ranking, error) 
 		return nil, err
 	}
 
-	query := `SELECT id, contest_id, agent_id, participant_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings ORDER BY "rank" ASC`
+	query := `SELECT id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings ORDER BY "rank" ASC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -24,9 +24,10 @@ func (r *repository) ListRankings(ctx context.Context) ([]model.Ranking, error) 
 	var rankings []model.Ranking
 	for rows.Next() {
 		var rk model.Ranking
-		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.ParticipantId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
+		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
 			return nil, err
 		}
+		rk.ParticipantId = rk.UserId
 		rankings = append(rankings, rk)
 	}
 
@@ -39,7 +40,7 @@ func (r *repository) ListRankingsByContest(ctx context.Context, contestId string
 		return nil, err
 	}
 
-	query := `SELECT id, contest_id, agent_id, participant_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE contest_id = $1 ORDER BY "rank" ASC`
+	query := `SELECT id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE contest_id = $1 ORDER BY "rank" ASC`
 
 	rows, err := db.QueryContext(ctx, query, contestId)
 	if err != nil {
@@ -50,11 +51,13 @@ func (r *repository) ListRankingsByContest(ctx context.Context, contestId string
 	var rankings []model.Ranking
 	for rows.Next() {
 		var rk model.Ranking
-		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.ParticipantId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
+		if err := rows.Scan(&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt); err != nil {
 			return nil, err
 		}
+		rk.ParticipantId = rk.UserId
 		rankings = append(rankings, rk)
 	}
+
 	return rankings, nil
 }
 
@@ -64,11 +67,11 @@ func (r *repository) GetRanking(ctx context.Context, id string) (*model.Ranking,
 		return nil, err
 	}
 
-	query := `SELECT id, contest_id, agent_id, participant_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE id = $1`
+	query := `SELECT id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE id = $1`
 
 	var rk model.Ranking
 	err = db.QueryRowContext(ctx, query, id).Scan(
-		&rk.Id, &rk.ContestId, &rk.AgentId, &rk.ParticipantId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt,
+		&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -77,6 +80,7 @@ func (r *repository) GetRanking(ctx context.Context, id string) (*model.Ranking,
 		return nil, err
 	}
 
+	rk.ParticipantId = rk.UserId
 	return &rk, nil
 }
 
@@ -86,11 +90,11 @@ func (r *repository) GetRankingByContestAndAgent(ctx context.Context, contestId,
 		return nil, err
 	}
 
-	query := `SELECT id, contest_id, agent_id, participant_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE contest_id = $1 AND agent_id = $2`
+	query := `SELECT id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at FROM rankings WHERE contest_id = $1 AND agent_id = $2`
 
 	var rk model.Ranking
 	err = db.QueryRowContext(ctx, query, contestId, agentId).Scan(
-		&rk.Id, &rk.ContestId, &rk.AgentId, &rk.ParticipantId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt,
+		&rk.Id, &rk.ContestId, &rk.AgentId, &rk.UserId, &rk.Score, &rk.MatchesPlayed, &rk.Wins, &rk.Losses, &rk.Draws, &rk.Rank, &rk.UpdatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -99,6 +103,7 @@ func (r *repository) GetRankingByContestAndAgent(ctx context.Context, contestId,
 		return nil, err
 	}
 
+	rk.ParticipantId = rk.UserId
 	return &rk, nil
 }
 
@@ -108,8 +113,13 @@ func (r *repository) UpsertRanking(ctx context.Context, ranking *model.Ranking) 
 		return err
 	}
 
+	userID := ranking.UserId
+	if userID == "" {
+		userID = ranking.ParticipantId
+	}
+
 	query := `
-		INSERT INTO rankings (id, contest_id, agent_id, participant_id, score, matches_played, wins, losses, draws, "rank", updated_at)
+		INSERT INTO rankings (id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		ON CONFLICT (contest_id, agent_id) DO UPDATE SET
 			score = EXCLUDED.score,
@@ -121,7 +131,7 @@ func (r *repository) UpsertRanking(ctx context.Context, ranking *model.Ranking) 
 			updated_at = EXCLUDED.updated_at`
 
 	_, err = db.ExecContext(ctx, query,
-		ranking.Id, ranking.ContestId, ranking.AgentId, ranking.ParticipantId,
+		ranking.Id, ranking.ContestId, ranking.AgentId, userID,
 		ranking.Score, ranking.MatchesPlayed, ranking.Wins, ranking.Losses,
 		ranking.Draws, ranking.Rank, ranking.UpdatedAt,
 	)

@@ -18,20 +18,24 @@ type Permission struct {
 	Active      bool   `json:"active,omitempty" db:"active"`
 }
 
-type Participant struct {
-	Id        string    `json:"id,omitempty" db:"id"`
-	Username  string    `json:"username,omitempty" db:"username"`
-	Email     string    `json:"email,omitempty" db:"email"`
-	Password  string    `json:"password,omitempty" db:"password"`
-	RoleId    string    `json:"role_id,omitempty" db:"role_id"`
-	Active    bool      `json:"active,omitempty" db:"active"`
+type User struct {
+	Id           string    `json:"id,omitempty" db:"id"`
+	Username     string    `json:"username,omitempty" db:"username"`
+	Email        string    `json:"email,omitempty" db:"email"`
+	Password     string    `json:"-" db:"password"` // Never expose password in json
+	RoleId       string    `json:"role_id,omitempty" db:"role_id"`
+	Active       bool      `json:"active,omitempty" db:"active"`
 	CreatedAt    time.Time `json:"created_at,omitempty" db:"created_at"`
 	Role         *Role     `json:"role,omitempty"`
 	Capabilities []string  `json:"capabilities,omitempty"`
 }
 
+// Participant is a type alias to User for backward compatibility
+type Participant = User
+
 type Claims struct {
-	ParticipantId string `json:"participant_id"`
+	UserID        string `json:"user_id"`
+	ParticipantId string `json:"participant_id,omitempty"`
 	RoleId        string `json:"role_id"`
 	jwt.RegisteredClaims
 }
@@ -49,8 +53,9 @@ type LoginRequest struct {
 }
 
 type LoginResponse struct {
-	Token       *Token       `json:"token"`
-	Participant *Participant `json:"participant"`
+	Token       *Token `json:"token"`
+	User        *User  `json:"user"`
+	Participant *User  `json:"participant,omitempty"` // For backward compatibility with legacy consumers
 }
 
 type RegisterRequest struct {

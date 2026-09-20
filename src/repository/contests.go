@@ -179,11 +179,16 @@ func (r *repository) CreateContest(ctx context.Context, contest *model.Contest) 
 		state = model.ContestStateDraft
 	}
 
+	var categoryID any = contest.CategoryId
+	if contest.CategoryId == "" {
+		categoryID = nil
+	}
+
 	query := `INSERT INTO contests (id, name, description, game_id, category_id, state, active, starts_at, ends_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
 
 	_, err = db.ExecContext(ctx, query,
 		contest.Id, contest.Name, contest.Description, contest.GameId,
-		contest.CategoryId, string(state), contest.Active, contest.StartsAt,
+		categoryID, string(state), contest.Active, contest.StartsAt,
 		contest.EndsAt, contest.CreatedAt, contest.CreatedAt,
 	)
 	if err != nil {
@@ -204,10 +209,15 @@ func (r *repository) UpdateContest(ctx context.Context, contest *model.Contest) 
 		state = model.ContestStateDraft
 	}
 
+	var categoryID any = contest.CategoryId
+	if contest.CategoryId == "" {
+		categoryID = nil
+	}
+
 	query := `UPDATE contests SET name = $1, description = $2, game_id = $3, category_id = $4, state = $5, active = $6, starts_at = $7, ends_at = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9`
 
 	_, err = db.ExecContext(ctx, query,
-		contest.Name, contest.Description, contest.GameId, contest.CategoryId,
+		contest.Name, contest.Description, contest.GameId, categoryID,
 		string(state), contest.Active, contest.StartsAt, contest.EndsAt, contest.Id,
 	)
 	if err != nil {
@@ -316,4 +326,111 @@ func (r *repository) ActivateCategory(ctx context.Context, id string, isActive b
 
 	_, err = db.ExecContext(ctx, query, isActive, id)
 	return err
+}
+
+func (r *repository) CreateContestEntry(ctx context.Context, entry *model.ContestEntry) error {
+	db, err := r.getDb()
+	if err != nil {
+		return err
+	}
+
+	query := `
+		INSERT INTO contest_entries (id, contest_id, agent_id, user_id, status, enrolled_at)
+		VALUES ($1, $2, $3, $4, $5, $6)`
+
+	_, err = db.ExecContext(ctx, query,
+		entry.Id, entry.ContestId, entry.AgentId, entry.UserId, entry.Status, entry.EnrolledAt,
+	)
+	if err != nil {
+		return ClassifyDBError(err)
+	}
+	return nil
+}
+
+func (r *repository) ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.status, ce.enrolled_at,
+		       a.name, a.game_id, u.username
+		FROM contest_entries ce
+		JOIN agents a ON ce.agent_id = a.id
+		JOIN users u ON ce.user_id = u.id
+		WHERE ce.contest_id = $1
+		ORDER BY ce.enrolled_at ASC`
+
+	rows, err := db.QueryContext(ctx, query, contestId)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []model.ContestEntry
+	for rows.Next() {
+		var entry model.ContestEntry
+		var agentName, gameId, username string
+		if err := rows.Scan(
+			&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.Status, &entry.EnrolledAt,
+			&agentName, &gameId, &username,
+		); err != nil {
+			return nil, err
+		}
+		entry.Agent = &model.Agent{
+			Id:          entry.AgentId,
+			Name:        agentName,
+			GameId:      gameId,
+			OwnerUserId: entry.UserId,
+		}
+		entry.User = &model.User{
+			Id:       entry.UserId,
+			Username: username,
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+func (r *repository) GetContestEntry(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.status, ce.enrolled_at,
+		       a.name, a.game_id, u.username
+		FROM contest_entries ce
+		JOIN agents a ON ce.agent_id = a.id
+		JOIN users u ON ce.user_id = u.id
+		WHERE ce.contest_id = $1 AND ce.agent_id = $2`
+
+	var entry model.ContestEntry
+	var agentName, gameId, username string
+	err = db.QueryRowContext(ctx, query, contestId, agentId).Scan(
+		&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.Status, &entry.EnrolledAt,
+		&agentName, &gameId, &username,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, err
+		}
+		return nil, err
+	}
+
+	entry.Agent = &model.Agent{
+		Id:          entry.AgentId,
+		Name:        agentName,
+		GameId:      gameId,
+		OwnerUserId: entry.UserId,
+	}
+	entry.User = &model.User{
+		Id:       entry.UserId,
+		Username: username,
+	}
+
+	return &entry, nil
 }

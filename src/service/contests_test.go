@@ -21,6 +21,9 @@ type mockContestRepo struct {
 	getRankingFn            func(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
 	upsertRankingFn         func(ctx context.Context, ranking *model.Ranking) error
 	listRankingsByContestFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
+	createContestEntryFn    func(ctx context.Context, entry *model.ContestEntry) error
+	listContestEntriesFn    func(ctx context.Context, contestId string) ([]model.ContestEntry, error)
+	getContestEntryFn       func(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error)
 }
 
 func (m *mockContestRepo) ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error) {
@@ -70,6 +73,27 @@ func (m *mockContestRepo) ListRankingsByContest(ctx context.Context, contestId s
 		return m.listRankingsByContestFn(ctx, contestId)
 	}
 	return nil, nil
+}
+
+func (m *mockContestRepo) CreateContestEntry(ctx context.Context, entry *model.ContestEntry) error {
+	if m.createContestEntryFn != nil {
+		return m.createContestEntryFn(ctx, entry)
+	}
+	return nil
+}
+
+func (m *mockContestRepo) ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
+	if m.listContestEntriesFn != nil {
+		return m.listContestEntriesFn(ctx, contestId)
+	}
+	return nil, nil
+}
+
+func (m *mockContestRepo) GetContestEntry(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error) {
+	if m.getContestEntryFn != nil {
+		return m.getContestEntryFn(ctx, contestId, agentId)
+	}
+	return nil, sql.ErrNoRows
 }
 
 func TestListPublicContests_FilterValidation(t *testing.T) {
@@ -256,6 +280,7 @@ func TestEnrollAgent(t *testing.T) {
 
 	t.Run("Successful enrollment", func(t *testing.T) {
 		var savedRanking *model.Ranking
+		var savedEntry *model.ContestEntry
 		repo := &mockContestRepo{
 			getContestFn: func(ctx context.Context, id string) (*model.Contest, error) {
 				return openContest, nil
@@ -270,11 +295,19 @@ func TestEnrollAgent(t *testing.T) {
 				savedRanking = ranking
 				return nil
 			},
+			createContestEntryFn: func(ctx context.Context, entry *model.ContestEntry) error {
+				savedEntry = entry
+				return nil
+			},
 		}
 		svc := NewService(repo, nil, nil)
 
-		ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-1")
+		entry, ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-1")
 		r.NoError(err)
+		r.NotNil(entry)
+		r.Equal("contest-1", entry.ContestId)
+		r.Equal("agent-1", entry.AgentId)
+		r.Equal("part-1", entry.UserId)
 		r.NotNil(ranking)
 		r.Equal("contest-1", ranking.ContestId)
 		r.Equal("agent-1", ranking.AgentId)
@@ -282,6 +315,7 @@ func TestEnrollAgent(t *testing.T) {
 		r.Equal(0, ranking.Score)
 		r.Equal(1, ranking.Rank)
 		r.NotNil(savedRanking)
+		r.NotNil(savedEntry)
 	})
 
 	t.Run("Fails if contest is not open for registration", func(t *testing.T) {
@@ -295,9 +329,10 @@ func TestEnrollAgent(t *testing.T) {
 		}
 		svc := NewService(repo, nil, nil)
 
-		ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-2", "agent-1")
+		entry, ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-2", "agent-1")
 		r.Error(err)
 		r.True(errors.Is(err, ErrRegistrationClosed))
+		r.Nil(entry)
 		r.Nil(ranking)
 	})
 
@@ -315,9 +350,10 @@ func TestEnrollAgent(t *testing.T) {
 		}
 		svc := NewService(repo, nil, nil)
 
-		ranking, err := svc.EnrollAgent(ctx, "different-part", "contest-1", "agent-1")
+		entry, ranking, err := svc.EnrollAgent(ctx, "different-part", "contest-1", "agent-1")
 		r.Error(err)
 		r.True(errors.Is(err, ErrUnauthorizedAgent))
+		r.Nil(entry)
 		r.Nil(ranking)
 	})
 
@@ -332,9 +368,10 @@ func TestEnrollAgent(t *testing.T) {
 		}
 		svc := NewService(repo, nil, nil)
 
-		ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-2")
+		entry, ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-2")
 		r.Error(err)
 		r.True(errors.Is(err, ErrGameMismatch))
+		r.Nil(entry)
 		r.Nil(ranking)
 	})
 
@@ -352,9 +389,10 @@ func TestEnrollAgent(t *testing.T) {
 		}
 		svc := NewService(repo, nil, nil)
 
-		ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-1")
+		entry, ranking, err := svc.EnrollAgent(ctx, "part-1", "contest-1", "agent-1")
 		r.Error(err)
 		r.True(errors.Is(err, ErrAgentAlreadyEnrolled))
+		r.Nil(entry)
 		r.Nil(ranking)
 	})
 }

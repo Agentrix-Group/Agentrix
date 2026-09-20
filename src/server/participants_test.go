@@ -20,7 +20,7 @@ type mockServerService struct {
 	getParticipantFn    func(ctx context.Context, id string) (*model.Participant, error)
 	hasPermissionFn     func(ctx context.Context, participantId, permission string) (bool, error)
 	getPublicContestFn  func(ctx context.Context, id string) (*model.Contest, error)
-	enrollAgentFn       func(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error)
+	enrollAgentFn       func(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error)
 	listContestAgentsFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
 
@@ -45,6 +45,10 @@ func (m *mockServerService) GetParticipant(ctx context.Context, id string) (*mod
 	return nil, nil
 }
 
+func (m *mockServerService) GetUser(ctx context.Context, id string) (*model.User, error) {
+	return m.GetParticipant(ctx, id)
+}
+
 func (m *mockServerService) HasPermission(ctx context.Context, participantId, permission string) (bool, error) {
 	if m.hasPermissionFn != nil {
 		return m.hasPermissionFn(ctx, participantId, permission)
@@ -59,11 +63,11 @@ func (m *mockServerService) GetPublicContest(ctx context.Context, id string) (*m
 	return nil, service.ErrContestNotFound
 }
 
-func (m *mockServerService) EnrollAgent(ctx context.Context, participantId, contestId, agentId string) (*model.Ranking, error) {
+func (m *mockServerService) EnrollAgent(ctx context.Context, participantId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
 	if m.enrollAgentFn != nil {
 		return m.enrollAgentFn(ctx, participantId, contestId, agentId)
 	}
-	return nil, nil
+	return nil, nil, nil
 }
 
 func (m *mockServerService) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {

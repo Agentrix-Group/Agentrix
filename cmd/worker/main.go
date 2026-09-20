@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"github.com/Agentrix-Group/Agentrix/src/config"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/database"
 	"github.com/Agentrix-Group/Agentrix/src/executor"
 	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
@@ -66,7 +68,12 @@ func main() {
 			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
 	} else {
 		defer conn.Close()
-		tracer.InfoEvent(ctx, tracer.ScopeDatabase, "database.ready", "Base de datos disponible")
+		if err := database.CheckSchemaCompatible(ctx, conn.Db); err != nil {
+			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "schema.incompatible",
+				fmt.Sprintf("Esquema de base de datos incompatible: %v. Ejecute 'make db-migrate'", err),
+				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		}
+		tracer.InfoEvent(ctx, tracer.ScopeDatabase, "database.ready", "Base de datos y esquema listos")
 	}
 
 	// Authoritative Queue

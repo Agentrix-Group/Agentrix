@@ -5,15 +5,26 @@ import (
 	"time"
 
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/google/uuid"
+)
+
+var (
+	ErrGameNotFound       = repository.ErrGameNotFound
+	ErrAgentAlreadyExists = repository.ErrAgentAlreadyExists
+	ErrSchemaIncompatible = repository.ErrSchemaIncompatible
 )
 
 func (s *service) ListAgents(ctx context.Context) ([]model.Agent, error) {
 	return s.repo.ListAgents(ctx)
 }
 
+func (s *service) ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error) {
+	return s.repo.ListAgentsByOwner(ctx, ownerUserId)
+}
+
 func (s *service) ListAgentsByParticipant(ctx context.Context, participantId string) ([]model.Agent, error) {
-	return s.repo.ListAgentsByParticipant(ctx, participantId)
+	return s.ListAgentsByOwner(ctx, participantId)
 }
 
 func (s *service) GetAgent(ctx context.Context, id string) (*model.Agent, error) {

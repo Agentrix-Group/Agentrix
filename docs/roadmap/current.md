@@ -49,7 +49,7 @@ fundación QA (FQ-0) -> sesión (FQ-1) -> admisión (FQ-2) -> match/run (FQ-3)
 | FQ-0 | Routing nativo, Error Boundary, cliente HTTP tipado, saneamiento de errores y `code_path` | Cobertura base, mock de red, tests de router/estados | Login, home y navegación estables en suite unitaria y de integración | Completado |
 | FQ-1 | Session provider, renovación de tokens, rutas protegidas y capabilities | 401/403, sesión caducada, refresh concurrente | Flujo de autenticación y autorización robusto | Completado |
 | FQ-2 | Upload con progreso, estados de admisión (`pending_validation`, `validating`, `ready`, `rejected`) | Validación de bundles ZIP, timeouts, causas de rechazo sanitizadas | Admisión asíncrona visible en UI | Completado |
-| FQ-3 | Asistente de creación de partida, selección de submissions y seguimiento de runs | Estados terminales de match, idempotencia, fencing | Ejecución de partida de extremo a extremo | Pendiente |
+| FQ-3 | Asistente de creación de partida, selección de submissions y seguimiento de runs | Estados terminales de match, idempotencia, fencing | Ejecución de partida de extremo a extremo | Completado |
 | FQ-4 | Streaming progresivo, Web Worker, verificación SHA-256 y renderizado adaptativo | Screenshots dorados, playback 60 Hz, integridad bit a bit | Replay Canvas escalable y verificable | Pendiente |
 | FQ-5 | Detalle de concurso, inscripción guiada, rankings y filtros | Paginación, zonas horarias, paridad ES/EN | Experiencia de torneo completa | Pendiente |
 | FQ-6 | Panel de operaciones, observabilidad sin secretos, accesibilidad WCAG AA | E2E en exploradores reales, Lighthouse, auditoría de seguridad | Release candidate del MVP certificado | Pendiente |

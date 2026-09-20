@@ -3,6 +3,7 @@
   "refresh": "Actualizar",
   "loading": "Cargando partidas...",
   "empty": "No se encontraron partidas.",
+  "createButton": "Nueva partida",
   "card": {
     "matchNumber": "Partida #{{id}}",
     "game": "Juego: {{game}}",
@@ -10,7 +11,31 @@
     "results": "Resultados:",
     "rankResult": "Puesto {{rank}}: {{submission}} ({{score}} pts)",
     "watchReplay": "Ver repetición",
-    "runMatch": "Ejecutar partida"
+    "runMatch": "Ejecutar partida",
+    "runningMatch": "Ejecutando..."
+  },
+  "wizard": {
+    "title": "Crear nueva partida de Starfighter",
+    "subtitle": "Configura los competidores y la semilla determinista autoritativa.",
+    "gameLabel": "Juego:",
+    "gameOfficial": "Starfighter (Oficial)",
+    "contestLabel": "Concurso (opcional):",
+    "noContest": "Partida libre / Amistosa",
+    "player1Label": "Bot Jugador 1 (Submission):",
+    "player2Label": "Bot Jugador 2 (Submission):",
+    "selectSubmissionPlaceholder": "Selecciona una submission...",
+    "manualPrompt": "O introduce identificador de submission:",
+    "seedLabel": "Semilla determinista (seed):",
+    "randomSeed": "Aleatoria",
+    "runImmediately": "Encolar ejecución inmediatamente tras crear",
+    "submit": "Crear partida",
+    "cancel": "Cancelar",
+    "submitting": "Creando partida...",
+    "validationError": "Debes especificar las dos submissions competidoras para Starfighter (1v1)."
+  },
+  "runningState": {
+    "badgeText": "Simulando...",
+    "liveDescription": "Simulación en curso por el motor Bevy (60 Hz)"
   },
   "status": {
     "pending": "Pendiente",
@@ -19,7 +44,9 @@
     "failed": "Fallida"
   },
   "messages": {
-    "runError": "Error al ejecutar la partida: {{error}}"
+    "runError": "Error al ejecutar la partida: {{error}}",
+    "createSuccess": "Partida creada exitosamente.",
+    "createError": "Error al crear la partida: {{error}}"
   },
   "filter": {
     "all": "Todas",

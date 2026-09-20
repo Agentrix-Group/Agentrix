@@ -2,21 +2,23 @@
  * High-level API service functions for Agentrix
  */
 
-import { api, buildUrl } from '../api/client.js';
+import { api, buildUrl, BASE_URL } from '../api/client.js';
+import { saveTokens, clearTokens, refreshAuthTokens } from '../auth/session.js';
 
 export const ApiService = {
   // Auth
   login: async (username, password) => {
     const data = await api.post('/auth/login', { username, password });
-    if (data.token?.access_token) {
-      localStorage.setItem('agentrix_token', data.token.access_token);
+    if (data.token) {
+      saveTokens(data.token);
     }
     return data;
   },
   register: (username, email, password) =>
     api.post('/auth/register', { username, email, password }),
+  refreshToken: () => refreshAuthTokens(BASE_URL),
   logout: () => {
-    localStorage.removeItem('agentrix_token');
+    clearTokens();
   },
   getCurrentUser: () => api.get('/me'),
 

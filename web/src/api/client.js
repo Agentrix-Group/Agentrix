@@ -1,7 +1,14 @@
 /**
  * Robust API Client for Agentrix Backend
- * Complies with ADR-0009 and resolves F0.4.
+ * Complies with ADR-0009 and resolves F0.3 / F0.4.
  */
+
+import {
+  getAccessToken,
+  getRefreshToken,
+  refreshAuthTokens,
+  notifySessionExpired,
+} from '../auth/session.js';
 
 const API_HOST = (import.meta.env?.VITE_API_URL || '').replace(/\/+$/, '');
 export const BASE_URL = `${API_HOST}/api/v1`;
@@ -72,7 +79,7 @@ export function buildUrl(endpoint, queryParams = {}) {
 }
 
 export async function request(endpoint, options = {}) {
-  const token = localStorage.getItem('agentrix_token');
+  const token = getAccessToken();
   const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
   const method = (options.method || 'GET').toUpperCase();
 
@@ -118,6 +125,34 @@ export async function request(endpoint, options = {}) {
       response.headers.get('x-request-id') ||
       null;
 
+    // Handle 401 with coordinated refresh token renewal (F0.3)
+    if (
+      response.status === 401 &&
+      !options._retry &&
+      !endpoint.includes('/auth/login') &&
+      !endpoint.includes('/auth/refresh')
+    ) {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        try {
+          const newTokens = await refreshAuthTokens(BASE_URL);
+          if (newTokens?.access_token) {
+            return await request(endpoint, {
+              ...options,
+              _retry: true,
+              headers: {
+                ...options.headers,
+                Authorization: `Bearer ${newTokens.access_token}`,
+              },
+            });
+          }
+        } catch {
+          // Refresh failed; notify session expired and proceed with original 401 error
+          notifySessionExpired();
+        }
+      }
+    }
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       throw new ApiClientError(errorData.message || response.statusText, {
@@ -156,7 +191,7 @@ export async function request(endpoint, options = {}) {
 }
 
 export async function requestText(endpoint, options = {}) {
-  const token = localStorage.getItem('agentrix_token');
+  const token = getAccessToken();
   const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
   const controller = new AbortController();
   let timedOut = false;
@@ -177,6 +212,32 @@ export async function requestText(endpoint, options = {}) {
       signal: controller.signal,
     });
     clearTimeout(timer);
+
+    if (
+      response.status === 401 &&
+      !options._retry &&
+      !endpoint.includes('/auth/login') &&
+      !endpoint.includes('/auth/refresh')
+    ) {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        try {
+          const newTokens = await refreshAuthTokens(BASE_URL);
+          if (newTokens?.access_token) {
+            return await requestText(endpoint, {
+              ...options,
+              _retry: true,
+              headers: {
+                ...options.headers,
+                Authorization: `Bearer ${newTokens.access_token}`,
+              },
+            });
+          }
+        } catch {
+          notifySessionExpired();
+        }
+      }
+    }
 
     if (!response.ok) {
       const correlationId =
@@ -203,8 +264,8 @@ export async function requestText(endpoint, options = {}) {
 }
 
 export async function requestForm(endpoint, formData, options = {}) {
-  const token = localStorage.getItem('agentrix_token');
-  const timeoutMs = options.timeout ?? (DEFAULT_TIMEOUT_MS * 3); // 30s for uploads
+  const token = getAccessToken();
+  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS * 3; // 30s for uploads
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -226,6 +287,32 @@ export async function requestForm(endpoint, formData, options = {}) {
       signal: controller.signal,
     });
     clearTimeout(timer);
+
+    if (
+      response.status === 401 &&
+      !options._retry &&
+      !endpoint.includes('/auth/login') &&
+      !endpoint.includes('/auth/refresh')
+    ) {
+      const refreshToken = getRefreshToken();
+      if (refreshToken) {
+        try {
+          const newTokens = await refreshAuthTokens(BASE_URL);
+          if (newTokens?.access_token) {
+            return await requestForm(endpoint, formData, {
+              ...options,
+              _retry: true,
+              headers: {
+                ...options.headers,
+                Authorization: `Bearer ${newTokens.access_token}`,
+              },
+            });
+          }
+        } catch {
+          notifySessionExpired();
+        }
+      }
+    }
 
     const correlationId =
       response.headers.get('x-correlation-id') ||

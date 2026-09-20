@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navbar } from './components/Navbar.jsx';
 import { HomePage } from './pages/HomePage.jsx';
@@ -7,39 +7,31 @@ import { RankingsPage } from './pages/RankingsPage.jsx';
 import { AgentsPage } from './pages/AgentsPage.jsx';
 import { AuthPage } from './pages/AuthPage.jsx';
 import { ReplayViewer } from './viewer/ReplayViewer.jsx';
-import { ApiService } from './service/apiService.js';
 import { Router, useRouter } from './router/Router.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
+import { SessionProvider, useSession } from './auth/SessionContext.jsx';
+import { SessionExpiredBanner } from './components/SessionExpiredBanner.jsx';
+import { ProtectedRoute } from './components/ProtectedRoute.jsx';
 import { X } from 'lucide-react';
 
 export function AppContent() {
   const { t } = useTranslation(['viewer', 'common']);
   const { route, params, navigate } = useRouter();
-  const [currentUser, setCurrentUser] = useState(null);
+  const { currentUser, logout } = useSession();
 
   const selectedReplayId = params?.id || null;
 
-  useEffect(() => {
-    const token = localStorage.getItem('agentrix_token');
-    if (token) {
-      ApiService.getCurrentUser()
-        .then((user) => setCurrentUser(user))
-        .catch(() => {
-          localStorage.removeItem('agentrix_token');
-          setCurrentUser(null);
-        });
-    }
-  }, []);
-
   const handleLogout = () => {
-    ApiService.logout();
-    setCurrentUser(null);
+    logout();
     navigate('/');
   };
 
-  const handleLoginSuccess = (user) => {
-    setCurrentUser(user);
-    navigate('/agents');
+  const handleLoginSuccess = (user, redirectTarget) => {
+    if (redirectTarget) {
+      navigate(redirectTarget);
+    } else {
+      navigate('/agents');
+    }
   };
 
   const handleWatchReplay = (replayId) => {
@@ -85,13 +77,17 @@ export function AppContent() {
         hasReplay={Boolean(selectedReplayId || route === 'viewer')}
       />
 
+      <SessionExpiredBanner />
+
       <main className="main-content">
         <ErrorBoundary>
           {route === 'home' && (
             <HomePage onWatchReplay={handleWatchReplay} />
           )}
           {route === 'agents' && (
-            <AgentsPage currentUser={currentUser} />
+            <ProtectedRoute>
+              <AgentsPage currentUser={currentUser} />
+            </ProtectedRoute>
           )}
           {route === 'matches' && (
             <MatchesPage onWatchReplay={handleWatchReplay} currentUser={currentUser} />
@@ -124,9 +120,11 @@ export function AppContent() {
 export function App() {
   return (
     <ErrorBoundary>
-      <Router>
-        <AppContent />
-      </Router>
+      <SessionProvider>
+        <Router>
+          <AppContent />
+        </Router>
+      </SessionProvider>
     </ErrorBoundary>
   );
 }

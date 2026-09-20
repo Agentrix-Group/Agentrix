@@ -52,10 +52,25 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	participant.Password = "" // Omit password hash in response
+	participant.Capabilities = resolveCapabilities(participant.RoleId)
 	common.WriteObjectResponse(w, http.StatusOK, LoginResponse{
 		Token:       token,
 		Participant: participant,
 	})
+}
+
+func resolveCapabilities(roleId string) []string {
+	caps := []string{"contests:view", "matches:view", "rankings:view", "replays:view"}
+	switch roleId {
+	case "admin":
+		return append(caps, "matches:run", "matches:schedule", "agents:create", "submissions:upload", "contests:enroll", "admin:access")
+	case "organizer":
+		return append(caps, "matches:run", "matches:schedule", "contests:create", "admin:access")
+	case "participant":
+		return append(caps, "agents:create", "submissions:upload", "contests:enroll")
+	default:
+		return caps
+	}
 }
 
 func (s *Server) register(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +145,7 @@ func (s *Server) checkSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	participant.Password = ""
+	participant.Capabilities = resolveCapabilities(participant.RoleId)
 	common.WriteObjectResponse(w, http.StatusOK, participant)
 }
 

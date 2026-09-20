@@ -25,8 +25,9 @@ type Participant struct {
 	Password  string    `json:"password,omitempty" db:"password"`
 	RoleId    string    `json:"role_id,omitempty" db:"role_id"`
 	Active    bool      `json:"active,omitempty" db:"active"`
-	CreatedAt time.Time `json:"created_at,omitempty" db:"created_at"`
-	Role      *Role     `json:"role,omitempty"`
+	CreatedAt    time.Time `json:"created_at,omitempty" db:"created_at"`
+	Role         *Role     `json:"role,omitempty"`
+	Capabilities []string  `json:"capabilities,omitempty"`
 }
 
 type Claims struct {

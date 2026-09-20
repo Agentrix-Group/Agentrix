@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { MatchCard } from '../components/MatchCard.jsx';
+import { canRunMatch } from '../auth/session.js';
 
 export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
   const { t } = useTranslation(['matches', 'common']);
@@ -141,7 +142,7 @@ export function MatchesPage({ onWatchReplay, currentUser, canRun }) {
                 match={m}
                 onWatchReplay={onWatchReplay}
                 onTriggerRun={handleTriggerRun}
-                canRun={canRun !== undefined ? canRun : (currentUser?.role_id === 'admin' || currentUser?.role === 'admin')}
+                canRun={canRun !== undefined ? canRun : canRunMatch(currentUser)}
               />
             ))
           ) : (

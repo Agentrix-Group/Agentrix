@@ -16,7 +16,18 @@
     "next": "Siguiente",
     "reset": "Reiniciar",
     "speed": "Velocidad",
-    "timeline": "Línea de tiempo"
+    "timeline": "Línea de tiempo",
+    "stepBack": "Paso atrás",
+    "stepForward": "Paso adelante",
+    "shortcuts": "Atajos: Espacio (reproducir/pausar), Flechas (avanzar/retroceder tick), Inicio/Fin"
+  },
+  "integrity": {
+    "label": "Integridad SHA-256",
+    "verified": "Verificada bit a bit",
+    "calculating": "Calculando hash...",
+    "mismatch": "Divergencia detectada",
+    "unverified": "Sin hash de referencia",
+    "hashTooltip": "Hash SHA-256: {{hash}}"
   },
   "tickInfo": "Tick: {{current}} / {{total}}",
   "agentsTitle": "Agentes",

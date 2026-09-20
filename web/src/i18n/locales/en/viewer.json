@@ -16,7 +16,18 @@
     "next": "Next",
     "reset": "Reset",
     "speed": "Speed",
-    "timeline": "Timeline"
+    "timeline": "Timeline",
+    "stepBack": "Step back",
+    "stepForward": "Step forward",
+    "shortcuts": "Shortcuts: Space (play/pause), Arrows (step tick forward/back), Home/End"
+  },
+  "integrity": {
+    "label": "SHA-256 Integrity",
+    "verified": "Bit-for-bit verified",
+    "calculating": "Computing hash...",
+    "mismatch": "Integrity mismatch detected",
+    "unverified": "No reference hash",
+    "hashTooltip": "SHA-256 Hash: {{hash}}"
   },
   "tickInfo": "Tick: {{current}} / {{total}}",
   "agentsTitle": "Agents",

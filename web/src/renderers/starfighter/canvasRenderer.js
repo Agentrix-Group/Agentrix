@@ -2,7 +2,7 @@ export const PLAYER_COLORS = ['#2f8aa6', '#e07a67'];
 export const WORLD_WIDTH = 2000;
 export const WORLD_HEIGHT = 1000;
 
-export function drawStarfighterArena(canvas, frame) {
+export function drawStarfighterArena(canvas, frame, arenaConfig = {}) {
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
@@ -10,6 +10,9 @@ export function drawStarfighterArena(canvas, frame) {
   const width = canvas.width;
   const height = canvas.height;
   const snapshot = frame?.public_snapshot || {};
+  const arenaWidth = Number(arenaConfig.arena_width || arenaConfig.width || snapshot.arena?.width || WORLD_WIDTH);
+  const arenaHeight = Number(arenaConfig.arena_height || arenaConfig.height || snapshot.arena?.height || WORLD_HEIGHT);
+
   ctx.clearRect(0, 0, width, height);
 
   // Deep space background gradient
@@ -33,9 +36,12 @@ export function drawStarfighterArena(canvas, frame) {
   ctx.globalAlpha = 1;
 
   const padding = 42;
+  const usableWidth = width - padding * 2;
+  const usableHeight = height - padding * 2;
+
   const project = (position = {}) => ({
-    x: padding + ((Number(position.x || 0) + WORLD_WIDTH / 2) / WORLD_WIDTH) * (width - padding * 2),
-    y: padding + ((WORLD_HEIGHT / 2 - Number(position.y || 0)) / WORLD_HEIGHT) * (height - padding * 2),
+    x: padding + ((Number(position.x || 0) + arenaWidth / 2) / arenaWidth) * usableWidth,
+    y: padding + ((arenaHeight / 2 - Number(position.y || 0)) / arenaHeight) * usableHeight,
   });
 
   // Arena perimeter boundaries

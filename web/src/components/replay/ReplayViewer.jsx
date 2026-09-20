@@ -1,1 +1,6 @@
-export { ReplayViewer, parseReplayNDJSON } from '../../viewer/ReplayViewer.jsx';
+export {
+  ReplayViewer,
+  parseReplayNDJSON,
+  parseReplayAsync,
+  computeSha256,
+} from '../../viewer/ReplayViewer.jsx';

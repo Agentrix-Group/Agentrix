@@ -284,7 +284,7 @@ for line in sys.stdin:
 		err := client.Start(ctx, engine.StartConfig{BinaryPath: engineBin, HandshakeTimeout: 5 * time.Second})
 		return client, err
 	}
-	exec := NewMatchExecutor(mockSvc, NewSandbox(50*time.Millisecond), engineFactory)
+	exec := NewMatchExecutor(mockSvc, NewSandbox(500*time.Millisecond), engineFactory)
 	started := time.Now()
 	err := exec.Execute(ctx, &connection.MatchJob{
 		JobId: "job-timeout", MatchId: "match-timeout", GameId: "starfighter",

@@ -26,7 +26,7 @@ type agentSandbox struct {
 
 func NewSandbox(timeout time.Duration, runtime ...BotRuntime) Sandbox {
 	if timeout <= 0 {
-		timeout = 500 * time.Millisecond
+		timeout = 2 * time.Second
 	}
 	var rt BotRuntime
 	if len(runtime) > 0 && runtime[0] != nil {

@@ -34,7 +34,15 @@ export function EnrollAgentModal({ isOpen, contest, onClose, onEnrolled }) {
       .finally(() => {
         setIsLoadingAgents(false);
       });
-  }, [isOpen, contest, t]);
+
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, contest, onClose, t]);
 
   // Load submissions whenever selectedAgentId changes
   useEffect(() => {

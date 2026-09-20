@@ -35,7 +35,7 @@
       "version": "Versión",
       "language": "Lenguaje",
       "status": "Estado",
-      "path": "Ruta",
+      "id": "Identificador",
       "created": "Fecha de creación"
     }
   },

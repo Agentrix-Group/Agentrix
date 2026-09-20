@@ -12,6 +12,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | [0006](0006-transactional-match-commit-and-atomic-replay.md) | accepted | Commit transaccional de partidas, tabla match_runs y publicación atómica de replay |
 | [0007](0007-separated-api-and-worker-roles-and-reproducible-containers.md) | accepted | Separación de roles de API y Worker y contenedores reproducibles |
 | [0008](0008-mvp-canonical-certification-and-baseline-closure.md) | accepted | Certificación canónica del MVP y cierre formal del baseline |
+| [0009](0009-frontend-qa-architecture-and-parallel-delivery.md) | accepted | Arquitectura de Frontend, Estrategia de QA y Entrega Paralela por Vertical Slices |
 
 ## Decisiones vigentes resumidas
 
@@ -20,6 +21,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 - Starfighter y Python son las únicas opciones del MVP actual.
 - PostgreSQL es la cola autoritativa fuera de desarrollo.
 - El timestep objetivo es 60 Hz exactos.
+- La entrega de producto se realiza de forma paralela por vertical slices frontend + backend + QA.
 - Multi-juego, Gym y la decisión Avian/Rapier siguen el orden de [roadmap/current.md](../roadmap/current.md).
 
 Las brechas de implementación no cambian una decisión: se documentan como estado parcial hasta que una prueba las cierre.

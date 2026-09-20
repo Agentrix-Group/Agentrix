@@ -8,13 +8,16 @@ import { AgentsPage } from './pages/AgentsPage.jsx';
 import { AuthPage } from './pages/AuthPage.jsx';
 import { ReplayViewer } from './viewer/ReplayViewer.jsx';
 import { ApiService } from './service/apiService.js';
+import { Router, useRouter } from './router/Router.jsx';
+import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { X } from 'lucide-react';
 
-export function App() {
+export function AppContent() {
   const { t } = useTranslation(['viewer', 'common']);
-  const [activeTab, setActiveTab] = useState('home');
+  const { route, params, navigate } = useRouter();
   const [currentUser, setCurrentUser] = useState(null);
-  const [selectedReplayId, setSelectedReplayId] = useState(null);
+
+  const selectedReplayId = params?.id || null;
 
   useEffect(() => {
     const token = localStorage.getItem('agentrix_token');
@@ -31,60 +34,100 @@ export function App() {
   const handleLogout = () => {
     ApiService.logout();
     setCurrentUser(null);
-    setActiveTab('home');
+    navigate('/');
   };
 
   const handleLoginSuccess = (user) => {
     setCurrentUser(user);
-    setActiveTab('agents');
+    navigate('/agents');
   };
 
   const handleWatchReplay = (replayId) => {
-    setSelectedReplayId(replayId);
-    setActiveTab('viewer');
+    if (replayId) {
+      navigate(`/replays/${encodeURIComponent(replayId)}`);
+    } else {
+      navigate('/viewer');
+    }
+  };
+
+  const handleSelectTab = (tab) => {
+    switch (tab) {
+      case 'home':
+        navigate('/');
+        break;
+      case 'matches':
+        navigate('/matches');
+        break;
+      case 'rankings':
+        navigate('/rankings');
+        break;
+      case 'agents':
+        navigate('/agents');
+        break;
+      case 'auth':
+        navigate('/auth');
+        break;
+      case 'viewer':
+        navigate(selectedReplayId ? `/replays/${encodeURIComponent(selectedReplayId)}` : '/viewer');
+        break;
+      default:
+        navigate('/');
+    }
   };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)' }}>
       <Navbar
-        activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        activeTab={route}
+        onSelectTab={handleSelectTab}
         currentUser={currentUser}
         onLogout={handleLogout}
-        hasReplay={Boolean(selectedReplayId)}
+        hasReplay={Boolean(selectedReplayId || route === 'viewer')}
       />
 
       <main className="main-content">
-        {activeTab === 'home' && (
-          <HomePage onWatchReplay={handleWatchReplay} />
-        )}
-        {activeTab === 'agents' && (
-          <AgentsPage currentUser={currentUser} />
-        )}
-        {activeTab === 'matches' && (
-          <MatchesPage onWatchReplay={handleWatchReplay} currentUser={currentUser} />
-        )}
-        {activeTab === 'rankings' && (
-          <RankingsPage />
-        )}
-        {activeTab === 'viewer' && (
-          <div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h1>{t('viewer:title')}</h1>
-              {selectedReplayId && (
-                <button className="btn" onClick={() => setSelectedReplayId(null)}>
-                  <X size={17} aria-hidden="true" /> {t('viewer:clearSelection')}
-                </button>
-              )}
+        <ErrorBoundary>
+          {route === 'home' && (
+            <HomePage onWatchReplay={handleWatchReplay} />
+          )}
+          {route === 'agents' && (
+            <AgentsPage currentUser={currentUser} />
+          )}
+          {route === 'matches' && (
+            <MatchesPage onWatchReplay={handleWatchReplay} currentUser={currentUser} />
+          )}
+          {route === 'rankings' && (
+            <RankingsPage />
+          )}
+          {route === 'viewer' && (
+            <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <h1>{t('viewer:title')}</h1>
+                {selectedReplayId && (
+                  <button className="btn" onClick={() => navigate('/viewer')}>
+                    <X size={17} aria-hidden="true" /> {t('viewer:clearSelection')}
+                  </button>
+                )}
+              </div>
+              <ReplayViewer replayId={selectedReplayId} onBrowseMatches={() => navigate('/matches')} />
             </div>
-            <ReplayViewer replayId={selectedReplayId} onBrowseMatches={() => setActiveTab('matches')} />
-          </div>
-        )}
-        {activeTab === 'auth' && (
-          <AuthPage onLoginSuccess={handleLoginSuccess} />
-        )}
+          )}
+          {route === 'auth' && (
+            <AuthPage onLoginSuccess={handleLoginSuccess} />
+          )}
+        </ErrorBoundary>
       </main>
     </div>
+  );
+}
+
+export function App() {
+  return (
+    <ErrorBoundary>
+      <Router>
+        <AppContent />
+      </Router>
+    </ErrorBoundary>
   );
 }
 

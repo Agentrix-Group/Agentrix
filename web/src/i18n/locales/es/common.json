@@ -13,7 +13,8 @@
     "view": "Ver",
     "submit": "Enviar",
     "processing": "Procesando...",
-    "loading": "Cargando..."
+    "loading": "Cargando...",
+    "retry": "Reintentar"
   },
   "labels": {
     "status": "Estado",

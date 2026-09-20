@@ -1,74 +1,268 @@
 /**
- * Base API Client for Agentrix Backend
+ * Robust API Client for Agentrix Backend
+ * Complies with ADR-0009 and resolves F0.4.
  */
 
 const API_HOST = (import.meta.env?.VITE_API_URL || '').replace(/\/+$/, '');
-const BASE_URL = `${API_HOST}/api/v1`;
+export const BASE_URL = `${API_HOST}/api/v1`;
+const DEFAULT_TIMEOUT_MS = 10000;
+
+export class ApiClientError extends Error {
+  constructor(message, { status, statusText, data = {}, correlationId = null, url = '' } = {}) {
+    super(message || (data && data.message) || `HTTP ${status}: ${statusText}`);
+    this.name = 'ApiClientError';
+    this.status = status;
+    this.statusText = statusText;
+    this.data = data || {};
+    this.correlationId = correlationId || data?.correlation_id || data?.correlationId || null;
+    this.url = url;
+    this.errorCode = data?.errorCode || data?.error_code || null;
+    this.isAuth = status === 401;
+    this.isForbidden = status === 403;
+    this.isNotFound = status === 404;
+    this.isConflict = status === 409;
+    this.isValidation = status === 422 || (status === 400 && Boolean(data?.errors || data?.details));
+    this.isServer = status >= 500;
+  }
+
+  getUserMessage(t) {
+    if (this.errorCode && typeof t === 'function') {
+      const translation = t(`errors:codes.${this.errorCode}`, { defaultValue: null });
+      if (translation && translation !== `errors:codes.${this.errorCode}`) {
+        return translation;
+      }
+    }
+    return this.data?.message || this.message || 'Error de comunicación con el servidor';
+  }
+}
+
+export class NetworkError extends Error {
+  constructor(message, originalError = null) {
+    super(message || 'No se pudo establecer conexión con el servidor. Verifique su red.');
+    this.name = 'NetworkError';
+    this.isNetworkError = true;
+    this.code = 'NETWORK_ERROR';
+    this.originalError = originalError;
+  }
+}
+
+export class TimeoutError extends Error {
+  constructor(timeoutMs) {
+    super(`La solicitud excedió el tiempo límite de espera (${timeoutMs}ms).`);
+    this.name = 'TimeoutError';
+    this.isTimeout = true;
+    this.code = 'TIMEOUT_ERROR';
+    this.timeoutMs = timeoutMs;
+  }
+}
+
+export function buildUrl(endpoint, queryParams = {}) {
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const keys = Object.keys(queryParams).filter(
+    (k) => queryParams[k] !== undefined && queryParams[k] !== null && queryParams[k] !== ''
+  );
+  if (keys.length === 0) {
+    return cleanEndpoint;
+  }
+  const searchParams = new URLSearchParams();
+  for (const key of keys) {
+    searchParams.append(key, String(queryParams[key]));
+  }
+  return `${cleanEndpoint}?${searchParams.toString()}`;
+}
 
 export async function request(endpoint, options = {}) {
   const token = localStorage.getItem('agentrix_token');
+  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+  const method = (options.method || 'GET').toUpperCase();
+
   const headers = {
-    'Content-Type': 'application/json',
+    Accept: 'application/json, text/plain, */*',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   };
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const error = new Error(errorData.message || `HTTP ${response.status}`);
-    error.status = response.status;
-    error.data = errorData;
-    throw error;
+  // Do NOT add Content-Type: application/json for GET or HEAD requests (F0.4)
+  if (method !== 'GET' && method !== 'HEAD' && options.body && !(options.body instanceof FormData)) {
+    if (!headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
   }
 
-  return response.json();
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  // Link external signal if provided
+  if (options.signal) {
+    options.signal.addEventListener('abort', () => controller.abort());
+  }
+
+  const fullUrl = `${BASE_URL}${endpoint}`;
+
+  try {
+    const response = await fetch(fullUrl, {
+      ...options,
+      method,
+      headers,
+      signal: controller.signal,
+    });
+
+    clearTimeout(timer);
+
+    const correlationId =
+      response.headers.get('x-correlation-id') ||
+      response.headers.get('x-request-id') ||
+      null;
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiClientError(errorData.message || response.statusText, {
+        status: response.status,
+        statusText: response.statusText,
+        data: errorData,
+        correlationId,
+        url: fullUrl,
+      });
+    }
+
+    // Handle 204 No Content or empty responses gracefully
+    if (response.status === 204) {
+      return null;
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await response.json().catch(() => null);
+    }
+    const text = await response.text();
+    return text ? JSON.parse(text).catch(() => text) : null;
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof ApiClientError) {
+      throw err;
+    }
+    if (timedOut || err.name === 'AbortError') {
+      if (timedOut) {
+        throw new TimeoutError(timeoutMs);
+      }
+      throw err;
+    }
+    throw new NetworkError(err.message, err);
+  }
 }
 
 export async function requestText(endpoint, options = {}) {
   const token = localStorage.getItem('agentrix_token');
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    ...options,
-    headers: {
-      Accept: 'application/x-ndjson',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
-  if (!response.ok) {
-    const error = new Error(`HTTP ${response.status}`);
-    error.status = response.status;
-    throw error;
+  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const fullUrl = `${BASE_URL}${endpoint}`;
+  try {
+    const response = await fetch(fullUrl, {
+      ...options,
+      headers: {
+        Accept: 'application/x-ndjson, text/plain, */*',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (!response.ok) {
+      const correlationId =
+        response.headers.get('x-correlation-id') ||
+        response.headers.get('x-request-id') ||
+        null;
+      throw new ApiClientError(`HTTP ${response.status}: ${response.statusText}`, {
+        status: response.status,
+        statusText: response.statusText,
+        correlationId,
+        url: fullUrl,
+      });
+    }
+    return await response.text();
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof ApiClientError) throw err;
+    if (timedOut || err.name === 'AbortError') {
+      if (timedOut) throw new TimeoutError(timeoutMs);
+      throw err;
+    }
+    throw new NetworkError(err.message, err);
   }
-  return response.text();
 }
 
-export async function requestForm(endpoint, formData) {
+export async function requestForm(endpoint, formData, options = {}) {
   const token = localStorage.getItem('agentrix_token');
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
-    method: 'POST',
-    body: formData,
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    const error = new Error(errorData.message || `HTTP ${response.status}`);
-    error.status = response.status;
-    error.data = errorData;
-    throw error;
+  const timeoutMs = options.timeout ?? (DEFAULT_TIMEOUT_MS * 3); // 30s for uploads
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+
+  const fullUrl = `${BASE_URL}${endpoint}`;
+  try {
+    const response = await fetch(fullUrl, {
+      ...options,
+      method: 'POST',
+      body: formData,
+      headers: {
+        Accept: 'application/json, text/plain, */*',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    const correlationId =
+      response.headers.get('x-correlation-id') ||
+      response.headers.get('x-request-id') ||
+      null;
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new ApiClientError(errorData.message || response.statusText, {
+        status: response.status,
+        statusText: response.statusText,
+        data: errorData,
+        correlationId,
+        url: fullUrl,
+      });
+    }
+    return await response.json().catch(() => null);
+  } catch (err) {
+    clearTimeout(timer);
+    if (err instanceof ApiClientError) throw err;
+    if (timedOut || err.name === 'AbortError') {
+      if (timedOut) throw new TimeoutError(timeoutMs);
+      throw err;
+    }
+    throw new NetworkError(err.message, err);
   }
-  return response.json();
 }
 
 export const api = {
-  get: (url) => request(url, { method: 'GET' }),
-  post: (url, body) => request(url, { method: 'POST', body: JSON.stringify(body) }),
-  put: (url, body) => request(url, { method: 'PUT', body: JSON.stringify(body) }),
-  patch: (url) => request(url, { method: 'PATCH' }),
-  text: (url) => requestText(url, { method: 'GET' }),
-  form: (url, data) => requestForm(url, data),
+  get: (url, options = {}) => request(url, { ...options, method: 'GET' }),
+  post: (url, body, options = {}) =>
+    request(url, { ...options, method: 'POST', body: JSON.stringify(body) }),
+  put: (url, body, options = {}) =>
+    request(url, { ...options, method: 'PUT', body: JSON.stringify(body) }),
+  patch: (url, body, options = {}) =>
+    request(url, { ...options, method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
+  delete: (url, options = {}) => request(url, { ...options, method: 'DELETE' }),
+  text: (url, options = {}) => requestText(url, options),
+  form: (url, data, options = {}) => requestForm(url, data, options),
 };

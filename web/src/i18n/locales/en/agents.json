@@ -35,7 +35,7 @@
       "version": "Version",
       "language": "Language",
       "status": "Status",
-      "path": "Path",
+      "id": "Identifier",
       "created": "Created"
     }
   },

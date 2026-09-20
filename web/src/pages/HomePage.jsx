@@ -10,6 +10,7 @@ export function HomePage({ onWatchReplay }) {
   const language = i18n.language?.startsWith('en') ? 'en' : 'es';
   const [contests, setContests] = useState([]);
   const [recentMatches, setRecentMatches] = useState([]);
+  const [recentMatchesStatus, setRecentMatchesStatus] = useState('loading');
   const [status, setStatus] = useState('loading');
 
   const loadContests = useCallback(async () => {
@@ -27,13 +28,18 @@ export function HomePage({ onWatchReplay }) {
   }, []);
 
   const loadRecentMatches = useCallback(async () => {
+    setRecentMatchesStatus('loading');
     try {
       const matches = await ApiService.listMatches();
       if (Array.isArray(matches)) {
         setRecentMatches(matches.slice(0, 6));
+        setRecentMatchesStatus('success');
+      } else {
+        setRecentMatches([]);
+        setRecentMatchesStatus('success');
       }
     } catch {
-      setRecentMatches([]);
+      setRecentMatchesStatus('error');
     }
   }, []);
 
@@ -140,7 +146,30 @@ export function HomePage({ onWatchReplay }) {
           </div>
         </div>
 
-        {recentMatches.length > 0 ? (
+        {recentMatchesStatus === 'error' ? (
+          <div
+            className="card"
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: '12px',
+              borderLeft: '4px solid var(--danger, #ef4444)',
+              background: 'var(--danger-bg, rgba(239, 68, 68, 0.1))',
+            }}
+          >
+            <span>{t('errorDescription')}</span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              aria-label={`${t('retry')} ${t('recentMatchesTitle')}`}
+              onClick={loadRecentMatches}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={15} aria-hidden="true" /> {t('retry')}
+            </button>
+          </div>
+        ) : recentMatches.length > 0 ? (
           <div className="grid-cards">
             {recentMatches.map((m) => (
               <MatchCard key={m.id} match={m} onWatchReplay={onWatchReplay} />

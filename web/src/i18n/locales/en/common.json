@@ -13,7 +13,8 @@
     "view": "View",
     "submit": "Submit",
     "processing": "Processing...",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "retry": "Retry"
   },
   "labels": {
     "status": "Status",

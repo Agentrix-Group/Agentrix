@@ -2,7 +2,7 @@
  * High-level API service functions for Agentrix
  */
 
-import { api } from '../api/client.js';
+import { api, buildUrl } from '../api/client.js';
 
 export const ApiService = {
   // Auth
@@ -22,27 +22,23 @@ export const ApiService = {
 
   // Contests
   listContests: () => api.get('/contests'),
-  getContest: (id) => api.get(`/contests/${id}`),
-  listContestAgents: (contestId) => api.get(`/contests/${contestId}/agents`),
+  getContest: (id) => api.get(`/contests/${encodeURIComponent(id)}`),
+  listContestAgents: (contestId) => api.get(`/contests/${encodeURIComponent(contestId)}/agents`),
   enrollAgent: (contestId, agentId) =>
-    api.post(`/contests/${contestId}/agents`, { agent_id: agentId }),
+    api.post(`/contests/${encodeURIComponent(contestId)}/agents`, { agent_id: agentId }),
 
   // Games
   listGames: () => api.get('/games'),
-  getGame: (id) => api.get(`/games/${id}`),
+  getGame: (id) => api.get(`/games/${encodeURIComponent(id)}`),
 
   // Agents
-  listAgents: (participantId) => {
-    const query = participantId ? `?participant_id=${encodeURIComponent(participantId)}` : '';
-    return api.get(`/agents${query}`);
-  },
+  listAgents: (participantId) =>
+    api.get(buildUrl('/agents', participantId ? { participant_id: participantId } : {})),
   createAgent: (agentData) => api.post('/agents', agentData),
 
   // Submissions
-  listSubmissions: (agentId) => {
-    const query = agentId ? `?agent_id=${encodeURIComponent(agentId)}` : '';
-    return api.get(`/submissions${query}`);
-  },
+  listSubmissions: (agentId) =>
+    api.get(buildUrl('/submissions', agentId ? { agent_id: agentId } : {})),
   uploadBotBundle: (agentId, file) => {
     const form = new FormData();
     form.append('agent_id', agentId);
@@ -51,21 +47,17 @@ export const ApiService = {
   },
 
   // Matches
-  listMatches: (contestId) => {
-    const query = contestId ? `?contest_id=${encodeURIComponent(contestId)}` : '';
-    return api.get(`/matches${query}`);
-  },
-  getMatch: (id) => api.get(`/matches/${id}`),
+  listMatches: (contestId) =>
+    api.get(buildUrl('/matches', contestId ? { contest_id: contestId } : {})),
+  getMatch: (id) => api.get(`/matches/${encodeURIComponent(id)}`),
   scheduleMatch: (matchData) => api.post('/matches', matchData),
-  runMatch: (id) => api.post(`/matches/${id}/run`),
+  runMatch: (id) => api.post(`/matches/${encodeURIComponent(id)}/run`),
 
   // Rankings
-  listRankings: (contestId) => {
-    const query = contestId ? `?contest_id=${encodeURIComponent(contestId)}` : '';
-    return api.get(`/rankings${query}`);
-  },
+  listRankings: (contestId) =>
+    api.get(buildUrl('/rankings', contestId ? { contest_id: contestId } : {})),
 
   // Replays
-  getReplay: (id) => api.get(`/replays/${id}`),
-  streamReplay: (id) => api.text(`/replays/${id}/stream`),
+  getReplay: (id) => api.get(`/replays/${encodeURIComponent(id)}`),
+  streamReplay: (id) => api.text(`/replays/${encodeURIComponent(id)}/stream`),
 };

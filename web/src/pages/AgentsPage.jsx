@@ -28,7 +28,9 @@ export function AgentsPage({ currentUser }) {
           selectAgent(data[0]);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        setErrorMsg(err.message || 'No se pudieron cargar los agentes');
+      });
   };
 
   const loadContests = () => {
@@ -39,7 +41,9 @@ export function AgentsPage({ currentUser }) {
           setSelectedContestId(data[0].id);
         }
       })
-      .catch(() => {});
+      .catch((err) => {
+        setErrorMsg(err.message || 'No se pudieron cargar los concursos');
+      });
   };
 
   useEffect(() => {
@@ -251,7 +255,7 @@ export function AgentsPage({ currentUser }) {
                         <th>{t('agents:submission.table.version')}</th>
                         <th>{t('agents:submission.table.language')}</th>
                         <th>{t('agents:submission.table.status')}</th>
-                        <th>{t('agents:submission.table.path')}</th>
+                        <th>{t('agents:submission.table.id')}</th>
                         <th>{t('agents:submission.table.created')}</th>
                       </tr>
                     </thead>
@@ -261,7 +265,7 @@ export function AgentsPage({ currentUser }) {
                           <td><strong>v{s.version}</strong></td>
                           <td>{s.language}</td>
                           <td><span className="badge badge-finished">{getStatusText(s.status)}</span></td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{s.code_path}</td>
+                          <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>#{s.id ? s.id.slice(0, 8) : '—'}</td>
                           <td style={{ fontSize: '0.8rem' }}>{formatDateTime(s.created_at, currentLang)}</td>
                         </tr>
                       ))}

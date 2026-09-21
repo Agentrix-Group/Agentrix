@@ -1,161 +1,102 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 const RouterContext = createContext(null);
 
-/**
- * Route pattern matching helper
- * E.g. pattern '/replays/:id' matches '/replays/abc-123' -> { match: true, params: { id: 'abc-123' } }
- */
+/** Route table: the only paths the SPA serves; anything else is notFound. */
+export const ROUTES = [
+  { name: 'home', pattern: '/' },
+  { name: 'contests', pattern: '/contests' },
+  { name: 'contest', pattern: '/contests/:id' },
+  { name: 'matches', pattern: '/matches' },
+  { name: 'match', pattern: '/matches/:id' },
+  { name: 'rankings', pattern: '/rankings' },
+  { name: 'agents', pattern: '/agents' },
+  { name: 'agent', pattern: '/agents/:id' },
+  { name: 'admin', pattern: '/admin' },
+  { name: 'auth', pattern: '/auth' },
+  { name: 'replay', pattern: '/replays/:id' },
+];
+
 export function matchPattern(path, pattern) {
-  const pathClean = path.replace(/\/+$/, '') || '/';
-  const patternClean = pattern.replace(/\/+$/, '') || '/';
-
-  if (pathClean === patternClean) {
-    return { match: true, params: {} };
-  }
-
-  const pathParts = pathClean.split('/').filter(Boolean);
-  const patternParts = patternClean.split('/').filter(Boolean);
-
-  if (pathParts.length !== patternParts.length) {
-    return { match: false, params: {} };
-  }
-
+  const clean = (value) => (value.replace(/\/+$/, '') || '/');
+  const pathParts = clean(path).split('/').filter(Boolean);
+  const patternParts = clean(pattern).split('/').filter(Boolean);
+  if (pathParts.length !== patternParts.length) return null;
   const params = {};
-  for (let i = 0; i < patternParts.length; i++) {
-    const pPart = patternParts[i];
+  for (let i = 0; i < patternParts.length; i += 1) {
+    const expected = patternParts[i];
     const actual = pathParts[i];
-    if (pPart.startsWith(':')) {
-      const paramName = pPart.slice(1);
-      params[paramName] = decodeURIComponent(actual);
-    } else if (pPart !== actual) {
-      return { match: false, params: {} };
+    if (expected.startsWith(':')) {
+      try {
+        params[expected.slice(1)] = decodeURIComponent(actual);
+      } catch {
+        return null;
+      }
+    } else if (expected !== actual) {
+      return null;
     }
   }
-
-  return { match: true, params };
+  return params;
 }
 
-export function parseLocation(pathname) {
-  const clean = pathname || (typeof window !== 'undefined' ? window.location.pathname : '/');
-  return clean === '' ? '/' : clean;
+export function resolveRoute(pathname) {
+  for (const route of ROUTES) {
+    const params = matchPattern(pathname || '/', route.pattern);
+    if (params) return { route: route.name, params };
+  }
+  return { route: 'notFound', params: {} };
+}
+
+function currentLocation() {
+  if (typeof window === 'undefined') return { pathname: '/', search: '' };
+  return { pathname: window.location.pathname || '/', search: window.location.search || '' };
 }
 
 export function Router({ children }) {
-  const [currentPath, setCurrentPath] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return parseLocation(window.location.pathname);
-    }
-    return '/';
-  });
+  const [location, setLocation] = useState(currentLocation);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-
-    const handlePopState = () => {
-      setCurrentPath(parseLocation(window.location.pathname));
-    };
-
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    const onPop = () => setLocation(currentLocation());
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   const navigate = useCallback((to, { replace = false } = {}) => {
-    if (typeof window === 'undefined') return;
+    const url = new URL(to, window.location.origin);
+    const target = url.pathname + url.search;
+    if (target === window.location.pathname + window.location.search) return;
+    if (replace) window.history.replaceState({}, '', target);
+    else window.history.pushState({}, '', target);
+    setLocation({ pathname: url.pathname, search: url.search });
+    if (typeof window.scrollTo === 'function') window.scrollTo(0, 0);
+  }, []);
 
-    const target = parseLocation(to);
-    if (target === currentPath) return;
+  const value = useMemo(() => {
+    const { route, params } = resolveRoute(location.pathname);
+    const query = Object.fromEntries(new URLSearchParams(location.search));
+    return { path: location.pathname, route, params, query, navigate };
+  }, [location, navigate]);
 
-    if (replace) {
-      window.history.replaceState({}, '', target);
-    } else {
-      window.history.pushState({}, '', target);
-    }
-    setCurrentPath(target);
-    window.scrollTo(0, 0);
-  }, [currentPath]);
-
-  // Derived route and params
-  const { route, params } = useMemo(() => {
-    const replayMatch = matchPattern(currentPath, '/replays/:id') || matchPattern(currentPath, '/viewer/:id');
-    if (replayMatch.match) {
-      return { route: 'viewer', params: replayMatch.params };
-    }
-    if (currentPath === '/viewer' || currentPath === '/replays') {
-      return { route: 'viewer', params: {} };
-    }
-    const matchDetail = matchPattern(currentPath, '/matches/:id');
-    if (matchDetail.match) {
-      return { route: 'matches', params: matchDetail.params };
-    }
-    if (currentPath === '/matches') {
-      return { route: 'matches', params: {} };
-    }
-    const contestDetail = matchPattern(currentPath, '/contests/:id');
-    if (contestDetail.match) {
-      return { route: 'contests', params: contestDetail.params };
-    }
-    if (currentPath === '/contests') {
-      return { route: 'contests', params: {} };
-    }
-    if (currentPath === '/admin') {
-      return { route: 'admin', params: {} };
-    }
-    if (currentPath === '/rankings') {
-      return { route: 'rankings', params: {} };
-    }
-    if (currentPath === '/agents') {
-      return { route: 'agents', params: {} };
-    }
-    if (currentPath === '/auth') {
-      return { route: 'auth', params: {} };
-    }
-    return { route: 'home', params: {} };
-  }, [currentPath]);
-
-  const value = useMemo(() => ({
-    currentPath,
-    route,
-    params,
-    navigate,
-  }), [currentPath, route, params, navigate]);
-
-  return (
-    <RouterContext.Provider value={value}>
-      {children}
-    </RouterContext.Provider>
-  );
+  return <RouterContext.Provider value={value}>{children}</RouterContext.Provider>;
 }
 
 export function useRouter() {
   const context = useContext(RouterContext);
-  if (!context) {
-    throw new Error('useRouter must be used within a <Router>');
-  }
+  if (!context) throw new Error('useRouter must be used within <Router>');
   return context;
 }
 
 export function Link({ to, children, className = '', onClick, replace = false, ...rest }) {
-  const { currentPath, navigate } = useRouter();
-  const isActive = currentPath === to;
-
-  const handleClick = (e) => {
-    if (onClick) onClick(e);
-    // Don't intercept if modified click (Ctrl+click, Meta+click) or if default prevented
-    if (!e.defaultPrevented && e.button === 0 && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-      e.preventDefault();
+  const { path, navigate } = useRouter();
+  const handleClick = (event) => {
+    if (onClick) onClick(event);
+    if (!event.defaultPrevented && event.button === 0 && !event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey) {
+      event.preventDefault();
       navigate(to, { replace });
     }
   };
-
   return (
-    <a
-      href={to}
-      className={className}
-      onClick={handleClick}
-      aria-current={isActive ? 'page' : undefined}
-      {...rest}
-    >
+    <a href={to} className={className} onClick={handleClick} aria-current={path === to ? 'page' : undefined} {...rest}>
       {children}
     </a>
   );

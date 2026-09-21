@@ -1,700 +1,260 @@
 package executor
 
 import (
+	"compress/gzip"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
-	"sort"
-	"strconv"
 	"time"
 
-	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/engine"
-	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/model"
-	replaystream "github.com/Agentrix-Group/Agentrix/src/replay"
+	"github.com/Agentrix-Group/Agentrix/src/replay"
 	"github.com/Agentrix-Group/Agentrix/src/service"
-	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
-type MatchExecutor interface {
-	Execute(ctx context.Context, job *connection.MatchJob) error
+// RunError classifies an execution failure. The worker reports the class
+// to FailRun, which decides whether a new attempt is scheduled.
+type RunError struct {
+	Class model.ErrorClass
+	Err   error
 }
 
-// EngineClientFactory instantiates an EngineClient connected to the simulation engine.
-type EngineClientFactory func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error)
+func (e *RunError) Error() string { return fmt.Sprintf("%s: %v", e.Class, e.Err) }
+func (e *RunError) Unwrap() error { return e.Err }
 
-// DefaultEngineClientFactory starts an engine subprocess based on configuration or standard paths.
-func DefaultEngineClientFactory(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
-	execPath := os.Getenv("AGENTRIX_ENGINE_BIN")
-	if execPath == "" {
-		if manifest := game.GetRegistry().GetManifest(job.GameId); manifest != nil && manifest.BinaryPath != "" {
-			execPath = manifest.BinaryPath
+func fail(class model.ErrorClass, format string, args ...any) *RunError {
+	return &RunError{Class: class, Err: fmt.Errorf(format, args...)}
+}
+
+// EngineFactory starts an engine process whose binary digest must equal
+// expectedSHA (verified by the client before the handshake).
+type EngineFactory func(ctx context.Context, expectedSHA string) (engine.EngineClient, error)
+
+// SubprocessEngineFactory launches the configured engine binary.
+func SubprocessEngineFactory(binary string) EngineFactory {
+	return func(ctx context.Context, expectedSHA string) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		if err := client.Start(ctx, engine.StartConfig{BinaryPath: binary, ExpectedDigest: expectedSHA,
+			HandshakeTimeout: 10 * time.Second}); err != nil {
+			return nil, err
 		}
+		return client, nil
 	}
-	if execPath == "" {
-		return nil, errors.New("Starfighter engine binary is not configured")
-	}
+}
 
-	if !filepath.IsAbs(execPath) {
-		if _, err := os.Stat(execPath); err != nil {
-			for _, prefix := range []string{".", "..", "../..", "../../.."} {
-				candidate := filepath.Join(prefix, execPath)
-				if _, statErr := os.Stat(candidate); statErr == nil {
-					execPath = candidate
-					break
-				}
-			}
+type Executor struct {
+	runtime   BotRuntime
+	artifacts *connection.ArtifactStore
+	engines   EngineFactory
+}
+
+func NewExecutor(runtime BotRuntime, artifacts *connection.ArtifactStore, engines EngineFactory) *Executor {
+	return &Executor{runtime: runtime, artifacts: artifacts, engines: engines}
+}
+
+// Execute runs a reserved run exclusively from its persisted ExecutionSpec.
+func (e *Executor) Execute(ctx context.Context, res model.Reservation) (*model.RunCompletion, error) {
+	spec := res.Spec
+	if err := spec.Validate(); err != nil {
+		return nil, &RunError{Class: model.ErrorSpec, Err: err}
+	}
+	if spec.ReplayFormat != replay.FormatVersion {
+		return nil, fail(model.ErrorSpec, "replay format %q is not supported by this worker", spec.ReplayFormat)
+	}
+	wallCtx, cancel := context.WithTimeout(ctx, time.Duration(spec.Limits.WallTimeMs)*time.Millisecond)
+	defer cancel()
+
+	launches := make([]BotLaunch, 0, len(spec.Slots))
+	digests := make(map[string]string, len(spec.Slots))
+	players := make([]string, 0, len(spec.Slots))
+	participants := make([]replay.Participant, 0, len(spec.Slots))
+	for _, slot := range spec.Slots {
+		if err := e.artifacts.Verify(slot.ArtifactKey, slot.ArtifactSHA256); err != nil {
+			return nil, fail(model.ErrorArtifact, "slot %d artifact cannot be verified: %v", slot.Index, err)
 		}
+		path, err := e.artifacts.Path(slot.ArtifactKey)
+		if err != nil {
+			return nil, fail(model.ErrorArtifact, "slot %d artifact key is invalid", slot.Index)
+		}
+		launches = append(launches, BotLaunch{PlayerID: slot.SlotID, CodePath: path, Runtime: slot.Runtime})
+		digests[slot.SlotID] = slot.ArtifactSHA256
+		players = append(players, slot.SlotID)
+		participants = append(participants, replay.Participant{PlayerID: slot.SlotID, SlotIndex: slot.Index})
 	}
 
-	client := engine.NewSubprocessClient()
-	err := client.Start(ctx, engine.StartConfig{
-		BinaryPath:       execPath,
-		ExpectedDigest:   job.EngineDigest,
-		HandshakeTimeout: 5 * time.Second,
-	})
+	client, err := e.engines(wallCtx, spec.Engine.SHA256)
 	if err != nil {
-		return nil, fmt.Errorf("failed to start engine subprocess: %w", err)
-	}
-	return client, nil
-}
-
-type matchExecutor struct {
-	svc           service.Service
-	sandbox       Sandbox
-	engineFactory EngineClientFactory
-}
-
-func NewMatchExecutor(svc service.Service, sandbox Sandbox, engineFactory ...EngineClientFactory) MatchExecutor {
-	if sandbox == nil {
-		sandbox = NewSandbox(500 * time.Millisecond)
-	}
-	factory := DefaultEngineClientFactory
-	if len(engineFactory) > 0 && engineFactory[0] != nil {
-		factory = engineFactory[0]
-	}
-	return &matchExecutor{
-		svc:           svc,
-		sandbox:       sandbox,
-		engineFactory: factory,
-	}
-}
-
-func fileExists(path string) bool {
-	if _, err := os.Stat(path); err == nil {
-		return true
-	}
-	if _, err := os.Stat("../../" + path); err == nil {
-		return true
-	}
-	return false
-}
-
-func referenceBot(manifest *game.Manifest, index int) (string, error) {
-	if manifest == nil || manifest.ID != "starfighter" {
-		return "", errors.New("starfighter manifest is not loaded")
-	}
-	return ResolveAgentFallback("games/starfighter", index)
-}
-
-func validatePerceptions(perceptions map[string]json.RawMessage, players []string, expectedTick int) error {
-	for _, playerID := range players {
-		raw, ok := perceptions[playerID]
-		if !ok || !json.Valid(raw) {
-			return fmt.Errorf("missing or invalid perception for %s at tick %d", playerID, expectedTick)
+		if errors.Is(err, engine.ErrEngineDigestMismatch) {
+			return nil, fail(model.ErrorSpec, "engine binary does not match the pinned digest")
 		}
-		var envelope struct {
-			Tick *int `json:"tick"`
-		}
-		if err := json.Unmarshal(raw, &envelope); err != nil || envelope.Tick == nil || *envelope.Tick != expectedTick {
-			return fmt.Errorf("perception tick mismatch for %s: expected %d", playerID, expectedTick)
-		}
-	}
-	return nil
-}
-
-func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) error {
-	startedAt := time.Now()
-	ctx = tracer.WithMatchID(ctx, job.MatchId)
-	ctx = tracer.WithJobID(ctx, job.JobId)
-	ctx = tracer.WithAttempt(ctx, job.Attempt)
-	tracer.InfoEvent(ctx, tracer.ScopeMatch, "match.started", "Partida iniciada",
-		tracer.String("game", job.GameId))
-
-	if job.GameId != "starfighter" {
-		return fmt.Errorf("unsupported game %q: Agentrix MVP runs only starfighter", job.GameId)
-	}
-	manifest := game.GetRegistry().GetManifest("starfighter")
-	if manifest == nil {
-		return errors.New("starfighter manifest is not loaded")
-	}
-
-	match, err := e.svc.GetMatch(ctx, job.MatchId)
-	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.load.failed", "No se pudo preparar la partida",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		return err
-	}
-
-	match.Status = common.MatchStatusRunning
-	_ = e.svc.UpdateMatch(ctx, match)
-	if job.RunId != "" {
-		_ = e.svc.StartMatchRun(ctx, job.RunId, "worker", job.FencingToken)
-	}
-
-	// Ensure at least 2 player slots
-	submissions := make([]*model.Submission, 0)
-	for _, subId := range job.SubmissionIds {
-		sub, err := e.svc.GetSubmission(ctx, subId)
-		if err == nil {
-			submissions = append(submissions, sub)
-		}
-	}
-	if len(submissions) > manifest.MaxPlayers {
-		return fmt.Errorf("starfighter accepts exactly %d players", manifest.MaxPlayers)
-	}
-
-	// If fewer than 2 submissions provided, create reference bots with reference agent script
-	if len(submissions) < 2 {
-		for i := len(submissions); i < 2; i++ {
-			path, err := referenceBot(manifest, i)
-			if err != nil {
-				return err
-			}
-			dummySub := &model.Submission{
-				Id:       fmt.Sprintf("bot-ref-%d", i+1),
-				AgentId:  fmt.Sprintf("reference-agent-%d", i+1),
-				Language: "python",
-				CodePath: path,
-				Status:   common.SubmissionStatusReady,
-				Active:   true,
-			}
-			submissions = append(submissions, dummySub)
-		}
-	}
-
-	var playerIDs []string
-	subMap := make(map[string]*model.Submission)
-	for _, sub := range submissions {
-		playerIDs = append(playerIDs, sub.Id)
-		subMap[sub.Id] = sub
-	}
-
-	// Start engine subprocess client
-	engineClient, err := e.engineFactory(ctx, job)
-	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.create.failed", "El motor de juego no pudo iniciarse",
-			tracer.Origin(tracer.OriginGame), tracer.Err(err))
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
-		}
-		return err
+		return nil, fail(model.ErrorInfrastructure, "engine start failed: %v", err)
 	}
 	defer func() {
-		closeCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = engineClient.Close(closeCtx)
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer closeCancel()
+		_ = client.Close(closeCtx)
 	}()
-
-	maxTicks := 100
-	if manifest.MaxTicks > 0 {
-		maxTicks = manifest.MaxTicks
-	}
-	tickHz := 60.0
-	if manifest.TickHz > 0 {
-		tickHz = manifest.TickHz
-	} else if hzStr, ok := manifest.Settings["tick_hz"]; ok {
-		if parsed, err := strconv.ParseFloat(hzStr, 64); err == nil && parsed > 0 {
-			tickHz = parsed
-		}
-	}
-	fixedTimestepMs := manifest.FixedTimestepMs
-	if fixedTimestepMs <= 0 {
-		fixedTimestepMs = 17
-	}
-	config := make(map[string]interface{}, len(manifest.Settings)+1)
-	for key, value := range manifest.Settings {
-		config[key] = value
-	}
-	config["tick_hz"] = tickHz
-
-	initReq := engine.InitializeMatchRequest{
-		MatchID:               job.MatchId,
-		GameID:                job.GameId,
-		ExpectedEngineVersion: engineClient.EngineVersion(),
-		Seed:                  job.Seed,
-		FixedTimestepMs:       fixedTimestepMs,
-		TickHz:                tickHz,
-		MaxTicks:              maxTicks,
-		Players:               playerIDs,
-		Config:                config,
+	if client.EngineVersion() != spec.Engine.Version {
+		return nil, fail(model.ErrorSpec, "engine version %q does not match spec %q", client.EngineVersion(), spec.Engine.Version)
 	}
 
-	initRes, err := engineClient.InitializeMatch(ctx, initReq)
-	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.initialize.failed", "El motor de juego rechazó la inicialización",
-			tracer.Origin(tracer.OriginGame), tracer.Err(err))
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
-		}
-		return err
-	}
-	if initRes.InitialTick != 0 {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, fmt.Sprintf("engine initial tick mismatch: got %d, expected 0", initRes.InitialTick))
-		}
-		return fmt.Errorf("engine initial tick mismatch: got %d, expected 0", initRes.InitialTick)
-	}
-	if err := validatePerceptions(initRes.Perceptions, playerIDs, 0); err != nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
-		}
-		return err
-	}
-
-	agentIssues := make(map[string]*agentIssueSummary)
-	var executionErr error
-	persistenceFailures := 0
-
-	replayID := uuid.New().String()
-	replayRecord := &model.Replay{
-		Id:         replayID,
-		MatchId:    job.MatchId,
-		MatchRunId: &job.RunId,
-	}
-	replayWriter, err := e.svc.OpenReplay(ctx, replayRecord, model.ReplayMetadata{
-		ReplayID:        replayID,
-		MatchID:         job.MatchId,
-		RunID:           job.RunId,
-		EngineDigest:    engineClient.EngineDigest(),
-		GameID:          job.GameId,
-		GameVersion:     job.GameVersion,
-		ConfigHash:      job.ConfigHash,
-		Seed:            job.Seed,
-		Participants:    playerIDs,
-		FixedTimestepMs: fixedTimestepMs,
-		CreatedAt:       time.Now().UTC(),
+	init, err := client.InitializeMatch(wallCtx, engine.InitializeMatchRequest{
+		MatchID: spec.MatchID, GameID: spec.Game.ID, GameVersion: spec.Game.Version, ExpectedEngineVersion: spec.Engine.Version,
+		Seed: spec.Seed, TickRate: engine.TickRate{Numerator: spec.TickRate.Numerator, Denominator: spec.TickRate.Denominator},
+		MaxTicks: spec.Limits.MaxTicks, Players: players, Config: spec.Game.Config, ParticipantArtifactDigests: digests,
 	})
 	if err != nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		return fmt.Errorf("open replay stream: %w", err)
+		return nil, fail(model.ErrorEngine, "engine rejected initialization: %v", err)
 	}
-	defer replayWriter.Close()
-	if err := replayWriter.WriteSnapshot(model.ReplaySnapshot{
-		Tick: 0, PublicSnapshot: initRes.PublicSnapshot, Events: initRes.Events, StateHash: initRes.StateHash,
-	}); err != nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		return fmt.Errorf("write initial replay snapshot: %w", err)
+	if init.InitialTick != 0 {
+		return nil, fail(model.ErrorEngine, "engine initial tick is %d, expected 0", init.InitialTick)
 	}
 
-	// One persistent bot process per player receives init once and is reused
-	// until the match ends or it dies, times out, or violates the protocol.
-	codePaths := make(map[string]string, len(playerIDs))
-	for _, pID := range playerIDs {
-		if sub := subMap[pID]; sub != nil {
-			codePaths[pID] = sub.CodePath
-		}
-	}
-	botSession, err := e.sandbox.StartSession(ctx, job.MatchId, codePaths, job.Seed, 0)
+	replayID := uuid.NewString()
+	stagingKey, storageKey := service.ReplayKeys(res.RunID, "gzip")
+	pending, err := e.artifacts.Create(stagingKey)
 	if err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeMatch, "agent.session.failed", "No se pudo iniciar la sesión de bots",
-			tracer.Origin(tracer.OriginAgent), tracer.Err(err))
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		return err
+		return nil, fail(model.ErrorInfrastructure, "open replay staging: %v", err)
+	}
+	committedReplay := false
+	defer func() {
+		if !committedReplay {
+			_ = pending.Abort()
+		}
+	}()
+	gz := gzip.NewWriter(pending)
+	writer, err := replay.NewWriter(gz, replay.Metadata{
+		ReplayID: replayID, MatchID: spec.MatchID, RunID: res.RunID, SpecHash: mustHash(spec), GameID: spec.Game.ID,
+		GameVersion: spec.Game.Version, ConfigHash: spec.Game.ConfigHash, EngineVersion: spec.Engine.Version,
+		EngineSHA256: spec.Engine.SHA256, Seed: spec.Seed,
+		TickRate:     replay.TickRate{Numerator: spec.TickRate.Numerator, Denominator: spec.TickRate.Denominator},
+		Participants: participants, CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return nil, fail(model.ErrorInfrastructure, "write replay metadata: %v", err)
+	}
+	if err := writer.WriteSnapshot(replay.Snapshot{Tick: 0, StateHash: init.StateHash, Events: init.Events,
+		PublicSnapshot: init.PublicSnapshot}); err != nil {
+		return nil, fail(model.ErrorEngine, "initial snapshot rejected: %v", err)
 	}
 
-	currentPerceptions := initRes.Perceptions
-	isOver := false
-	winner := ""
-	currentTick := 0
-	lastStateHash := initRes.StateHash
-	terminationReason := ""
-
-	// Run simulation loop over EngineClient IPC
-	for !isOver && currentTick < maxTicks {
-		actions := make(map[string]engine.PlayerActionInput)
-		for _, pID := range playerIDs {
-			perception := currentPerceptions[pID]
-			input := botSession.ExecuteTurn(ctx, currentTick, pID, perception)
-			actions[pID] = input
-
-			if input.Status != engine.ActionStatusValid {
-				recordAgentIssue(agentIssues, pID, statusToAgentError(input.Status))
-				if input.Status == engine.ActionStatusDisqualified && input.ErrorDetails == "timeout" {
-					terminationReason = "timeout"
-				}
-			}
+	session, err := StartSession(wallCtx, e.runtime, spec.MatchID, spec.Game.ID, spec.Seed, spec.Limits, launches)
+	if err != nil {
+		return nil, fail(model.ErrorSandbox, "%v", err)
+	}
+	sessionClosed := false
+	defer func() {
+		if !sessionClosed {
+			session.Close("", "aborted")
 		}
+	}()
 
-		tickRes, err := engineClient.AdvanceTick(ctx, engine.AdvanceTickRequest{
-			Tick:    currentTick,
-			Actions: actions,
-		})
+	perceptions := init.Perceptions
+	tick, stateHash, winner, over := 0, init.StateHash, "", false
+	for !over {
+		if err := wallCtx.Err(); err != nil {
+			if ctx.Err() != nil {
+				return nil, &RunError{Class: model.ErrorLeaseLost, Err: ctx.Err()}
+			}
+			return nil, fail(model.ErrorInfrastructure, "run exceeded wall time of %dms", spec.Limits.WallTimeMs)
+		}
+		if tick >= spec.Limits.MaxTicks {
+			return nil, fail(model.ErrorEngine, "engine did not finish within max_ticks")
+		}
+		actions := session.Turn(wallCtx, tick, perceptions)
+		result, err := client.AdvanceTick(wallCtx, engine.AdvanceTickRequest{Tick: tick, Actions: actions})
 		if err != nil {
-			executionErr = err
-			tracer.ErrorEvent(ctx, tracer.ScopeMatch, "game.tick.failed", "El motor falló durante el avance de tick",
-				tracer.Origin(tracer.OriginGame), tracer.Int("tick", currentTick), tracer.Err(err))
-			break
-		}
-		if tickRes.Tick != currentTick+1 {
-			executionErr = fmt.Errorf("engine tick mismatch: got state %d after action %d", tickRes.Tick, currentTick)
-			break
-		}
-		if !tickRes.IsOver {
-			if err := validatePerceptions(tickRes.Perceptions, playerIDs, tickRes.Tick); err != nil {
-				executionErr = err
-				break
+			if ctx.Err() != nil {
+				return nil, &RunError{Class: model.ErrorLeaseLost, Err: ctx.Err()}
 			}
+			return nil, fail(model.ErrorEngine, "advance tick %d: %v", tick, err)
 		}
-
-		if err := replayWriter.WriteSnapshot(model.ReplaySnapshot{
-			Tick: tickRes.Tick, PublicSnapshot: tickRes.PublicSnapshot,
-			Events: tickRes.Events, StateHash: tickRes.StateHash,
-		}); err != nil {
-			executionErr = fmt.Errorf("write replay snapshot %d: %w", tickRes.Tick, err)
-			break
+		if result.Tick != tick+1 {
+			return nil, fail(model.ErrorEngine, "engine returned state %d after action %d", result.Tick, tick)
 		}
-
-		currentPerceptions = tickRes.Perceptions
-		isOver = tickRes.IsOver
-		if tickRes.Winner != "" {
-			winner = tickRes.Winner
+		if err := writer.WriteSnapshot(replay.Snapshot{Tick: result.Tick, StateHash: result.StateHash, Events: result.Events,
+			PublicSnapshot: result.PublicSnapshot}); err != nil {
+			return nil, fail(model.ErrorEngine, "snapshot %d rejected: %v", result.Tick, err)
 		}
-		currentTick = tickRes.Tick
-		lastStateHash = tickRes.StateHash
+		tick, stateHash, perceptions, over = result.Tick, result.StateHash, result.Perceptions, result.IsOver
+		if result.Winner != "" {
+			winner = result.Winner
+		}
 	}
 
-	if executionErr != nil {
-		botSession.Close(ctx, "", "execution_error")
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		_ = e.svc.DiscardReplay(ctx, replayID)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, executionErr.Error())
-		}
-		logAgentIssueSummaries(ctx, agentIssues)
-		return executionErr
-	}
-
-	finishReason := "score_limit"
-	if terminationReason != "" {
-		finishReason = terminationReason
+	reason := "score_limit"
+	if dq := session.Disqualifications(); len(dq) > 0 {
+		reason = "timeout"
 	} else if winner != "" {
-		finishReason = "eliminated"
+		reason = "eliminated"
 	}
-
-	botSession.Close(ctx, winner, finishReason)
-
-	matchRes, err := engineClient.FinishMatch(ctx, finishReason)
+	session.Close(winner, reason)
+	sessionClosed = true
+	final, err := client.FinishMatch(wallCtx, reason)
 	if err != nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		return nil, fail(model.ErrorEngine, "finish match: %v", err)
+	}
+	if final.FinalTick != tick || final.FinalStateHash != stateHash {
+		return nil, fail(model.ErrorEngine, "engine final state does not match the last simulated tick")
+	}
+	if final.Reason != reason {
+		return nil, fail(model.ErrorEngine, "engine final reason %q, expected %q", final.Reason, reason)
+	}
+	ranks := map[string]engine.PlayerRank{}
+	for _, r := range final.Rankings {
+		ranks[r.PlayerID] = r
+	}
+	disq := session.Disqualifications()
+	outcomes := make([]model.SlotOutcome, 0, len(players))
+	for _, id := range players {
+		rank, ok := ranks[id]
+		score, scored := final.Scores[id]
+		if !ok || !scored {
+			return nil, fail(model.ErrorEngine, "engine returned no rank or score for slot %s", id)
 		}
-		return fmt.Errorf("finish Starfighter match: %w", err)
-	}
-	if matchRes == nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, "engine returned no final match result")
+		details := map[string]any{}
+		if cause, ok := disq[id]; ok {
+			details["disqualification"] = cause
 		}
-		return errors.New("engine returned no final match result")
+		outcomes = append(outcomes, model.SlotOutcome{SlotID: id, Score: score, Rank: rank.Rank, Disqualified: disq[id] != "", Details: details})
 	}
-	if matchRes.FinalTick != currentTick {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		errMismatch := fmt.Sprintf("engine final tick mismatch: got %d, expected %d", matchRes.FinalTick, currentTick)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, errMismatch)
-		}
-		return fmt.Errorf("engine final tick mismatch: got %d, expected %d", matchRes.FinalTick, currentTick)
+	if final.Winner != "" {
+		winner = final.Winner
 	}
-	if matchRes.Reason != finishReason {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		errReason := fmt.Sprintf("engine final reason mismatch: got %q, expected %q", matchRes.Reason, finishReason)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, errReason)
-		}
-		return fmt.Errorf("engine final reason mismatch: got %q, expected %q", matchRes.Reason, finishReason)
+	if err := writer.Complete(replay.Result{FinalTick: tick, Winner: winner, Scores: final.Scores, Reason: reason,
+		FinalStateHash: stateHash, FinishedAt: time.Now().UTC()}); err != nil {
+		return nil, fail(model.ErrorInfrastructure, "seal replay: %v", err)
 	}
-	if matchRes.FinalStateHash != lastStateHash {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, fmt.Sprintf("engine final state hash does not match state %d", currentTick))
-		}
-		return fmt.Errorf("engine final state hash does not match state %d", currentTick)
+	if err := gz.Close(); err != nil {
+		return nil, fail(model.ErrorInfrastructure, "compress replay: %v", err)
 	}
-	if matchRes.Scores == nil {
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, "engine returned no final scores")
-		}
-		return errors.New("engine returned no final scores")
+	if err := pending.Commit(); err != nil {
+		return nil, fail(model.ErrorInfrastructure, "commit replay staging: %v", err)
 	}
-	scores := matchRes.Scores
-	rankings := matchRes.Rankings
-	finalWinner := winner
-	if matchRes.Winner != "" {
-		finalWinner = matchRes.Winner
-	}
-
-	if err := replayWriter.Complete(model.ReplayResult{
-		FinalTick: currentTick, Winner: finalWinner, Scores: scores,
-		Reason: finishReason, FinalStateHash: lastStateHash, FinishedAt: time.Now().UTC(),
-	}); err != nil {
-		tracer.ErrorEvent(ctx, tracer.ScopeReplay, "replay.save.failed", "No se pudo sellar el replay",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		return fmt.Errorf("seal authoritative replay: %w", err)
-	}
-	replayRecord.DurationTicks = replayWriter.FrameCount()
-	replayFinalPath := replayRecord.FilePath
-	if replayRecord.FilePath != "" && replaystream.IsZstdAvailable() {
-		if zstPath, err := replaystream.CompressZstd(ctx, replayRecord.FilePath); err == nil {
-			replayFinalPath = zstPath
-			tracer.InfoEvent(ctx, tracer.ScopeReplay, "replay.compressed", "Replay comprimido con Zstandard",
-				tracer.String("zst_path", zstPath))
-		}
-	}
-	replaySHA, replaySize := computeFileDigestAndSize(replayFinalPath)
-
-	// Build rankings list if not supplied by engine
-	if len(rankings) == 0 {
-		type rankedScore struct {
-			SubID string
-			Score int
-		}
-		var rankedList []rankedScore
-		for subID, sc := range scores {
-			rankedList = append(rankedList, rankedScore{SubID: subID, Score: sc})
-		}
-		sort.Slice(rankedList, func(i, j int) bool {
-			return rankedList[i].Score > rankedList[j].Score
-		})
-		for idx, item := range rankedList {
-			rankings = append(rankings, engine.PlayerRank{
-				PlayerID: item.SubID,
-				Rank:     idx + 1,
-				Score:    item.Score,
-			})
-		}
-	}
-
-	// Map slots to submissions for the match
-	slotIDMap := make(map[string]string)
-	if matchObj, err := e.svc.GetMatch(ctx, job.MatchId); err == nil && matchObj != nil {
-		for _, sl := range matchObj.Slots {
-			if sl.SubmissionId != "" {
-				slotIDMap[sl.SubmissionId] = sl.Id
-			}
-		}
-	}
-
-	now := time.Now().UTC()
-	resultsList := make([]model.Result, 0, len(rankings))
-	for _, item := range rankings {
-		status := "finished"
-		if item.Score <= 0 && len(rankings) > 1 {
-			status = "eliminated"
-		}
-		var slotID *string
-		if sid, ok := slotIDMap[item.PlayerID]; ok && sid != "" {
-			slotID = &sid
-		}
-		var runID *string
-		if job.RunId != "" {
-			runID = &job.RunId
-		}
-		resultsList = append(resultsList, model.Result{
-			Id:           uuid.New().String(),
-			MatchId:      job.MatchId,
-			MatchRunId:   runID,
-			SlotId:       slotID,
-			SubmissionId: item.PlayerID,
-			Score:        item.Score,
-			Rank:         item.Rank,
-			Status:       status,
-			Details:      fmt.Sprintf("Score: %d, Rank: %d", item.Score, item.Rank),
-			CreatedAt:    now,
-		})
-	}
-
-	commit := model.MatchResultCommit{
-		MatchID:           job.MatchId,
-		RunID:             job.RunId,
-		WorkerID:          "worker",
-		FencingToken:      job.FencingToken,
-		Status:            common.MatchStatusFinished,
-		TerminationReason: finishReason,
-		FinalTick:         currentTick,
-		FinalStateHash:    lastStateHash,
-		ReplayID:          replayID,
-		ReplaySHA256:      replaySHA,
-		ReplaySizeBytes:   replaySize,
-		ReplayPath:        replayFinalPath,
-		FinishedAt:        now,
-		Results:           resultsList,
-	}
-
-	if err := e.svc.CommitMatchResult(ctx, commit); err != nil {
-		persistenceFailures++
-		tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "match.commit.failed", "No se pudo realizar el commit cercado de la partida",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		_ = e.svc.DiscardReplay(ctx, replayID)
-		match.Status = common.MatchStatusFailed
-		_ = e.svc.UpdateMatch(ctx, match)
-		if job.RunId != "" {
-			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
-		}
-		return fmt.Errorf("commit match result: %w", err)
-	}
-
-	// Replay is published atomically only after DB commit succeeds
-	if _, pubErr := e.svc.PublishReplay(ctx, replayID); pubErr != nil {
-		tracer.WarnEvent(ctx, tracer.ScopeReplay, "replay.publish.failed", "No se pudo mover el replay a su ruta canónica",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(pubErr))
-	}
-
-	match.Status = common.MatchStatusFinished
-	match.ReplayId = replayID
-	match.FinishedAt = &now
-
-	// Update rankings for contest if contest is set
-	if job.ContestId != "" {
-		if _, err := e.svc.CalculateRankings(ctx, job.ContestId); err != nil {
-			persistenceFailures++
-			tracer.ErrorEvent(ctx, tracer.ScopeDatabase, "rankings.update.failed", "No se pudo actualizar la clasificación",
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-	}
-
-	logAgentIssueSummaries(ctx, agentIssues)
-	completionFields := []tracer.Field{
-		tracer.String("winner_id", finalWinner),
-		tracer.Int("ticks", replayWriter.FrameCount()),
-		tracer.Duration("elapsed", time.Since(startedAt)),
-	}
-	if persistenceFailures > 0 {
-		completionFields = append(completionFields, tracer.Int("persistence_failures", persistenceFailures))
-		tracer.WarnEvent(ctx, tracer.ScopeMatch, "match.completed_with_incidents", "Partida finalizada con incidencias", completionFields...)
-	} else {
-		tracer.InfoEvent(ctx, tracer.ScopeMatch, "match.completed", "Partida finalizada", completionFields...)
-	}
-	return nil
-}
-
-type agentIssueSummary struct {
-	total          int
-	timeouts       int
-	invalidActions int
-	unavailable    int
-	execution      int
-}
-
-// statusToAgentError maps a bot protocol status into the incident summary.
-func statusToAgentError(status string) error {
-	switch status {
-	case engine.ActionStatusTimeout:
-		return ErrAgentTimeout
-	case engine.ActionStatusInvalidOutput:
-		return ErrAgentInvalidAction
-	case engine.ActionStatusCrashed:
-		return ErrAgentExecution
-	case engine.ActionStatusDisqualified:
-		return ErrAgentTimeout
-	default:
-		return ErrAgentExecution
-	}
-}
-
-func recordAgentIssue(summaries map[string]*agentIssueSummary, playerID string, err error) {
-	summary := summaries[playerID]
-	if summary == nil {
-		summary = &agentIssueSummary{}
-		summaries[playerID] = summary
-	}
-	summary.total++
-	switch {
-	case errors.Is(err, ErrAgentTimeout):
-		summary.timeouts++
-	case errors.Is(err, ErrAgentInvalidAction):
-		summary.invalidActions++
-	case errors.Is(err, ErrAgentUnavailable):
-		summary.unavailable++
-	default:
-		summary.execution++
-	}
-}
-
-func logAgentIssueSummaries(ctx context.Context, summaries map[string]*agentIssueSummary) {
-	playerIDs := make([]string, 0, len(summaries))
-	for playerID := range summaries {
-		playerIDs = append(playerIDs, playerID)
-	}
-	sort.Strings(playerIDs)
-	for _, playerID := range playerIDs {
-		summary := summaries[playerID]
-		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.incidents.summary", "Incidencias del agente",
-			tracer.Origin(tracer.OriginAgent),
-			tracer.String("agent_id", playerID),
-			tracer.Int("total", summary.total),
-			tracer.Int("timeouts", summary.timeouts),
-			tracer.Int("invalid_actions", summary.invalidActions),
-			tracer.Int("unavailable", summary.unavailable),
-			tracer.Int("execution_failures", summary.execution),
-		)
-	}
-}
-
-func structToMap(obj interface{}) (map[string]interface{}, error) {
-	bytes, err := json.Marshal(obj)
+	committedReplay = true
+	sha, size, err := e.artifacts.Digest(stagingKey)
 	if err != nil {
-		return nil, err
+		return nil, fail(model.ErrorInfrastructure, "digest replay: %v", err)
 	}
-	var res map[string]interface{}
-	err = json.Unmarshal(bytes, &res)
-	return res, err
+	return &model.RunCompletion{Reservation: res, TerminationReason: reason, FinalTick: tick, FinalStateHash: stateHash,
+		Slots: outcomes, Replay: model.ReplayArtifact{ID: replayID, FormatVersion: spec.ReplayFormat, Compression: "gzip",
+			StagingKey: stagingKey, StorageKey: storageKey, SHA256: sha, SizeBytes: size, FrameCount: writer.FrameCount()}}, nil
 }
 
-func computeFileDigestAndSize(path string) (string, int64) {
-	if path == "" {
-		return "", 0
-	}
-	f, err := os.Open(path)
+func mustHash(spec model.ExecutionSpec) string {
+	h, err := spec.Hash()
 	if err != nil {
-		return "", 0
+		return ""
 	}
-	defer f.Close()
-	h := sha256.New()
-	size, err := io.Copy(h, f)
-	if err != nil {
-		return "", 0
-	}
-	return hex.EncodeToString(h.Sum(nil)), size
+	return h
+}
+
+// DiscardStagedReplay removes the staged replay of a run that will not be
+// committed. Called by the worker after FailRun.
+func (e *Executor) DiscardStagedReplay(runID string) error {
+	staging, _ := service.ReplayKeys(runID, "gzip")
+	return e.artifacts.Delete(staging)
 }

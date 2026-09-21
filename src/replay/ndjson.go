@@ -1,134 +1,175 @@
+// Package replay writes and validates the NDJSON replay stream
+// (agentrix-replay/2): one metadata line, one snapshot line per simulated
+// tick starting at 0, and one result line that seals the final state hash.
 package replay
 
 import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"sync"
-
-	"github.com/Agentrix-Group/Agentrix/src/model"
+	"time"
 )
 
-type StreamWriter interface {
-	WriteSnapshot(snapshot model.ReplaySnapshot) error
-	Complete(result model.ReplayResult) error
-	Close() error
-	FrameCount() int
+const FormatVersion = "agentrix-replay/2"
+
+type TickRate struct {
+	Numerator   int `json:"numerator"`
+	Denominator int `json:"denominator"`
 }
 
-type ndjsonWriter struct {
+type Participant struct {
+	PlayerID  string `json:"player_id"`
+	SlotIndex int    `json:"slot_index"`
+}
+
+type Metadata struct {
+	Type          string        `json:"type"`
+	Format        string        `json:"format"`
+	ReplayID      string        `json:"replay_id"`
+	MatchID       string        `json:"match_id"`
+	RunID         string        `json:"run_id"`
+	SpecHash      string        `json:"spec_hash"`
+	GameID        string        `json:"game_id"`
+	GameVersion   string        `json:"game_version"`
+	ConfigHash    string        `json:"config_hash"`
+	EngineVersion string        `json:"engine_version"`
+	EngineSHA256  string        `json:"engine_sha256"`
+	Seed          int64         `json:"seed"`
+	TickRate      TickRate      `json:"tick_rate"`
+	Participants  []Participant `json:"participants"`
+	CreatedAt     time.Time     `json:"created_at"`
+}
+
+type Snapshot struct {
+	Type           string          `json:"type"`
+	Tick           int             `json:"tick"`
+	StateHash      string          `json:"state_hash"`
+	Events         []string        `json:"events"`
+	PublicSnapshot json.RawMessage `json:"public_snapshot"`
+}
+
+type Result struct {
+	Type           string         `json:"type"`
+	FinalTick      int            `json:"final_tick"`
+	Winner         string         `json:"winner"`
+	Scores         map[string]int `json:"scores"`
+	Reason         string         `json:"reason"`
+	FinalStateHash string         `json:"final_state_hash"`
+	FinishedAt     time.Time      `json:"finished_at"`
+}
+
+type Document struct {
+	Metadata  Metadata
+	Snapshots []Snapshot
+	Result    Result
+}
+
+func (m Metadata) validate() error {
+	switch {
+	case m.ReplayID == "" || m.MatchID == "" || m.RunID == "" || m.GameID == "":
+		return errors.New("replay metadata requires replay, match, run and game identifiers")
+	case m.SpecHash == "" || m.EngineSHA256 == "" || m.ConfigHash == "":
+		return errors.New("replay metadata requires spec, engine and config digests")
+	case m.TickRate.Numerator <= 0 || m.TickRate.Denominator <= 0:
+		return errors.New("replay metadata requires a positive tick_rate")
+	case len(m.Participants) == 0 || m.CreatedAt.IsZero():
+		return errors.New("replay metadata requires participants and created_at")
+	}
+	seen := map[string]bool{}
+	for i, p := range m.Participants {
+		if p.PlayerID == "" || p.SlotIndex != i || seen[p.PlayerID] {
+			return fmt.Errorf("invalid replay participant %d", i)
+		}
+		seen[p.PlayerID] = true
+	}
+	return nil
+}
+
+// Writer streams a replay. Every method returns its error; nothing is
+// silently skipped.
+type Writer struct {
 	mu        sync.Mutex
+	out       *bufio.Writer
 	encoder   *json.Encoder
-	closer    io.Closer
 	frames    int
 	lastHash  string
 	completed bool
-	closed    bool
 }
 
-func NewStreamWriter(destination io.WriteCloser, metadata model.ReplayMetadata) (StreamWriter, error) {
-	if destination == nil {
-		return nil, errors.New("replay destination is nil")
-	}
-	if !validMetadata(metadata) {
-		return nil, errors.New("invalid Starfighter replay metadata")
-	}
-	metadata.Type = "metadata"
-	writer := &ndjsonWriter{encoder: json.NewEncoder(destination), closer: destination}
-	writer.encoder.SetEscapeHTML(false)
-	if err := writer.encoder.Encode(metadata); err != nil {
-		_ = destination.Close()
+func NewWriter(destination io.Writer, metadata Metadata) (*Writer, error) {
+	metadata.Type, metadata.Format = "metadata", FormatVersion
+	if err := metadata.validate(); err != nil {
 		return nil, err
 	}
-	return writer, nil
+	buffered := bufio.NewWriterSize(destination, 64*1024)
+	w := &Writer{out: buffered, encoder: json.NewEncoder(buffered)}
+	w.encoder.SetEscapeHTML(false)
+	if err := w.encoder.Encode(metadata); err != nil {
+		return nil, err
+	}
+	return w, nil
 }
 
-func (w *ndjsonWriter) WriteSnapshot(snapshot model.ReplaySnapshot) error {
+func (w *Writer) WriteSnapshot(s Snapshot) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed || w.completed {
-		return errors.New("replay stream is closed")
+	if w.completed {
+		return errors.New("replay already sealed")
 	}
-	if !json.Valid(snapshot.PublicSnapshot) {
-		return errors.New("public snapshot is not valid JSON")
+	if s.Tick != w.frames {
+		return fmt.Errorf("replay snapshot tick %d out of sequence (expected %d)", s.Tick, w.frames)
 	}
-	var publicState struct {
-		Tick      *int  `json:"tick"`
-		StateHash string `json:"stateHash"`
+	if s.StateHash == "" || !json.Valid(s.PublicSnapshot) {
+		return errors.New("replay snapshot requires a state hash and a JSON public snapshot")
 	}
-	if err := json.Unmarshal(snapshot.PublicSnapshot, &publicState); err != nil || publicState.Tick == nil {
-		return errors.New("public snapshot must be a JSON object")
+	if s.Events == nil {
+		s.Events = []string{}
 	}
-	if snapshot.Tick != w.frames {
-		return errors.New("replay snapshots must start at tick 0 and remain sequential")
-	}
-	if *publicState.Tick != snapshot.Tick {
-		return errors.New("public snapshot tick does not match replay envelope")
-	}
-	if snapshot.StateHash == "" || publicState.StateHash != snapshot.StateHash {
-		return errors.New("public snapshot state hash does not match replay envelope")
-	}
-	snapshot.Type = "snapshot"
-	if err := w.encoder.Encode(snapshot); err != nil {
+	s.Type = "snapshot"
+	if err := w.encoder.Encode(s); err != nil {
 		return err
 	}
 	w.frames++
-	w.lastHash = snapshot.StateHash
+	w.lastHash = s.StateHash
 	return nil
 }
 
-func (w *ndjsonWriter) Complete(result model.ReplayResult) error {
+// Complete writes the result line and flushes the stream.
+func (w *Writer) Complete(r Result) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if w.closed {
-		return errors.New("replay stream is closed")
-	}
 	if w.completed {
-		return errors.New("replay result already written")
+		return errors.New("replay already sealed")
 	}
-	if w.frames == 0 || result.FinalTick != w.frames-1 {
-		return errors.New("replay result final tick does not match snapshots")
+	if w.frames == 0 || r.FinalTick != w.frames-1 || r.FinalStateHash != w.lastHash {
+		return errors.New("replay result does not seal the final snapshot")
 	}
-	if result.FinalStateHash == "" || result.FinalStateHash != w.lastHash {
-		return errors.New("replay result state hash does not match final snapshot")
+	if r.Scores == nil || r.Reason == "" || r.FinishedAt.IsZero() {
+		return errors.New("replay result requires scores, reason and finished_at")
 	}
-	if result.Scores == nil || result.FinishedAt.IsZero() {
-		return errors.New("replay result scores and finished_at are required")
-	}
-	if !validResultReason(result.Reason) {
-		return errors.New("invalid replay result reason")
-	}
-	result.Type = "result"
-	if err := w.encoder.Encode(result); err != nil {
+	r.Type = "result"
+	if err := w.encoder.Encode(r); err != nil {
 		return err
 	}
 	w.completed = true
-	return nil
+	return w.out.Flush()
 }
 
-func (w *ndjsonWriter) FrameCount() int {
+func (w *Writer) FrameCount() int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	return w.frames
 }
 
-func (w *ndjsonWriter) Close() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if w.closed {
-		return nil
-	}
-	w.closed = true
-	return w.closer.Close()
-}
-
-func DecodeNDJSON(source io.Reader) (*model.ReplayDocument, error) {
+// Decode validates a complete replay stream.
+func Decode(source io.Reader) (*Document, error) {
 	scanner := bufio.NewScanner(source)
-	scanner.Buffer(make([]byte, 64*1024), 4<<20)
-	document := &model.ReplayDocument{}
-	seenMetadata := false
-	seenResult := false
+	scanner.Buffer(make([]byte, 64*1024), 8<<20)
+	doc := &Document{}
+	state := 0 // 0 metadata expected, 1 snapshots, 2 sealed
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		var envelope struct {
@@ -137,77 +178,45 @@ func DecodeNDJSON(source io.Reader) (*model.ReplayDocument, error) {
 		if err := json.Unmarshal(line, &envelope); err != nil {
 			return nil, err
 		}
-		switch envelope.Type {
-		case "metadata":
-			if seenMetadata || len(document.Snapshots) > 0 {
-				return nil, errors.New("replay metadata must be the first line")
-			}
-			if err := json.Unmarshal(line, &document.Metadata); err != nil {
+		switch {
+		case envelope.Type == "metadata" && state == 0:
+			if err := json.Unmarshal(line, &doc.Metadata); err != nil {
 				return nil, err
 			}
-			if !validMetadata(document.Metadata) {
-				return nil, errors.New("invalid Starfighter replay metadata")
+			if doc.Metadata.Format != FormatVersion {
+				return nil, fmt.Errorf("unsupported replay format %q", doc.Metadata.Format)
 			}
-			seenMetadata = true
-		case "snapshot":
-			if !seenMetadata || seenResult {
-				return nil, errors.New("snapshot outside replay body")
-			}
-			var snapshot model.ReplaySnapshot
-			if err := json.Unmarshal(line, &snapshot); err != nil {
+			if err := doc.Metadata.validate(); err != nil {
 				return nil, err
 			}
-			var publicState struct {
-				Tick      *int  `json:"tick"`
-				StateHash string `json:"stateHash"`
+			state = 1
+		case envelope.Type == "snapshot" && state == 1:
+			var s Snapshot
+			if err := json.Unmarshal(line, &s); err != nil {
+				return nil, err
 			}
-			if err := json.Unmarshal(snapshot.PublicSnapshot, &publicState); err != nil || publicState.Tick == nil ||
-				snapshot.Tick != len(document.Snapshots) || *publicState.Tick != snapshot.Tick || snapshot.StateHash == "" ||
-				publicState.StateHash != snapshot.StateHash {
+			if s.Tick != len(doc.Snapshots) || s.StateHash == "" {
 				return nil, errors.New("invalid replay snapshot sequence")
 			}
-			document.Snapshots = append(document.Snapshots, snapshot)
-		case "result":
-			if !seenMetadata || seenResult {
-				return nil, errors.New("invalid replay result line")
-			}
-			if err := json.Unmarshal(line, &document.Result); err != nil {
+			doc.Snapshots = append(doc.Snapshots, s)
+		case envelope.Type == "result" && state == 1:
+			if err := json.Unmarshal(line, &doc.Result); err != nil {
 				return nil, err
 			}
-			if !validResultReason(document.Result.Reason) || document.Result.Scores == nil || document.Result.FinishedAt.IsZero() {
-				return nil, errors.New("invalid replay result reason")
-			}
-			seenResult = true
+			state = 2
 		default:
-			return nil, errors.New("unknown replay line type")
+			return nil, fmt.Errorf("unexpected replay line %q", envelope.Type)
 		}
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	if !seenMetadata || !seenResult || len(document.Snapshots) == 0 {
+	if state != 2 || len(doc.Snapshots) == 0 {
 		return nil, errors.New("incomplete replay stream")
 	}
-	last := document.Snapshots[len(document.Snapshots)-1]
-	if document.Result.FinalTick != last.Tick || document.Result.FinalStateHash != last.StateHash {
+	last := doc.Snapshots[len(doc.Snapshots)-1]
+	if doc.Result.FinalTick != last.Tick || doc.Result.FinalStateHash != last.StateHash {
 		return nil, errors.New("replay result does not seal the final snapshot")
 	}
-	return document, nil
-}
-
-func validResultReason(reason string) bool {
-	switch reason {
-	case "eliminated", "timeout", "score_limit":
-		return true
-	default:
-		return false
-	}
-}
-
-func validMetadata(metadata model.ReplayMetadata) bool {
-	if metadata.MatchID == "" || metadata.ReplayID == "" || metadata.GameID != "starfighter" ||
-		len(metadata.Participants) != 2 || metadata.FixedTimestepMs <= 0 || metadata.CreatedAt.IsZero() {
-		return false
-	}
-	return metadata.Participants[0] != "" && metadata.Participants[1] != "" && metadata.Participants[0] != metadata.Participants[1]
+	return doc, nil
 }

@@ -1,114 +1,89 @@
 package config
 
 import (
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewConfiguration(t *testing.T) {
-	r := require.New(t)
-
-	cfg := NewConfiguration()
-	r.NotNil(cfg)
-	r.Equal("dev", cfg.Mode)
-	r.Equal("8080", cfg.Server.Port)
-	r.Equal("5432", cfg.Database.Port)
-	r.Equal("postgres", cfg.Database.Username)
-	r.Equal("pgx", cfg.Database.Driver)
-	r.Equal("agentrix", cfg.Database.Name)
-	r.Equal("info", cfg.Logging.Level)
-	r.Equal("console", cfg.Logging.Format)
-	r.Equal("auto", cfg.Logging.Color)
+func setenv(t *testing.T, kv map[string]string) {
+	t.Helper()
+	for _, k := range []string{"MODE", "ACCESS_SECRET", "CORS_ALLOWED_ORIGINS", "TRUSTED_PROXIES", "AGENTRIX_SANDBOX", "COOKIE_SECURE",
+		"COOKIE_SAMESITE", "ACCESS_TOKEN_TTL"} {
+		t.Setenv(k, "")
+	}
+	for k, v := range kv {
+		t.Setenv(k, v)
+	}
 }
 
-func TestLoggingConfiguration(t *testing.T) {
-	t.Setenv("LOG_LEVEL", "debug")
-	t.Setenv("LOG_FORMAT", "json")
-	t.Setenv("LOG_COLOR", "never")
+const strong = "0123456789abcdef0123456789abcdef-strong"
 
-	cfg := NewConfiguration()
-	require.Equal(t, "debug", cfg.Logging.Level)
-	require.Equal(t, "json", cfg.Logging.Format)
-	require.Equal(t, "never", cfg.Logging.Color)
+func TestDevModeUsesEphemeralSecret(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "dev"})
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Auth.EphemeralSecret)
+	require.Len(t, cfg.Auth.AccessSecret, 48)
 }
 
-func TestDeployedModeDefaultsToJSONLogs(t *testing.T) {
-	t.Setenv("MODE", ModeRailway)
-	t.Setenv("LOG_FORMAT", "")
-
-	cfg := NewConfiguration()
-	require.Equal(t, "json", cfg.Logging.Format)
+func TestSecretsAreMandatoryOutsideDev(t *testing.T) {
+	for _, mode := range []string{"demo", "production"} {
+		setenv(t, map[string]string{"MODE": mode, "COOKIE_SECURE": "true"})
+		_, err := Load()
+		require.ErrorContains(t, err, "ACCESS_SECRET is required", mode)
+	}
+	setenv(t, map[string]string{"MODE": "production", "ACCESS_SECRET": "short", "COOKIE_SECURE": "true"})
+	_, err := Load()
+	require.ErrorContains(t, err, "at least 32 bytes")
+	setenv(t, map[string]string{"MODE": "production", "ACCESS_SECRET": "agentrix-access-secret-key-change-in-prod", "COOKIE_SECURE": "true"})
+	_, err = Load()
+	require.ErrorContains(t, err, "placeholder")
 }
 
-func TestGetStringDBConnection(t *testing.T) {
-	r := require.New(t)
-
-	cfg := NewConfiguration()
-	cfg.Database.Username = "testuser"
-	cfg.Database.Password = "testpass"
-	cfg.Database.Host = "localhost"
-	cfg.Database.Port = "5432"
-	cfg.Database.Name = "agentrix_test"
-	cfg.Database.SSLMode = "disable"
-
-	connStr := cfg.GetStringDBConnection()
-	r.Equal("postgres://testuser:testpass@localhost:5432/agentrix_test?sslmode=disable", connStr)
-
-	// Test GCP Mode
-	cfg.Mode = ModeGCP
-	gcpConnStr := cfg.GetStringDBConnection()
-	r.Equal("postgres://testuser:testpass@/cloudsql/localhost/agentrix_test?sslmode=disable", gcpConnStr)
+func TestProductionRequiresSecureCookies(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "production", "ACCESS_SECRET": strong, "COOKIE_SECURE": "false"})
+	_, err := Load()
+	require.ErrorContains(t, err, "COOKIE_SECURE")
+	setenv(t, map[string]string{"MODE": "production", "ACCESS_SECRET": strong})
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.True(t, cfg.Auth.CookieSecure)
 }
 
-func TestEnvOverride(t *testing.T) {
-	r := require.New(t)
-
-	os.Setenv("PORT", "9090")
-	os.Setenv("DB_NAME", "custom_agentrix")
-	defer func() {
-		os.Unsetenv("PORT")
-		os.Unsetenv("DB_NAME")
-	}()
-
-	cfg := NewConfiguration()
-	r.Equal("9090", cfg.Server.Port)
-	r.Equal("custom_agentrix", cfg.Database.Name)
+func TestCORSWildcardIsRejected(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "dev", "CORS_ALLOWED_ORIGINS": "http://localhost:5173,*"})
+	_, err := Load()
+	require.ErrorContains(t, err, "cannot contain '*'")
+	setenv(t, map[string]string{"MODE": "dev", "CORS_ALLOWED_ORIGINS": "localhost:5173"})
+	_, err = Load()
+	require.ErrorContains(t, err, "invalid CORS origin")
 }
 
-func TestLoadDotEnv(t *testing.T) {
-	r := require.New(t)
+func TestDirectSandboxOnlyInDev(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "demo", "ACCESS_SECRET": strong, "AGENTRIX_SANDBOX": "direct"})
+	_, err := Load()
+	require.ErrorContains(t, err, "only allowed in dev/test")
+	setenv(t, map[string]string{"MODE": "test", "AGENTRIX_SANDBOX": "direct"})
+	_, err = Load()
+	require.NoError(t, err)
+}
 
-	// Create temporary env file
-	tmpFile, err := os.CreateTemp("", ".env.test.*")
-	r.NoError(err)
-	defer os.Remove(tmpFile.Name())
+func TestTrustedProxiesAndDSNEscaping(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "dev", "TRUSTED_PROXIES": "10.0.0.0/8,127.0.0.1"})
+	t.Setenv("DB_PASSWORD", "p@ss:w/rd")
+	cfg, err := Load()
+	require.NoError(t, err)
+	require.Len(t, cfg.HTTP.TrustedProxies, 2)
+	require.True(t, strings.Contains(cfg.DSN(), "p%40ss%3Aw%2Frd"), cfg.DSN())
+	setenv(t, map[string]string{"MODE": "dev", "TRUSTED_PROXIES": "not-an-ip"})
+	_, err = Load()
+	require.Error(t, err)
+}
 
-	content := `
-# This is a comment
-TEST_KEY_ONE=hello_world
-TEST_KEY_QUOTED="quoted_val"
-TEST_KEY_SINGLE='single_val'
-TEST_EXISTING=new_val
-`
-	_, err = tmpFile.WriteString(content)
-	r.NoError(err)
-	tmpFile.Close()
-
-	// Pre-set TEST_EXISTING to ensure it is not overwritten
-	os.Setenv("TEST_EXISTING", "original_val")
-	defer func() {
-		os.Unsetenv("TEST_KEY_ONE")
-		os.Unsetenv("TEST_KEY_QUOTED")
-		os.Unsetenv("TEST_KEY_SINGLE")
-		os.Unsetenv("TEST_EXISTING")
-	}()
-
-	loadDotEnv(tmpFile.Name())
-
-	r.Equal("hello_world", os.Getenv("TEST_KEY_ONE"))
-	r.Equal("quoted_val", os.Getenv("TEST_KEY_QUOTED"))
-	r.Equal("single_val", os.Getenv("TEST_KEY_SINGLE"))
-	r.Equal("original_val", os.Getenv("TEST_EXISTING"))
+func TestAccessTokenTTLIsBounded(t *testing.T) {
+	setenv(t, map[string]string{"MODE": "dev", "ACCESS_TOKEN_TTL": "2h"})
+	_, err := Load()
+	require.ErrorContains(t, err, "must not exceed 30m")
 }

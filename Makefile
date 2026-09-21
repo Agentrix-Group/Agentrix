@@ -1,209 +1,87 @@
-# Variables and Environment
--include .env
-export
-
-BINARY_NAME=agentrix
-BUILD_DIR=bin
-MAIN_PATH=main.go
-DB_SCRIPT=./script/setup_postgres.sh
-TEST_PARALLEL=4
-GO_PACKAGES=./...
-DB_HOST ?= localhost
-DB_PORT ?= 5432
-DB_USER ?= postgres
-DB_NAME ?= agentrix
-
+# Agentrix developer and CI entry points. Quality gates check and fail; they
+# never rewrite files (use `make fmt` explicitly to format).
+SHELL := /bin/bash
 .DEFAULT_GOAL := help
-.PHONY: help setup setup-all agentrix-setup db-setup db-migrate db-status db-reset db-seed db-bootstrap \
-        build build-all build-engine build-engines lint test test-race test-integration coverage run clean \
-        web-install web-build web-dev demo-up demo-down demo-reset demo-smoke
+COMPOSE ?= docker compose
+GO ?= go
+GOFLAGS_RO := -mod=readonly
+PG_TEST_PORT ?= 55432
 
-# Show available targets
+.PHONY: help fmt fmt-check vet test test-race test-integration engine engine-test web-install web-lint web-test web-build web-e2e \
+        check demo-up demo-down demo-reset demo-smoke openapi-check
+
 help:
-	@echo "Agentrix Platform - Available Targets:"
-	@echo ""
-	@echo "  Demo & Observability:"
-	@echo "    make demo-up        - Start full stack with Docker Compose"
-	@echo "    make demo-down      - Stop Docker Compose stack"
-	@echo "    make demo-reset     - Reset migrations and run authentic bootstrap"
-	@echo "    make demo-smoke     - Run 13-point end-to-end smoke verification"
-	@echo ""
-	@echo "  Setup & Initialization:"
-	@echo "    make setup          - Setup backend dependencies and PostgreSQL database"
-	@echo "    make setup-all      - Full setup (Go deps + PostgreSQL + Frontend npm)"
-	@echo "    make agentrix-setup - Install Go dependencies (tidy + download)"
-	@echo ""
-	@echo "  Database (PostgreSQL & Goose):"
-	@echo "    make db-migrate     - Apply forward-only database migrations"
-	@echo "    make db-status      - Check connection, schema version, and pending migrations"
-	@echo "    make db-setup       - Initialize database schema and seeds"
-	@echo "    make db-seed        - Reapply seed data (00_seeds_postgresql.sql)"
-	@echo "    make db-reset       - Recreate database from scratch (drop, schema, seeds)"
-	@echo ""
-	@echo "  Quality & Testing:"
-	@echo "    make lint           - Format (gofmt) and analyze (go vet) code"
-	@echo "    make test           - Run all tests in parallel"
-	@echo "    make test-race      - Run all tests with race detector enabled"
-	@echo "    make test-integration - Run integration tests with PostgreSQL"
-	@echo "    make coverage       - Generate coverage profile and display percentage"
-	@echo ""
-	@echo "  Compilation & Execution:"
-	@echo "    make build          - Lint, test, and compile Go server (bin/agentrix)"
-	@echo "    make build-all      - Compile both backend binary and frontend web bundle"
-	@echo "    make build-engine   - Build Starfighter Rust engine (bin/starfighter-engine)"
-	@echo "    make build-engines  - Build Starfighter Rust engine (bin/starfighter-engine)"
-	@echo "    make run            - Run Go server directly"
-	@echo "    make clean          - Remove binaries, test artifacts, coverage, and dist"
-	@echo ""
-	@echo "  Frontend Web (React + Vite):"
-	@echo "    make web-install    - Install npm dependencies in web/"
-	@echo "    make web-dev        - Start frontend dev server with API proxy"
-	@echo "    make web-build      - Build production frontend bundle in web/dist/"
-	@echo ""
+	@echo "make check            gofmt check, vet, unit + race tests"
+	@echo "make test-integration PostgreSQL + sandbox + engine integration suite (no skips allowed)"
+	@echo "make engine           build bin/starfighter-engine from the commit pinned in engine.lock"
+	@echo "make engine-test      rustfmt check, clippy -D warnings and tests of ../agentrix_engine"
+	@echo "make web-lint|web-test|web-build|web-e2e"
+	@echo "make demo-up          compose stack from scratch + demo bootstrap"
+	@echo "make demo-smoke       run the HTTP smoke against the compose stack"
+	@echo "make demo-reset       remove ONLY this project's containers and volumes, then demo-up"
 
-# Full setup (Go backend + PostgreSQL)
-setup: agentrix-setup db-setup
-	@echo "Backend and database setup complete!"
+fmt:
+	gofmt -w $$(git ls-files '*.go')
 
-# Fullstack setup (Go backend + PostgreSQL + Frontend)
-setup-all: setup web-install
-	@echo "All backend, database, and frontend dependencies setup complete!"
+fmt-check:
+	@out=$$(gofmt -l $$(git ls-files '*.go' 2>/dev/null || find . -name '*.go' -not -path './web/*')); \
+	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
-# Install Go dependencies
-agentrix-setup:
-	@echo "Installing Go dependencies..."
-	go mod tidy
-	go mod download
-	@echo "Go dependencies installed!"
+vet:
+	$(GO) vet $(GOFLAGS_RO) ./...
 
-# Setup PostgreSQL database (schema + seeds)
-db-setup:
-	@echo "Setting up PostgreSQL database..."
-	@$(DB_SCRIPT) || (echo "Database setup failed!" && exit 1)
-
-# Apply forward-only database migrations
-db-migrate:
-	@echo "Applying forward-only database migrations..."
-	@go run ./cmd/migrate up
-
-# Check PostgreSQL connection status, schema version, and pending migrations
-db-status:
-	@echo "Checking PostgreSQL connection on $(DB_HOST):$(DB_PORT)..."
-	@pg_isready -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) || (echo "PostgreSQL is not reachable!" && exit 1)
-	@go run ./cmd/migrate status
-
-# Reapply seed data only
-db-seed:
-	@echo "Applying seed data to $(DB_NAME)..."
-	psql -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) -d $(DB_NAME) -f ./script/data/00_seeds_postgresql.sql
-	@echo "Seeds applied successfully!"
-
-# Idempotently bootstrap Starfighter demo environment (migrations + seeds + bots + demo match & replay)
-db-bootstrap:
-	@echo "Bootstrapping Starfighter demo environment..."
-	@go run ./cmd/bootstrap
-
-# Reset database completely (drop database, re-run DDL and seeds)
-db-reset:
-	@echo "Resetting database $(DB_NAME)..."
-	@dropdb --if-exists -h $(DB_HOST) -p $(DB_PORT) -U $(DB_USER) $(DB_NAME)
-	@$(DB_SCRIPT)
-	@echo "Database reset complete!"
-
-# Build the backend application (lint + test + compile)
-build: lint test
-	@echo "Building application..."
-	mkdir -p $(BUILD_DIR)
-	go build -o $(BUILD_DIR)/$(BINARY_NAME) $(MAIN_PATH)
-	@echo "Build complete!"
-
-# Fullstack build (backend binary + frontend production bundle)
-build-all: build web-build
-	@echo "Fullstack build complete (backend + frontend)!"
-
-# Starfighter Rust engine build
-ENGINE_SRC ?= ../agentrix_engine
-build-engine:
-	@echo "Building Starfighter Rust engine..."
-	@./script/build_engine.sh $(ENGINE_SRC) $(BUILD_DIR)/starfighter-engine
-
-build-engines: build-engine
-
-# Lint the code
-lint:
-	@echo "Linting code..."
-	@echo "Running gofmt with simplify..."
-	gofmt -s -w .
-	@echo "Running go vet..."
-	go vet $(GO_PACKAGES)
-	@echo "Lint complete!"
-
-# Run tests
 test:
-	@echo "Running tests..."
-	go test -short -v -parallel $(TEST_PARALLEL) $(GO_PACKAGES)
-	@echo "Test summary complete!"
+	$(GO) test $(GOFLAGS_RO) -count=1 $$($(GO) list ./... | grep -v /test/integration)
 
-# Run tests with race detection
 test-race:
-	@echo "Running tests with race detector..."
-	go test -race -v $(GO_PACKAGES)
-	@echo "Race detection test complete!"
+	$(GO) test $(GOFLAGS_RO) -race -count=1 $$($(GO) list ./... | grep -v /test/integration)
 
-# Run integration tests against PostgreSQL
+check: fmt-check vet test-race
+
+# Requires PostgreSQL 16 reachable with DB_* variables, bubblewrap and the
+# pinned engine binary. Any skipped test fails the target.
 test-integration:
-	@echo "Running integration tests against PostgreSQL..."
-	@GOCACHE=/tmp/agentrix-go-cache go test -v ./test/integration/...
+	@set -o pipefail; AGENTRIX_REQUIRE_DB=1 AGENTRIX_REQUIRE_SANDBOX=1 AGENTRIX_REQUIRE_ENGINE=1 \
+	  $(GO) test $(GOFLAGS_RO) -race -count=1 -v -timeout 20m ./test/integration/ ./src/executor/ | tee integration.log
+	@if grep -q -- '--- SKIP' integration.log; then echo "unexpected skipped tests"; grep -- '--- SKIP' integration.log; exit 1; fi
 
-# Run tests with coverage
-coverage:
-	@mkdir -p $(BUILD_DIR)
-	@go test -coverprofile=$(BUILD_DIR)/coverage.out ./...
-	@cat $(BUILD_DIR)/coverage.out | grep -v "mock" | grep -v "_test.go" > $(BUILD_DIR)/coverage.filtered.out
-	@go tool cover -func=$(BUILD_DIR)/coverage.filtered.out | grep "total:" | awk '{print $$3}'
+openapi-check:
+	$(GO) test $(GOFLAGS_RO) -count=1 -run 'TestOpenAPI|TestRoutePolicy' ./src/server/
 
-# Run the backend server directly
-run:
-	@echo "Starting server..."
-	go run $(MAIN_PATH)
+engine:
+	./script/build_engine.sh
 
-# Clean build artifacts, temporary test files, and caches
-clean:
-	@echo "Cleaning build artifacts..."
-	rm -rf $(BUILD_DIR)/
-	rm -rf web/dist/
-	rm -rf artifacts/replays/* artifacts/submissions/*
-	rm -f coverage.out coverage.filtered.out
-	go clean -cache
-	@echo "Clean complete!"
+engine-test:
+	cd ../agentrix_engine && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked
 
-# Frontend Web targets
 web-install:
-	@echo "Installing frontend dependencies..."
-	cd web && npm install
+	cd web && npm ci
+
+web-lint:
+	cd web && npm run lint
+
+web-test:
+	cd web && npm test && npm run test:parity
 
 web-build:
-	@echo "Building frontend application..."
-	cd web && npm run build
+	cd web && npm run build && npm run size
 
-web-dev:
-	@echo "Starting frontend dev server..."
-	cd web && npm run dev
+web-e2e:
+	cd web && npx playwright test
 
-# Demo & Observability targets (Fase 7)
 demo-up:
-	@echo "Starting full Agentrix demo stack with Docker Compose..."
-	docker compose up --build -d
-
-demo-down:
-	@echo "Stopping Agentrix demo stack..."
-	docker compose down
-
-demo-reset:
-	@echo "Resetting database and running authentic bootstrap..."
-	@go run ./cmd/migrate up
-	@go run ./cmd/bootstrap
+	./script/checkout_engine.sh
+	$(COMPOSE) --profile demo up --build -d
+	$(COMPOSE) --profile demo wait bootstrap 2>/dev/null || $(COMPOSE) logs -f bootstrap
 
 demo-smoke:
-	@echo "Running end-to-end smoke verification..."
-	@go run ./cmd/smoke/main.go
+	$(COMPOSE) --profile smoke run --rm smoke
+
+demo-down:
+	$(COMPOSE) down
+
+# Scoped to the compose project "agentrix-demo": removes its containers and
+# named volumes only.
+demo-reset:
+	$(COMPOSE) --profile demo --profile smoke down --volumes --remove-orphans
+	$(MAKE) demo-up

@@ -1,7 +1,11 @@
+// Command api serves the Agentrix HTTP API. It never executes bots or the
+// engine and refuses to start against a database that is not the canonical
+// baseline.
 package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -9,10 +13,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/config"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/database"
-	"github.com/Agentrix-Group/Agentrix/src/executor"
+	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/Agentrix-Group/Agentrix/src/server"
 	"github.com/Agentrix-Group/Agentrix/src/service"
@@ -20,91 +25,105 @@ import (
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		os.Exit(healthcheck())
+	}
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "agentrix-api: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	cfg := config.NewConfiguration()
-	tracer.Configure(tracer.Config{
-		Level:  cfg.Logging.Level,
-		Format: cfg.Logging.Format,
-		Color:  cfg.Logging.Color,
-	})
-	defer tracer.Sync()
-	tracer.InfoEvent(ctx, tracer.ScopeSystem, "api.starting", "Agentrix API iniciando",
-		tracer.String("mode", cfg.Mode),
-	)
-
-	// Initialize Artifact Store
-	artifacts, err := connection.NewArtifactStore(ctx, cfg)
+func run() error {
+	cfg, err := config.Load()
 	if err != nil {
-		tracer.FatalEvent(ctx, tracer.ScopeArtifact, "artifact.unavailable", "No se pudo preparar el almacén de artefactos",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	tracer.Configure(tracer.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format, Color: cfg.Logging.Color})
+	defer func() { _ = tracer.Sync() }()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if cfg.Auth.EphemeralSecret {
+		tracer.WarnEvent(ctx, tracer.ScopeSystem, "auth.ephemeral_secret",
+			"ACCESS_SECRET not set: using a random per-process secret (dev/test only)")
 	}
 
-	// Initialize Database Connection
-	conn, err := connection.NewConnection(ctx, cfg)
+	svc, db, err := buildService(ctx, cfg)
 	if err != nil {
-		if cfg.Mode != config.ModeDev {
-			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "database.required", "En producción, la API requiere PostgreSQL configurado y disponible",
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-		tracer.WarnEvent(ctx, tracer.ScopeDatabase, "database.unavailable", "Sin conexión; API continúa en modo degradado",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-	} else {
-		defer conn.Close()
-		if err := database.CheckSchemaCompatible(ctx, conn.Db); err != nil {
-			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "schema.incompatible",
-				fmt.Sprintf("Esquema de base de datos incompatible: %v. Ejecute 'make db-migrate'", err),
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-		tracer.InfoEvent(ctx, tracer.ScopeDatabase, "database.ready", "Base de datos y esquema listos")
+		return err
+	}
+	defer db.Close()
+	if err := svc.SyncGames(ctx); err != nil {
+		return fmt.Errorf("register games: %w", err)
 	}
 
-	// Authoritative PostgreSQL Queue (or in-memory degraded queue in dev)
-	var queue connection.JobQueue
-	if conn != nil && conn.Db != nil {
-		queue, err = connection.NewPostgresJobQueue(conn.Db, "")
-		if err != nil {
-			tracer.WarnEvent(ctx, tracer.ScopeQueue, "queue.degraded", "No se pudo preparar la cola PostgreSQL",
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-	}
-	if queue == nil {
-		if cfg.Mode != config.ModeDev {
-			tracer.FatalEvent(ctx, tracer.ScopeQueue, "queue.required", "En producción, la API requiere la cola autoritativa en PostgreSQL")
-		}
-		queue = connection.NewJobQueue(100)
-	}
-	defer queue.Close()
-
-	// Compose Layers - API does NOT run simulation or bots
-	repo := repository.NewRepository(conn)
-	sandbox := executor.NewSandbox(0)
-	svc := service.NewService(repo, artifacts, queue, sandbox)
-
-	srv := server.NewServer(svc)
-	serverHost := fmt.Sprintf(":%s", cfg.Server.Port)
-	httpServer := &http.Server{
-		Addr:    serverHost,
-		Handler: srv.Handler,
-	}
-
-	// Graceful shutdown
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
+	srv := server.New(svc, cfg)
+	defer srv.Close()
+	httpServer := &http.Server{Addr: ":" + cfg.HTTP.Port, Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout: 60 * time.Second, WriteTimeout: 120 * time.Second, IdleTimeout: 120 * time.Second}
+	errCh := make(chan error, 1)
 	go func() {
-		<-sigChan
-		tracer.InfoEvent(ctx, tracer.ScopeHTTP, "http.stopping", "Cerrando servidor HTTP...")
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-		_ = httpServer.Shutdown(shutdownCtx)
-		cancel()
+		tracer.InfoEvent(ctx, tracer.ScopeHTTP, "http.ready", "API listening", tracer.String("address", httpServer.Addr),
+			tracer.String("mode", cfg.Mode))
+		errCh <- httpServer.ListenAndServe()
 	}()
-
-	tracer.InfoEvent(ctx, tracer.ScopeHTTP, "http.ready", "Servidor API disponible", tracer.String("address", serverHost))
-	if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		tracer.FatalEvent(ctx, tracer.ScopeHTTP, "http.stopped", "El servidor API se detuvo inesperadamente",
-			tracer.Origin(tracer.OriginPlatform), tracer.Err(err))
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+	case <-ctx.Done():
 	}
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	return httpServer.Shutdown(shutdownCtx)
+}
+
+func buildService(ctx context.Context, cfg *config.Config) (*service.Service, interface{ Close() error }, error) {
+	games, err := game.LoadRegistry(cfg.GamesDir)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load games: %w", err)
+	}
+	artifacts, err := connection.NewArtifactStore(cfg.ArtifactsDir)
+	if err != nil {
+		return nil, nil, err
+	}
+	db, err := connection.OpenDatabase(ctx, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := database.CheckSchemaCompatible(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, nil, fmt.Errorf("database schema: %w", err)
+	}
+	tokens, err := auth.NewTokens(cfg.Auth.AccessSecret, cfg.Auth.AccessTTL)
+	if err != nil {
+		_ = db.Close()
+		return nil, nil, err
+	}
+	opts := service.DefaultOptions()
+	opts.RefreshIdleTTL, opts.SessionMaxTTL, opts.MaxSessions = cfg.Auth.RefreshIdleTTL, cfg.Auth.SessionMaxTTL, cfg.Auth.MaxSessions
+	opts.RegistrationOpen = cfg.Auth.RegistrationOpen
+	opts.LeaseTTL, opts.MaxRunAttempts = cfg.Worker.LeaseTTL, cfg.Worker.MaxAttempts
+	return service.New(repository.NewStore(db), games, artifacts, tokens, opts), db, nil
+}
+
+// healthcheck probes the local liveness endpoint (container HEALTHCHECK in
+// a distroless image without shell or curl).
+func healthcheck() int {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+	client := http.Client{Timeout: 2 * time.Second}
+	res, err := client.Get("http://127.0.0.1:" + port + "/health/live")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	_ = res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
 }

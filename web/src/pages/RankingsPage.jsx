@@ -1,302 +1,126 @@
-import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertCircle, RefreshCw, Search, Radio } from 'lucide-react';
+import { RefreshCw, Camera } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
-import { formatNumber } from '../i18n/formatters.js';
+import { useResource, usePolling, useFlip } from '../hooks/hooks.js';
+import { useSession } from '../auth/SessionContext.jsx';
+import { useRouter } from '../router/Router.jsx';
+import { LoadingState, ErrorState, EmptyState, useErrorMessage } from '../components/States.jsx';
+import { useToast } from '../components/Toast.jsx';
+import { formatDateTime } from '../i18n/formatters.js';
 
-export function RankingsPage({ initialContestId = '' }) {
-  const { t, i18n } = useTranslation(['rankings', 'common']);
-  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
-
-  const [contests, setContests] = useState([]);
-  const [selectedContestId, setSelectedContestId] = useState(initialContestId);
-  const [rankings, setRankings] = useState([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState('score'); // 'score' | 'wins' | 'matches' | 'winRate'
-  const [status, setStatus] = useState('loading'); // 'loading' | 'error' | 'success'
-  const [errorMessage, setErrorMessage] = useState('');
-  const isMountedRef = useRef(true);
-
-  useEffect(() => {
-    isMountedRef.current = true;
-    return () => {
-      isMountedRef.current = false;
-    };
-  }, []);
-
-  // Load contest options for dropdown
-  useEffect(() => {
-    ApiService.listContests()
-      .then((data) => {
-        if (!isMountedRef.current) return;
-        setContests(data || []);
-      })
-      .catch(() => {
-        if (!isMountedRef.current) return;
-        setContests([]);
-      });
-  }, []);
-
-  // Synchronize initialContestId if prop changes
-  useEffect(() => {
-    if (initialContestId !== undefined) {
-      setSelectedContestId(initialContestId);
-    }
-  }, [initialContestId]);
-
-  const loadRankings = useCallback((showSpinner = true) => {
-    if (showSpinner) {
-      setStatus('loading');
-      setErrorMessage('');
-    }
-    return ApiService.listRankings(selectedContestId || undefined)
-      .then((data) => {
-        if (!isMountedRef.current) return;
-        setRankings(data || []);
-        setStatus('success');
-      })
-      .catch((err) => {
-        if (!isMountedRef.current) return;
-        if (showSpinner) {
-          setErrorMessage(err?.message || t('common:messages.operationFailed'));
-          setStatus('error');
-        }
-      });
-  }, [selectedContestId, t]);
-
-  useEffect(() => {
-    loadRankings(true);
-  }, [loadRankings]);
-
-  // Determine if currently selected contest is running/live
-  const selectedContest = contests.find((c) => c.id === selectedContestId);
-  const isLiveActive = selectedContest && (selectedContest.state === 'in_progress' || selectedContest.state === 'live_final');
-
-  // Background polling for live active contests
-  useEffect(() => {
-    if (!isLiveActive) return;
-
-    const intervalId = setInterval(() => {
-      loadRankings(false);
-    }, 3500);
-
-    return () => clearInterval(intervalId);
-  }, [isLiveActive, loadRankings]);
-
-  // Filter and sort rankings in-memory
-  const processedRankings = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    let filtered = rankings;
-
-    if (query) {
-      filtered = filtered.filter((r) =>
-        (r.agent_id && r.agent_id.toLowerCase().includes(query)) ||
-        (r.user_id && r.user_id.toLowerCase().includes(query))
-      );
-    }
-
-    const withWinRate = filtered.map((r) => {
-      const played = Number(r.matches_played) || 0;
-      const wins = Number(r.wins) || 0;
-      const winRate = played > 0 ? (wins / played) * 100 : 0;
-      return { ...r, calculatedWinRate: winRate };
-    });
-
-    const sorted = [...withWinRate].sort((a, b) => {
-      if (sortBy === 'wins') {
-        return (b.wins || 0) - (a.wins || 0);
-      }
-      if (sortBy === 'matches') {
-        return (b.matches_played || 0) - (a.matches_played || 0);
-      }
-      if (sortBy === 'winRate') {
-        return b.calculatedWinRate - a.calculatedWinRate;
-      }
-      // Default: score
-      return (b.score || 0) - (a.score || 0);
-    });
-
-    return sorted;
-  }, [rankings, searchQuery, sortBy]);
-
+function RankingTable({ rows }) {
+  const { t } = useTranslation('rankings');
+  const bodyRef = useRef(null);
+  useFlip(bodyRef, rows.map((r) => `${r.entry_id}:${r.rank}`).join('|'));
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <h1>{t('rankings:title')}</h1>
-          {isLiveActive && (
-            <span
-              className="badge badge-running"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.8rem' }}
-            >
-              <Radio size={14} color="currentColor" aria-hidden="true" />
-              <span>{t('rankings:liveBadge')}</span>
-            </span>
-          )}
-        </div>
-        <button
-          type="button"
-          className="btn btn-secondary"
-          onClick={() => loadRankings(true)}
-          aria-label={t('common:buttons.refresh')}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-        >
-          <RefreshCw size={16} aria-hidden="true" /> {t('common:buttons.refresh')}
-        </button>
-      </div>
-
-      {status === 'error' && (
-        <div
-          role="alert"
-          aria-live="assertive"
-          className="card"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '12px',
-            marginBottom: '16px',
-            borderLeft: '4px solid var(--danger, #ef4444)',
-            background: 'var(--danger-bg, rgba(239, 68, 68, 0.1))',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <AlertCircle size={20} color="var(--danger, #ef4444)" aria-hidden="true" />
-            <span>{errorMessage || t('common:messages.operationFailed')}</span>
-          </div>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => loadRankings(true)}
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-          >
-            <RefreshCw size={15} aria-hidden="true" /> {t('common:buttons.retry')}
-          </button>
-        </div>
-      )}
-
-      {/* Filter and sorting controls */}
-      <div
-        className="card"
-        style={{
-          marginBottom: '20px',
-          padding: '16px',
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: '16px',
-          alignItems: 'flex-end',
-        }}
-      >
-        {/* Contest selector */}
-        <div style={{ flex: '1 1 240px' }}>
-          <label htmlFor="contest-filter-select" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-            {t('rankings:contestFilter')}
-          </label>
-          <select
-            id="contest-filter-select"
-            value={selectedContestId}
-            onChange={(e) => setSelectedContestId(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px' }}
-          >
-            <option value="">{t('rankings:allContests')}</option>
-            {contests.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({t(`home:status.${c.state}`, { defaultValue: c.state })})
-              </option>
-            ))}
-          </select>
-        </div>
-
-        {/* Search input */}
-        <div style={{ flex: '1 1 240px' }}>
-          <label htmlFor="ranking-search-input" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-            {t('common:buttons.search', { defaultValue: 'Buscar' })}
-          </label>
-          <div style={{ position: 'relative' }}>
-            <Search
-              size={16}
-              color="var(--text-secondary)"
-              aria-hidden="true"
-              style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }}
-            />
-            <input
-              id="ranking-search-input"
-              type="search"
-              placeholder={t('rankings:searchPlaceholder')}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              style={{ width: '100%', padding: '8px 12px 8px 34px' }}
-            />
-          </div>
-        </div>
-
-        {/* Sort by selector */}
-        <div style={{ flex: '1 1 200px' }}>
-          <label htmlFor="ranking-sort-select" style={{ display: 'block', fontSize: '0.85rem', fontWeight: 600, marginBottom: '6px' }}>
-            {t('rankings:sortBy')}
-          </label>
-          <select
-            id="ranking-sort-select"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            style={{ width: '100%', padding: '8px 12px' }}
-          >
-            <option value="score">{t('rankings:sortOptions.score')}</option>
-            <option value="wins">{t('rankings:sortOptions.wins')}</option>
-            <option value="matches">{t('rankings:sortOptions.matches')}</option>
-            <option value="winRate">{t('rankings:sortOptions.winRate')}</option>
-          </select>
-        </div>
-      </div>
-
-      <table className="table">
+    <div className="table-wrap">
+      <table className="ranking-table">
         <thead>
-          <tr>
-            <th>{t('rankings:table.rank')}</th>
-            <th>{t('rankings:table.agent')}</th>
-            <th>{t('rankings:table.participant')}</th>
-            <th>{t('rankings:table.score')}</th>
-            <th>{t('rankings:table.matches')}</th>
-            <th>{t('rankings:table.wdl')}</th>
-            <th>{t('rankings:table.winRate')}</th>
-          </tr>
+          <tr><th>{t('rank')}</th><th>{t('agent')}</th><th>{t('owner')}</th><th>{t('points')}</th><th>{t('played')}</th>
+            <th>{t('wins')}</th><th>{t('draws')}</th><th>{t('losses')}</th><th>{t('disqualifications')}</th><th>{t('scoreDiff')}</th></tr>
         </thead>
-        <tbody>
-          {status === 'loading' ? (
-            <tr>
-              <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
-                {t('common:buttons.loading')}
-              </td>
+        <tbody ref={bodyRef}>
+          {rows.map((r) => (
+            <tr key={r.entry_id} data-flip-key={r.entry_id}>
+              <td><span className={`rank-pill rank-${Math.min(r.rank, 4)}`}>{r.rank}</span></td>
+              <td>{r.agent_name}</td>
+              <td className="muted">{r.username}</td>
+              <td><strong>{r.points}</strong></td>
+              <td>{r.matches_played}</td>
+              <td>{r.wins}</td>
+              <td>{r.draws}</td>
+              <td>{r.losses}</td>
+              <td>{r.disqualifications}</td>
+              <td>{r.score_for - r.score_against}</td>
             </tr>
-          ) : processedRankings.length > 0 ? (
-            processedRankings.map((r, index) => (
-              <tr key={r.id || `${r.agent_id}-${index}`}>
-                <td><strong>#{r.rank !== undefined ? r.rank : index + 1}</strong></td>
-                <td>{r.agent_id}</td>
-                <td>{r.user_id}</td>
-                <td><strong>{formatNumber(r.score, currentLang)}</strong></td>
-                <td>{formatNumber(r.matches_played, currentLang)}</td>
-                <td>
-                  {formatNumber(r.wins, currentLang)} / {formatNumber(r.draws, currentLang)} / {formatNumber(r.losses, currentLang)}
-                </td>
-                <td>{formatNumber(Math.round(r.calculatedWinRate), currentLang)}%</td>
-              </tr>
-            ))
-          ) : rankings.length > 0 ? (
-            <tr>
-              <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
-                {t('rankings:emptySearch')}
-              </td>
-            </tr>
-          ) : (
-            <tr>
-              <td colSpan="7" style={{ textAlign: 'center', color: 'var(--text-secondary)', padding: '24px' }}>
-                {t('rankings:empty')}
-              </td>
-            </tr>
-          )}
+          ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+export default function RankingsPage({ contestId }) {
+  const { t, i18n } = useTranslation('rankings');
+  const { can } = useSession();
+  const { navigate } = useRouter();
+  const toast = useToast();
+  const describe = useErrorMessage();
+  const contests = useResource((signal) => ApiService.listContests({ signal }), []);
+  const selected = contestId || contests.data?.items.find((c) => c.state !== 'draft')?.id || '';
+  const rankings = useResource((signal) => (selected ? ApiService.getRankings(selected, { signal }) : Promise.resolve(null)), [selected]);
+  const snapshots = useResource((signal) => (selected ? ApiService.listSnapshots(selected, { signal }) : Promise.resolve(null)), [selected]);
+  const [snapshotVersion, setSnapshotVersion] = useState('');
+  usePolling(rankings.reload, 3000, Boolean(rankings.data?.stale));
+
+  const publish = async () => {
+    try {
+      const snap = await ApiService.publishSnapshot(selected);
+      toast.success(t('published', { version: snap.version }));
+      snapshots.reload();
+    } catch (err) {
+      toast.error(describe(err));
+    }
+  };
+  const recalculate = async () => {
+    try {
+      rankings.setData(await ApiService.recalculateRankings(selected));
+    } catch (err) {
+      toast.error(describe(err));
+    }
+  };
+  const snapshot = snapshots.data?.items.find((s) => String(s.version) === snapshotVersion);
+  const rows = snapshot ? snapshot.rankings : rankings.data?.rankings || [];
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1>{t('title')}</h1>
+        {contests.data && (
+          <label className="field inline">
+            <span>{t('contest')}</span>
+            <select value={selected} onChange={(e) => navigate(`/rankings?contest=${e.target.value}`)}>
+              {contests.data.items.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+        )}
+      </div>
+      {contests.loading && <LoadingState />}
+      {contests.error && <ErrorState error={contests.error} onRetry={contests.reload} />}
+      {contests.data && !selected && <EmptyState title={t('noContest')} />}
+      {selected && (
+        <section className="card" aria-labelledby="ranking-title">
+          <div className="card-row">
+            <h2 id="ranking-title">{snapshot ? t('snapshotTitle', { version: snapshot.version }) : t('current')}</h2>
+            <div className="actions">
+              {snapshots.data && snapshots.data.items.length > 0 && (
+                <label className="field inline">
+                  <span>{t('view')}</span>
+                  <select value={snapshotVersion} onChange={(e) => setSnapshotVersion(e.target.value)}>
+                    <option value="">{t('live')}</option>
+                    {snapshots.data.items.map((s) => <option key={s.version} value={s.version}>v{s.version} · {formatDateTime(s.published_at, i18n.language)}</option>)}
+                  </select>
+                </label>
+              )}
+              {can('rankings:publish') && (
+                <>
+                  <button type="button" className="btn btn-secondary" onClick={recalculate}><RefreshCw size={16} aria-hidden="true" /> {t('recalculate')}</button>
+                  <button type="button" className="btn" onClick={publish}><Camera size={16} aria-hidden="true" /> {t('publish')}</button>
+                </>
+              )}
+            </div>
+          </div>
+          {rankings.loading && !rankings.data && <LoadingState />}
+          {rankings.error && <ErrorState error={rankings.error} onRetry={rankings.reload} />}
+          {rankings.data && !snapshot && rankings.data.stale && <p className="banner banner-info" role="status">{t('stale')}</p>}
+          {rows.length === 0 && rankings.data ? <EmptyState title={t('empty')} /> : <RankingTable rows={rows} />}
+          {rankings.data && !snapshot && (
+            <p className="muted small">{t('provenance', { count: rankings.data.applied_runs_count })} <code>{rankings.data.applied_runs_digest.slice(0, 16)}</code></p>
+          )}
+          {snapshot && <p className="muted small">{t('snapshotProvenance')} <code>{snapshot.rankings_sha256.slice(0, 16)}</code></p>}
+        </section>
+      )}
     </div>
   );
 }

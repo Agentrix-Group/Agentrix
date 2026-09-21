@@ -1,20 +1,13 @@
 {
-  "brand": "Agentrix",
-  "mainNavigation": "Navegación principal",
-  "openMenu": "Abrir menú",
-  "closeMenu": "Cerrar menú",
+  "main": "Navegación principal",
   "home": "Inicio",
-  "contests": "Torneos",
-  "agents": "Mis agentes",
+  "contests": "Concursos",
   "matches": "Partidas",
   "rankings": "Clasificación",
+  "agents": "Mis agentes",
   "admin": "Administración",
-  "viewer": "Visor de repeticiones",
-  "signOut": "Cerrar sesión",
-  "signIn": "Ingresar",
-  "selectLanguage": "Seleccionar idioma",
-  "languages": {
-    "es": "Español",
-    "en": "English"
-  }
+  "switchLanguage": "Cambiar idioma",
+  "logout": "Salir",
+  "login": "Ingresar",
+  "logoutFailed": "No se pudo cerrar la sesión en el servidor."
 }

@@ -2,307 +2,358 @@ package service
 
 import (
 	"context"
-	"database/sql"
-	"errors"
+	"strings"
 	"time"
+	"unicode/utf8"
 
-	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
-	"github.com/google/uuid"
 )
 
-var (
-	ErrInvalidStateFilter   = errors.New("the specified state filter is invalid")
-	ErrPrivateStateFilter   = errors.New("the specified state is private and cannot be queried publicly")
-	ErrContestNotFound      = errors.New("contest not found")
-	ErrRegistrationClosed   = errors.New("contest is not currently open for registration")
-	ErrAgentNotFound        = errors.New("agent not found")
-	ErrUnauthorizedAgent    = errors.New("agent does not belong to the authenticated user")
-	ErrGameMismatch         = errors.New("agent is not configured for the contest's game")
-	ErrAgentAlreadyEnrolled = errors.New("agent is already enrolled in this contest")
-	ErrUnsupportedGame      = errors.New("Agentrix MVP supports only starfighter")
-	ErrNoReadySubmission    = errors.New("agent has no ready submission for contest enrollment")
-	ErrSubmissionMismatch   = errors.New("specified submission does not belong to the enrolled agent")
-)
-
-// ContestService defines contest use-case operations for consumer segregation (ATD-015).
-type ContestService interface {
-	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
-	GetPublicContest(ctx context.Context, id string) (*model.Contest, error)
-	ListContests(ctx context.Context) ([]model.Contest, error)
-	GetContest(ctx context.Context, id string) (*model.Contest, error)
-	CreateContest(ctx context.Context, contest *model.Contest) error
-	UpdateContest(ctx context.Context, contest *model.Contest) error
-	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error)
-	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
+type ContestInput struct {
+	GameID        string
+	Name          string
+	Description   string
+	StartsAt      *time.Time
+	EndsAt        *time.Time
+	ScoringPolicy *model.ScoringPolicy
 }
 
-func (s *service) ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error) {
-	if filter.State != "" {
-		if !filter.State.IsValid() {
-			return nil, ErrInvalidStateFilter
-		}
-		if !filter.State.IsPublic() {
-			return nil, ErrPrivateStateFilter
-		}
+func validateContest(c *model.Contest) error {
+	if n := utf8.RuneCountInString(c.Name); n < 1 || n > 128 {
+		return model.Validation("invalid_contest_name", "contest name must contain 1 to 128 characters")
 	}
-
-	return s.repo.ListPublicContests(ctx, filter)
-}
-
-func (s *service) ListContests(ctx context.Context) ([]model.Contest, error) {
-	return s.repo.ListContests(ctx)
-}
-
-func (s *service) GetContest(ctx context.Context, id string) (*model.Contest, error) {
-	return s.repo.GetContest(ctx, id)
-}
-
-func (s *service) CreateContest(ctx context.Context, contest *model.Contest) error {
-	if contest.GameId != "starfighter" {
-		return ErrUnsupportedGame
+	if utf8.RuneCountInString(c.Description) > 4000 {
+		return model.Validation("invalid_contest_description", "description must not exceed 4000 characters")
 	}
-	if contest.Id == "" {
-		contest.Id = uuid.New().String()
+	if c.StartsAt != nil && c.EndsAt != nil && !c.StartsAt.Before(*c.EndsAt) {
+		return model.Validation("invalid_contest_window", "starts_at must be before ends_at")
 	}
-	if contest.Status == "" {
-		contest.Status = "upcoming"
-	}
-	contest.Active = true
-	contest.CreatedAt = time.Now().UTC()
-
-	return s.repo.CreateContest(ctx, contest)
+	return c.ScoringPolicy.Validate()
 }
 
-func (s *service) UpdateContest(ctx context.Context, contest *model.Contest) error {
-	if contest.GameId != "starfighter" {
-		return ErrUnsupportedGame
-	}
-	return s.repo.UpdateContest(ctx, contest)
-}
-
-func (s *service) ActivateContest(ctx context.Context, id string, isActive bool) error {
-	return s.repo.ActivateContest(ctx, id, isActive)
-}
-
-func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Contest, error) {
-	c, err := s.repo.GetContest(ctx, id)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, ErrContestNotFound
-		}
+func (s *Service) CreateContest(ctx context.Context, p model.Principal, in ContestInput) (*model.Contest, error) {
+	if err := requireCap(p, model.CapContestsManage); err != nil {
 		return nil, err
 	}
-
-	if !c.Active || !c.State.IsPublic() {
-		return nil, ErrContestNotFound
+	if _, err := s.module(in.GameID); err != nil {
+		return nil, err
 	}
+	now := s.now()
+	policy := model.DefaultScoringPolicy()
+	if in.ScoringPolicy != nil {
+		policy = *in.ScoringPolicy
+	}
+	c := &model.Contest{ID: s.newID(), GameID: in.GameID, Name: strings.TrimSpace(in.Name),
+		Description: strings.TrimSpace(in.Description), State: model.ContestDraft, StartsAt: in.StartsAt, EndsAt: in.EndsAt,
+		ScoringPolicy: policy, CreatedBy: p.UserID, CreatedAt: now, UpdatedAt: now}
+	if err := validateContest(c); err != nil {
+		return nil, err
+	}
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		if err := q.CreateContest(ctx, c); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "contest.created", "contest", c.ID, nil, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetContest(ctx, c.ID)
+}
 
+type ContestPatch struct {
+	Name          *string
+	Description   *string
+	StartsAt      **time.Time
+	EndsAt        **time.Time
+	ScoringPolicy *model.ScoringPolicy
+}
+
+// UpdateContest edits descriptive fields. The scoring policy can only change
+// while the contest is a draft (the database enforces the same rule).
+func (s *Service) UpdateContest(ctx context.Context, p model.Principal, id string, patch ContestPatch) (*model.Contest, error) {
+	if err := requireCap(p, model.CapContestsManage); err != nil {
+		return nil, err
+	}
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		c, err := q.LockContest(ctx, id)
+		if err != nil {
+			return err
+		}
+		if c.State == model.ContestArchived || c.State == model.ContestCancelled || c.State == model.ContestFinished {
+			return model.Conflict("contest_closed", "a %s contest cannot be edited", c.State)
+		}
+		if patch.Name != nil {
+			c.Name = strings.TrimSpace(*patch.Name)
+		}
+		if patch.Description != nil {
+			c.Description = strings.TrimSpace(*patch.Description)
+		}
+		if patch.StartsAt != nil {
+			c.StartsAt = *patch.StartsAt
+		}
+		if patch.EndsAt != nil {
+			c.EndsAt = *patch.EndsAt
+		}
+		if patch.ScoringPolicy != nil {
+			if c.State != model.ContestDraft {
+				return model.Conflict("scoring_policy_frozen", "the scoring policy is frozen once registration opens")
+			}
+			c.ScoringPolicy = *patch.ScoringPolicy
+		}
+		if err := validateContest(c); err != nil {
+			return err
+		}
+		now := s.now()
+		if err := q.UpdateContestDetails(ctx, c, now); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "contest.updated", "contest", id, nil, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetContest(ctx, id)
+}
+
+// TransitionContest is the only way to change a contest state.
+func (s *Service) TransitionContest(ctx context.Context, p model.Principal, id string, to model.ContestState, reason string) (*model.Contest, error) {
+	if err := requireCap(p, model.CapContestsManage); err != nil {
+		return nil, err
+	}
+	if !to.Valid() {
+		return nil, model.Validation("invalid_state", "unknown contest state %q", to)
+	}
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		c, err := q.LockContest(ctx, id)
+		if err != nil {
+			return err
+		}
+		if !c.State.CanTransitionTo(to) {
+			return model.InvalidTransition("contest", c.State, to)
+		}
+		if to == model.ContestRegistrationClosed || to == model.ContestRunning {
+			entries, err := q.ListEntries(ctx, id)
+			if err != nil {
+				return err
+			}
+			enrolled := 0
+			for _, e := range entries {
+				if e.Status == model.EntryEnrolled {
+					enrolled++
+				}
+			}
+			module, err := s.module(c.GameID)
+			if err != nil {
+				return err
+			}
+			if to == model.ContestRunning && enrolled < module.Players.Min {
+				return model.Validation("not_enough_entries", "a running contest needs at least %d enrolled entries", module.Players.Min)
+			}
+		}
+		now := s.now()
+		if err := q.TransitionContest(ctx, id, c.State, to, now); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "contest.transition", "contest", id,
+			map[string]any{"from": c.State, "to": to, "reason": truncateText(reason, 500)}, now)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return s.store.GetContest(ctx, id)
+}
+
+// visibleContest applies the read policy: drafts are visible only with
+// contests:manage.
+func (s *Service) visibleContest(ctx context.Context, p model.Principal, id string) (*model.Contest, error) {
+	if err := requireCap(p, model.CapContestsView); err != nil {
+		return nil, err
+	}
+	c, err := s.store.GetContest(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if !c.State.Public() && !p.Can(model.CapContestsManage) {
+		return nil, model.NotFound("contest_not_found", "contest not found")
+	}
 	return c, nil
 }
 
-func (s *service) EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error) {
-	contest, err := s.repo.GetContest(ctx, contestId)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil, ErrContestNotFound
-		}
-		return nil, nil, err
+func (s *Service) GetContest(ctx context.Context, p model.Principal, id string) (*model.Contest, error) {
+	return s.visibleContest(ctx, p, id)
+}
+
+func (s *Service) ListContests(ctx context.Context, p model.Principal) ([]model.Contest, error) {
+	if err := requireCap(p, model.CapContestsView); err != nil {
+		return nil, err
 	}
+	return s.store.ListContests(ctx, p.Can(model.CapContestsManage))
+}
 
-	if !contest.Active {
-		return nil, nil, ErrContestNotFound
+func (s *Service) ListEntries(ctx context.Context, p model.Principal, contestID string) ([]model.ContestEntry, error) {
+	if _, err := s.visibleContest(ctx, p, contestID); err != nil {
+		return nil, err
 	}
+	return s.store.ListEntries(ctx, contestID)
+}
 
-	if contest.State != model.ContestStateRegistrationOpen {
-		return nil, nil, ErrRegistrationClosed
+// requireEnrollableSubmission checks that a submission can be locked into a
+// contest entry of the agent.
+func requireEnrollableSubmission(sub *model.Submission, agentID string) error {
+	if sub.AgentID != agentID {
+		return model.Validation("submission_agent_mismatch", "submission does not belong to the agent")
 	}
-
-	agent, err := s.repo.GetAgent(ctx, agentId)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, nil, ErrAgentNotFound
-		}
-		return nil, nil, err
+	if sub.Status != model.SubmissionReady {
+		return model.Validation("submission_not_ready", "submission is %s; only ready submissions can be enrolled", sub.Status)
 	}
+	return nil
+}
 
-	if !agent.Active {
-		return nil, nil, ErrAgentNotFound
+// Enroll creates a contest entry locked to an exact, ready submission.
+// The owner enrolls with entries:create:own; entries:manage:any may enroll
+// agents of other users (the entry still belongs to the agent owner).
+func (s *Service) Enroll(ctx context.Context, p model.Principal, contestID, agentID, submissionID string) (*model.ContestEntry, error) {
+	if agentID == "" || submissionID == "" {
+		return nil, model.Validation("missing_fields", "agent_id and submission_id are required")
 	}
-
-	ownerID := agent.OwnerUserId
-
-	// Verify user ownership unless admin
-	if userId != "" && ownerID != userId {
-		isAdmin, permErr := s.repo.HasPermission(ctx, userId, common.AdminPermission)
-		if permErr != nil || !isAdmin {
-			return nil, nil, ErrUnauthorizedAgent
-		}
-	}
-
-	// Verify game compatibility
-	if contest.GameId != "" && agent.GameId != "" && contest.GameId != agent.GameId {
-		return nil, nil, ErrGameMismatch
-	}
-
-	// Resolve and lock submission
-	var chosenSubmissionId string
-	if len(submissionId) > 0 && submissionId[0] != "" {
-		sub, err := s.repo.GetSubmission(ctx, submissionId[0])
+	var entryID string
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		contest, err := q.ShareLockContest(ctx, contestID)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil, ErrSubmissionNotFound
-			}
-			return nil, nil, err
+			return err
 		}
-		if sub.AgentId != agentId {
-			return nil, nil, ErrSubmissionMismatch
+		if !contest.State.Public() && !p.Can(model.CapContestsManage) {
+			return model.NotFound("contest_not_found", "contest not found")
 		}
-		if sub.Status != "ready" {
-			return nil, nil, ErrNoReadySubmission
+		if contest.State != model.ContestRegistrationOpen {
+			return model.Conflict("registration_not_open", "contest registration is not open (state %s)", contest.State)
 		}
-		chosenSubmissionId = sub.Id
-	} else {
-		subs, err := s.repo.ListSubmissionsByAgent(ctx, agentId)
+		agent, err := q.LockAgent(ctx, agentID)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
-		for _, sub := range subs {
-			if sub.Status == "ready" && sub.Active {
-				chosenSubmissionId = sub.Id
-				break
+		if !p.CanFor(agent.OwnerUserID, model.CapEntriesCreateOwn, model.CapEntriesManageAny) {
+			return model.NotFound("agent_not_found", "agent not found")
+		}
+		if agent.Status != model.AgentActive {
+			return model.Conflict("agent_disabled", "agent is disabled")
+		}
+		if agent.GameID != contest.GameID {
+			return model.Validation("game_mismatch", "agent plays %s but the contest is %s", agent.GameID, contest.GameID)
+		}
+		sub, err := q.LockSubmission(ctx, submissionID)
+		if err != nil {
+			return err
+		}
+		if err := requireEnrollableSubmission(sub, agent.ID); err != nil {
+			return err
+		}
+		now := s.now()
+		entry := &model.ContestEntry{ID: s.newID(), ContestID: contestID, GameID: contest.GameID, AgentID: agent.ID,
+			UserID: agent.OwnerUserID, SubmissionID: sub.ID, CreatedAt: now}
+		if err := q.CreateEntry(ctx, entry); err != nil {
+			if model.KindOf(err) == model.KindConflict {
+				return model.Conflict("already_enrolled", "agent is already enrolled in this contest")
 			}
+			return err
 		}
-		if chosenSubmissionId == "" {
-			return nil, nil, ErrNoReadySubmission
-		}
-	}
-
-	// Verify agent not already enrolled in contest_entries or rankings
-	existingEntry, err := s.repo.GetContestEntry(ctx, contestId, agentId)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, nil, err
-	}
-	if existingEntry != nil {
-		return nil, nil, ErrAgentAlreadyEnrolled
-	}
-	existingRanking, err := s.repo.GetRankingByContestAndAgent(ctx, contestId, agentId)
-	if err != nil && err != sql.ErrNoRows {
-		return nil, nil, err
-	}
-	if existingRanking != nil {
-		return nil, nil, ErrAgentAlreadyEnrolled
-	}
-
-	// 1. Create ContestEntry locking chosenSubmissionId
-	entry := &model.ContestEntry{
-		Id:           uuid.New().String(),
-		ContestId:    contestId,
-		AgentId:      agentId,
-		UserId:       ownerID,
-		SubmissionId: chosenSubmissionId,
-		Status:       "enrolled",
-		EnrolledAt:   time.Now().UTC(),
-		Agent:        agent,
-	}
-	if err := s.repo.CreateContestEntry(ctx, entry); err != nil {
-		return nil, nil, err
-	}
-
-	// 2. Create or Upsert initial Ranking row for leaderboard
-	ranking := &model.Ranking{
-		Id:            uuid.New().String(),
-		ContestId:     contestId,
-		AgentId:       agentId,
-		UserId:        ownerID,
-		Score:         0,
-		MatchesPlayed: 0,
-		Wins:          0,
-		Losses:        0,
-		Draws:         0,
-		Rank:          1,
-		UpdatedAt:     time.Now().UTC(),
-		Agent:         agent,
-	}
-
-	err = s.repo.UpsertRanking(ctx, ranking)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return entry, ranking, nil
-}
-
-func (s *service) ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error) {
-	_, err := s.repo.GetContest(ctx, contestId)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, ErrContestNotFound
-		}
-		return nil, err
-	}
-
-	entries, err := s.repo.ListContestEntries(ctx, contestId)
+		entryID = entry.ID
+		return q.Audit(ctx, p.UserID, "entry.enrolled", "contest_entry", entry.ID,
+			map[string]any{"contest_id": contestID, "agent_id": agentID, "submission_id": submissionID}, now)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if entries == nil {
-		entries = make([]model.ContestEntry, 0)
-	}
-	return entries, nil
+	return s.store.GetEntry(ctx, contestID, entryID)
 }
 
-func (s *service) ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	_, err := s.repo.GetContest(ctx, contestId)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return nil, ErrContestNotFound
+// ResubmitEntry changes the locked submission while registration is open.
+func (s *Service) ResubmitEntry(ctx context.Context, p model.Principal, contestID, entryID, submissionID string) (*model.ContestEntry, error) {
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		contest, err := q.ShareLockContest(ctx, contestID)
+		if err != nil {
+			return err
 		}
-		return nil, err
-	}
-
-	rankings, err := s.repo.ListRankingsByContest(ctx, contestId)
+		entry, err := q.LockEntry(ctx, contestID, entryID)
+		if err != nil {
+			return err
+		}
+		if !p.CanFor(entry.UserID, model.CapEntriesCreateOwn, model.CapEntriesManageAny) {
+			return model.NotFound("entry_not_found", "contest entry not found")
+		}
+		if contest.State != model.ContestRegistrationOpen {
+			return model.Conflict("roster_frozen", "the roster is frozen (state %s)", contest.State)
+		}
+		if entry.Status != model.EntryEnrolled {
+			return model.InvalidTransition("contest entry", entry.Status, "resubmitted")
+		}
+		sub, err := q.LockSubmission(ctx, submissionID)
+		if err != nil {
+			return err
+		}
+		if err := requireEnrollableSubmission(sub, entry.AgentID); err != nil {
+			return err
+		}
+		now := s.now()
+		if err := q.UpdateEntrySubmission(ctx, entryID, submissionID, now); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "entry.resubmitted", "contest_entry", entryID,
+			map[string]any{"before": entry.SubmissionID, "after": submissionID}, now)
+	})
 	if err != nil {
 		return nil, err
 	}
-	if rankings == nil {
-		rankings = make([]model.Ranking, 0)
+	return s.store.GetEntry(ctx, contestID, entryID)
+}
+
+// ChangeEntryStatus withdraws (owner or manager) or disqualifies (manager)
+// an entry, recording actor and reason.
+func (s *Service) ChangeEntryStatus(ctx context.Context, p model.Principal, contestID, entryID string, to model.EntryStatus, reason string) (*model.ContestEntry, error) {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || utf8.RuneCountInString(reason) > 500 {
+		return nil, model.Validation("invalid_reason", "a reason of 1 to 500 characters is required")
 	}
-	return rankings, nil
-}
-
-func (s *service) ListCategories(ctx context.Context) ([]model.Category, error) {
-	return s.repo.ListCategories(ctx)
-}
-
-func (s *service) GetCategory(ctx context.Context, id string) (*model.Category, error) {
-	return s.repo.GetCategory(ctx, id)
-}
-
-func (s *service) CreateCategory(ctx context.Context, category *model.Category) error {
-	if category.Id == "" {
-		category.Id = uuid.New().String()
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		contest, err := q.ShareLockContest(ctx, contestID)
+		if err != nil {
+			return err
+		}
+		entry, err := q.LockEntry(ctx, contestID, entryID)
+		if err != nil {
+			return err
+		}
+		switch to {
+		case model.EntryWithdrawn:
+			if !p.CanFor(entry.UserID, model.CapEntriesCreateOwn, model.CapEntriesManageAny) {
+				return model.NotFound("entry_not_found", "contest entry not found")
+			}
+		case model.EntryDisqualified:
+			if err := requireCap(p, model.CapEntriesManageAny); err != nil {
+				return err
+			}
+		default:
+			return model.Validation("invalid_status", "entries can only be withdrawn or disqualified")
+		}
+		if contest.State == model.ContestFinished || contest.State == model.ContestCancelled || contest.State == model.ContestArchived {
+			return model.Conflict("contest_closed", "entries of a %s contest cannot change", contest.State)
+		}
+		if !entry.Status.CanTransitionTo(to) {
+			return model.InvalidTransition("contest entry", entry.Status, to)
+		}
+		now := s.now()
+		if err := q.UpdateEntryStatus(ctx, entryID, to, reason, p.UserID, now); err != nil {
+			return err
+		}
+		if err := q.BumpRankingDirty(ctx, contestID); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "entry."+string(to), "contest_entry", entryID, map[string]any{"reason": reason}, now)
+	})
+	if err != nil {
+		return nil, err
 	}
-	category.Active = true
-	return s.repo.CreateCategory(ctx, category)
-}
-
-func (s *service) UpdateCategory(ctx context.Context, category *model.Category) error {
-	return s.repo.UpdateCategory(ctx, category)
-}
-
-func (s *service) ActivateCategory(ctx context.Context, id string, isActive bool) error {
-	return s.repo.ActivateCategory(ctx, id, isActive)
-}
-
-func (s *service) UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error) {
-	if err := expectedState.ValidateTransition(newState); err != nil {
-		return false, err
-	}
-	if casRepo, ok := s.repo.(repository.ContestCASRepository); ok {
-		return casRepo.UpdateContestStateCAS(ctx, contestId, expectedState, newState)
-	}
-	return false, errors.New("contest repository does not support CAS")
+	return s.store.GetEntry(ctx, contestID, entryID)
 }

@@ -25,6 +25,9 @@ const (
 	ActionStatusInvalidOutput = "invalid_output"
 	ActionStatusCrashed       = "crashed"
 	ActionStatusDisqualified  = "disqualified"
+	// ActionStatusInactive marks a player that received no perception for
+	// the tick (out of the simulation); the engine applies no action.
+	ActionStatusInactive = "inactive"
 )
 
 // Envelope represents the outer wrapper for all JSON Lines protocol messages.
@@ -43,53 +46,26 @@ type PlayerActionInput struct {
 	ErrorDetails string          `json:"errorDetails,omitempty"`
 }
 
+// TickRate is the exact simulation rate (ticks per second as a ratio).
+type TickRate struct {
+	Numerator   int `json:"numerator"`
+	Denominator int `json:"denominator"`
+}
+
 // InitializeMatchRequest contains game startup parameters sent to the engine.
+// Config is the opaque game configuration sealed in the ExecutionSpec; the
+// platform never interprets it.
 type InitializeMatchRequest struct {
 	MatchID                    string                 `json:"matchId"`
 	GameID                     string                 `json:"gameId"`
-	ExpectedEngineVersion      string                 `json:"expectedEngineVersion,omitempty"`
+	GameVersion                string                 `json:"gameVersion"`
+	ExpectedEngineVersion      string                 `json:"expectedEngineVersion"`
 	Seed                       int64                  `json:"seed"`
-	FixedTimestepMs            int                    `json:"fixedTimestepMs,omitempty"`
-	TickHz                     float64                `json:"tickHz,omitempty"`
+	TickRate                   TickRate               `json:"tickRate"`
 	MaxTicks                   int                    `json:"maxTicks"`
 	Players                    []string               `json:"players"`
-	Config                     map[string]interface{} `json:"config,omitempty"`
-	ParticipantArtifactDigests map[string]string      `json:"participantArtifactDigests,omitempty"`
-}
-
-// StarfighterConfig represents the authoritative game configuration for Starfighter.
-type StarfighterConfig struct {
-	TickHz                  float64 `json:"tick_hz" yaml:"tick_hz"`
-	ArenaWidth              float64 `json:"arena_width" yaml:"arena_width"`
-	ArenaHeight             float64 `json:"arena_height" yaml:"arena_height"`
-	ShipMaxHealth           float64 `json:"ship_max_health" yaml:"ship_max_health"`
-	ShipMaxEnergy           float64 `json:"ship_max_energy" yaml:"ship_max_energy"`
-	BulletDamage            float64 `json:"bullet_damage" yaml:"bullet_damage"`
-	AsteroidDamage          float64 `json:"asteroid_damage" yaml:"asteroid_damage"`
-	ShootEnergyCost         float64 `json:"shoot_energy_cost" yaml:"shoot_energy_cost"`
-	ShieldEnergyCostPerTick float64 `json:"shield_energy_cost_per_tick" yaml:"shield_energy_cost_per_tick"`
-	ShieldDamageReduction   float64 `json:"shield_damage_reduction" yaml:"shield_damage_reduction"`
-	EnergyRegenPerTick      float64 `json:"energy_regen_per_tick" yaml:"energy_regen_per_tick"`
-	RadarRange              float64 `json:"radar_range" yaml:"radar_range"`
-	AsteroidCount           int     `json:"asteroid_count,omitempty" yaml:"asteroid_count,omitempty"`
-}
-
-func DefaultStarfighterConfig() StarfighterConfig {
-	return StarfighterConfig{
-		TickHz:                  60.0,
-		ArenaWidth:              2000.0,
-		ArenaHeight:             1000.0,
-		ShipMaxHealth:           100.0,
-		ShipMaxEnergy:           100.0,
-		BulletDamage:            25.0,
-		AsteroidDamage:          100.0,
-		ShootEnergyCost:         15.0,
-		ShieldEnergyCostPerTick: 1.0,
-		ShieldDamageReduction:   0.7,
-		EnergyRegenPerTick:      0.5,
-		RadarRange:              800.0,
-		AsteroidCount:           5,
-	}
+	Config                     map[string]interface{} `json:"config"`
+	ParticipantArtifactDigests map[string]string      `json:"participantArtifactDigests"`
 }
 
 // MatchInitializedResult represents the engine's confirmation and initial perception state.

@@ -1,0 +1,33 @@
+{
+  "readiness": "Platform readiness",
+  "refresh": "Refresh",
+  "readinessUnavailable": "Readiness is unavailable",
+  "checkedAt": "Checked {{at}}",
+  "components": {
+    "database": "Database",
+    "artifacts": "Artifacts",
+    "games": "Games",
+    "workers": "Workers",
+    "queue": "Run queue",
+    "integrity": "Integrity",
+    "replays": "Replays"
+  },
+  "details": "Details",
+  "createUser": "Create user",
+  "username": "Username",
+  "email": "Email",
+  "password": "Password",
+  "roles": "Roles",
+  "editRoles": "Roles of {{name}}",
+  "rolesImmediate": "The change applies from the next request of every session.",
+  "save": "Save",
+  "statusChanged": "{{name}}: {{status}}.",
+  "users": "Users",
+  "filter": "Status",
+  "all": "All",
+  "status": "Status",
+  "actions": "Actions",
+  "statusOf": "Status of {{name}}",
+  "editRolesShort": "Roles",
+  "title": "Administration"
+}

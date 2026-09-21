@@ -42,12 +42,12 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 	r := require.New(t)
 
 	req := InitializeMatchRequest{
-		MatchID:         "m-100",
-		GameID:          "starfighter",
-		Seed:            42,
-		FixedTimestepMs: 50,
-		MaxTicks:        100,
-		Players:         []string{"bot-1", "bot-2"},
+		MatchID:  "m-100",
+		GameID:   "starfighter",
+		Seed:     42,
+		TickRate: TickRate{Numerator: 20, Denominator: 1},
+		MaxTicks: 100,
+		Players:  []string{"bot-1", "bot-2"},
 	}
 
 	data, err := json.Marshal(req)

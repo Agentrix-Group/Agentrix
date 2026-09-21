@@ -1,179 +1,47 @@
-import React, { useState, useRef } from 'react';
+import React, { useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileArchive, UploadCloud, XCircle, CheckCircle2, AlertCircle } from 'lucide-react';
+import { FileArchive, Loader2 } from 'lucide-react';
 
-const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MiB
+export const MAX_BUNDLE_BYTES = 2 * 1024 * 1024;
 
-export function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+export function validateBundleFile(file) {
+  if (!file) return 'noFile';
+  const name = (file.name || '').toLowerCase();
+  if (!name.endsWith('.zip')) return 'invalidZipType';
+  if (file.size > MAX_BUNDLE_BYTES) return 'fileTooLarge';
+  if (file.size === 0) return 'emptyFile';
+  return null;
 }
 
-export function validateBundleFile(file, t) {
-  if (!file) {
-    return { valid: false, error: null };
-  }
-  const name = file.name || '';
-  const isZip = name.toLowerCase().endsWith('.zip') ||
-    file.type === 'application/zip' ||
-    file.type === 'application/x-zip-compressed';
+/** Drag & drop (or picker) for bot bundles. Uploading shows progress; the
+ * admission verdict is reported by the submissions list, from the API. */
+export function BundleDropzone({ onUpload, busy = false }) {
+  const { t } = useTranslation('agents');
+  const inputId = useId();
+  const inputRef = useRef(null);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState(null);
 
-  if (!isZip) {
-    return {
-      valid: false,
-      error: t('agents:messages.invalidZipType', { defaultValue: 'Only .zip package files are accepted.' }),
-    };
-  }
-
-  if (file.size > MAX_FILE_SIZE_BYTES) {
-    return {
-      valid: false,
-      error: t('agents:messages.fileTooLarge', { defaultValue: 'File exceeds the maximum allowed limit of 2 MiB.' }),
-    };
-  }
-
-  return { valid: true, error: null };
-}
-
-export function BundleDropzone({
-  bundle,
-  onFileSelect,
-  disabled = false,
-  validationError,
-  setValidationError,
-}) {
-  const { t } = useTranslation(['agents', 'common']);
-  const [isDragging, setIsDragging] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const processFile = (file) => {
-    if (!file) {
-      onFileSelect(null);
-      setValidationError(null);
-      return;
-    }
-    const result = validateBundleFile(file, t);
-    if (!result.valid) {
-      onFileSelect(null);
-      setValidationError(result.error);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
-    } else {
-      setValidationError(null);
-      onFileSelect(file);
-    }
-  };
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    if (disabled) return;
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
-
-  const handleDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (disabled) return;
-    const droppedFile = e.dataTransfer.files?.[0];
-    if (droppedFile) {
-      processFile(droppedFile);
-    }
-  };
-
-  const handleInputChange = (e) => {
-    const selectedFile = e.target.files?.[0];
-    processFile(selectedFile || null);
-  };
-
-  const handleClear = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    onFileSelect(null);
-    setValidationError(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
+  const handle = (file) => {
+    const problem = validateBundleFile(file);
+    setError(problem ? t(`bundle.${problem}`) : null);
+    if (inputRef.current) inputRef.current.value = '';
+    if (!problem) onUpload(file);
   };
 
   return (
-    <div className="bundle-dropzone-wrapper">
-      <label
-        className={`bundle-dropzone ${isDragging ? 'drag-active' : ''} ${disabled ? 'disabled' : ''}`}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
-        htmlFor="bundle-file-input"
-        style={{ opacity: disabled ? 0.6 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
-      >
-        <FileArchive size={32} aria-hidden="true" />
-        <strong>
-          {bundle
-            ? bundle.name
-            : t('agents:submission.chooseZip', { defaultValue: 'Selecciona el paquete ZIP' })}
-        </strong>
-        <span>
-          {t('agents:submission.zipHelp', { defaultValue: 'Debe contener agentrix.json y bot.py en la raíz. Máximo 2 MiB.' })}
-        </span>
-        <input
-          id="bundle-file-input"
-          ref={fileInputRef}
-          type="file"
-          accept=".zip,application/zip,application/x-zip-compressed"
-          onChange={handleInputChange}
-          disabled={disabled}
-        />
+    <div className="dropzone-wrap">
+      <label htmlFor={inputId} className={`dropzone ${dragging ? 'dragging' : ''} ${busy ? 'busy' : ''}`}
+        onDragOver={(e) => { e.preventDefault(); if (!busy) setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => { e.preventDefault(); setDragging(false); if (!busy) handle(e.dataTransfer.files?.[0]); }}>
+        {busy ? <Loader2 size={28} className="spin" aria-hidden="true" /> : <FileArchive size={28} aria-hidden="true" />}
+        <strong>{busy ? t('bundle.uploading') : t('bundle.prompt')}</strong>
+        <span className="muted small">{t('bundle.hint')}</span>
       </label>
-
-      {validationError && (
-        <div
-          role="alert"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '10px 14px',
-            background: 'var(--danger-bg)',
-            color: 'var(--danger-text)',
-            borderRadius: '6px',
-            marginTop: '8px',
-            fontSize: '0.86rem',
-          }}
-        >
-          <AlertCircle size={18} aria-hidden="true" />
-          <span>{validationError}</span>
-        </div>
-      )}
-
-      {bundle && !validationError && (
-        <div className="bundle-selected-info">
-          <div className="bundle-selected-meta">
-            <CheckCircle2 size={18} color="var(--success-text)" aria-hidden="true" />
-            <span>
-              <strong>{bundle.name}</strong> ({formatBytes(bundle.size)})
-            </span>
-          </div>
-          {!disabled && (
-            <button
-              type="button"
-              onClick={handleClear}
-              className="btn btn-compact"
-              style={{ padding: '4px 8px', fontSize: '0.8rem' }}
-              title={t('agents:submission.clearFile', { defaultValue: 'Quitar archivo' })}
-            >
-              <XCircle size={14} aria-hidden="true" /> {t('agents:submission.clearFile', { defaultValue: 'Quitar' })}
-            </button>
-          )}
-        </div>
-      )}
+      <input ref={inputRef} id={inputId} type="file" accept=".zip,application/zip" className="visually-hidden" disabled={busy}
+        onChange={(e) => handle(e.target.files?.[0])} />
+      {error && <p className="form-error" role="alert">{error}</p>}
     </div>
   );
 }

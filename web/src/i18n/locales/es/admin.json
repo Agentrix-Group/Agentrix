@@ -1,0 +1,33 @@
+{
+  "readiness": "Estado de la plataforma",
+  "refresh": "Actualizar",
+  "readinessUnavailable": "No se pudo obtener el estado",
+  "checkedAt": "Comprobado {{at}}",
+  "components": {
+    "database": "Base de datos",
+    "artifacts": "Artefactos",
+    "games": "Juegos",
+    "workers": "Workers",
+    "queue": "Cola de ejecución",
+    "integrity": "Integridad",
+    "replays": "Replays"
+  },
+  "details": "Detalles",
+  "createUser": "Crear usuario",
+  "username": "Usuario",
+  "email": "Correo",
+  "password": "Contraseña",
+  "roles": "Roles",
+  "editRoles": "Roles de {{name}}",
+  "rolesImmediate": "El cambio aplica desde la siguiente solicitud de todas sus sesiones.",
+  "save": "Guardar",
+  "statusChanged": "{{name}}: {{status}}.",
+  "users": "Usuarios",
+  "filter": "Estado",
+  "all": "Todos",
+  "status": "Estado",
+  "actions": "Acciones",
+  "statusOf": "Estado de {{name}}",
+  "editRolesShort": "Roles",
+  "title": "Administración"
+}

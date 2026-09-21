@@ -21,17 +21,21 @@ type limitedBuffer struct {
 	limit int
 }
 
-func (b *limitedBuffer) Write(p []byte) (n int, err error) {
+// Write keeps at most limit bytes but always reports the full length:
+// returning a short count would make io.Copy stop draining the engine's
+// stderr, and the engine would block once the pipe buffer fills.
+func (b *limitedBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	remaining := b.limit - b.buf.Len()
-	if remaining <= 0 {
-		return len(p), nil
+	if remaining > 0 {
+		keep := p
+		if len(keep) > remaining {
+			keep = keep[:remaining]
+		}
+		b.buf.Write(keep)
 	}
-	if len(p) > remaining {
-		p = p[:remaining]
-	}
-	return b.buf.Write(p)
+	return len(p), nil
 }
 
 func (b *limitedBuffer) String() string {
@@ -53,14 +57,14 @@ const (
 )
 
 type subprocessClient struct {
-	mu              sync.Mutex
-	cfg             StartConfig
-	cmd             *exec.Cmd
-	stdin           io.WriteCloser
-	stdoutReader    *bufio.Reader
-	stderrBuf       *limitedBuffer
-	sendSeq         uint64
-	expectedRecvSeq uint64
+	mu                 sync.Mutex
+	cfg                StartConfig
+	cmd                *exec.Cmd
+	stdin              io.WriteCloser
+	stdoutReader       *bufio.Reader
+	stderrBuf          *limitedBuffer
+	sendSeq            uint64
+	expectedRecvSeq    uint64
 	matchID            string
 	lifecycle          ClientLifecycleState
 	engineVersion      string

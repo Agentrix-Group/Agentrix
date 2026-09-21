@@ -29,25 +29,28 @@ def read() -> dict:
     return json.loads(line)
 
 
-def random_action() -> dict:
+def random_action(rng: random.Random) -> dict:
     return {
-        "thrust": random.choice(["FORWARD", "OFF", "BRAKE"]),
-        "turn": random.choice(["LEFT", "RIGHT", "NONE"]),
-        "shoot": random.random() < 0.3,
-        "shield": random.random() < 0.1,
+        "thrust": rng.choice(["FORWARD", "OFF", "BRAKE"]),
+        "turn": rng.choice(["LEFT", "RIGHT", "NONE"]),
+        "shoot": rng.random() < 0.3,
+        "shield": rng.random() < 0.1,
     }
 
 
 def main() -> None:
     init = read()
     assert init["type"] == "init"
+    # Seeded from the explicit protocol inputs so that the same match seed
+    # and slot always produce the same action sequence (reproducible replays).
+    rng = random.Random(f"{init['seed']}:{init['player_id']}")
 
     while True:
         msg = read()
         if msg["type"] == "end":
             return
         assert msg["type"] == "perception"
-        send({"type": "action", "tick": msg["tick"], "action": random_action()})
+        send({"type": "action", "tick": msg["tick"], "action": random_action(rng)})
 
 
 if __name__ == "__main__":

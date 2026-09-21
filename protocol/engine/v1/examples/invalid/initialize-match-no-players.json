@@ -6,9 +6,29 @@
   "payload": {
     "matchId": "m-1234",
     "gameId": "starfighter",
+    "gameVersion": "0.1.0",
+    "expectedEngineVersion": "0.3.0",
     "seed": 42,
-    "fixedTimestepMs": 50,
+    "tickRate": {
+      "numerator": 60,
+      "denominator": 1
+    },
     "maxTicks": 100,
-    "players": []
+    "players": [],
+    "config": {
+      "arena_width": 2000,
+      "arena_height": 1000,
+      "ship_max_health": 100,
+      "ship_max_energy": 100,
+      "bullet_damage": 25,
+      "asteroid_damage": 100,
+      "shoot_energy_cost": 15,
+      "shield_energy_cost_per_tick": 1,
+      "shield_damage_reduction": 0.7,
+      "energy_regen_per_tick": 0.5,
+      "radar_range": 800,
+      "asteroid_count": 5
+    },
+    "participantArtifactDigests": {}
   }
 }

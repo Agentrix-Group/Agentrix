@@ -30,9 +30,10 @@
               "timeout",
               "invalid_output",
               "crashed",
-              "disqualified"
+              "disqualified",
+              "inactive"
             ],
-            "description": "Estado estricto de la evaluación del agente en este tick."
+            "description": "Estado de la evaluación del agente en este tick. 'disqualified' termina la partida (ADR-0004); 'inactive' indica que el jugador no recibió percepción (fuera de la simulación) y no fue consultado."
           },
           "payload": {
             "type": "object",
@@ -47,8 +48,18 @@
         "additionalProperties": false,
         "allOf": [
           {
-            "if": {"properties": {"status": {"const": "valid"}}},
-            "then": {"required": ["payload"]}
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "valid"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "payload"
+              ]
+            }
           }
         ]
       }

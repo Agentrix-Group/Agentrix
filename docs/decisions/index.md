@@ -16,6 +16,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | [0010](0010-execution-chain-and-frozen-contracts.md) | accepted | Cadena de ejecución inmutable, slots ordenados y contratos congelados post-Participant |
 | [0011](0011-rbac-capabilities-and-session-security.md) | accepted | Modelo de seguridad RBAC, sesiones persistentes y trazabilidad sin fuga |
 | [0012](0012-deterministic-rankings-and-recalculation-policy.md) | accepted | Clasificaciones deterministas, criterios de desempate en cascada y snapshots auditables |
+| [0013](0013-canonical-baseline-consolidation.md) | accepted | Consolidación sobre una línea base canónica (esquema, cadena, sesiones, ejecución cercada, tick exacto, replay v2) |
 
 ## Decisiones vigentes resumidas
 
@@ -23,7 +24,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 - El motor oficial se ejecuta como proceso Rust headless separado.
 - Starfighter y Python son las únicas opciones del MVP actual.
 - PostgreSQL es la cola autoritativa fuera de desarrollo.
-- El timestep objetivo es 60 Hz exactos.
+- El timestep es una razón exacta (`tick_rate` 60/1); ver [ADR 0013](0013-canonical-baseline-consolidation.md).
 - La entrega de producto se realiza de forma paralela por vertical slices frontend + backend + QA.
 - Multi-juego, Gym y la decisión Avian/Rapier siguen el orden de [roadmap/current.md](../roadmap/current.md).
 

@@ -21,8 +21,8 @@ La existencia de un archivo, stub, prueba o nombre no demuestra que una capacida
 El código usa una organización horizontal y poco profunda:
 
 ```text
-open-api/<feature>.yaml
-  -> src/server/<feature>.go
+open-api/openapi.yaml
+  -> src/server/handlers_<area>.go
   -> src/service/<feature>.go
   -> src/repository/<feature>.go
   -> src/model/<feature>.go
@@ -32,12 +32,12 @@ open-api/<feature>.yaml
 - `service`: casos de uso, autorización y transiciones.
 - `repository`: SQL, persistencia y mapeo; nunca reglas del negocio.
 - `model`: entidades, valores y estados; nunca HTTP o SQL.
-- `connection`: conexiones, artefactos y cola técnica.
+- `connection`: conexión a PostgreSQL y almacén de artefactos direccionado por contenido.
 - `auth`: credenciales, sesiones y primitivas de autorización.
 - `executor`: reserva de trabajos, bots, motor y coordinación de ticks.
 - `engine`: cliente del protocolo Go↔Rust.
 - `game`: manifest y registro de juegos de la plataforma.
-- `replay`: escritura, validación y compresión del replay.
+- `replay`: escritura y decodificación de `agentrix-replay/2` (gzip NDJSON).
 - `tracer`: eventos operativos y correlación.
 - `common`: solo conceptos realmente transversales.
 
@@ -61,23 +61,21 @@ Conserve `repository`: hoy separa SQL de casos de uso. No amplíe su interfaz mo
 Sin instalar ni actualizar dependencias:
 
 ```bash
-GOCACHE=/tmp/agentrix-go-cache go build -mod=readonly ./...
-GOCACHE=/tmp/agentrix-go-cache go test -mod=readonly ./...
-GOCACHE=/tmp/agentrix-go-cache go vet -mod=readonly ./...
-cd web && npm test -- --run
-cd web && ./node_modules/.bin/vite build --outDir /tmp/agentrix-web-build --emptyOutDir
-cd ../agentrix_engine && CARGO_TARGET_DIR=/tmp/agentrix-engine-target cargo test --locked --offline
+make check                 # gofmt (solo verificación), vet, tests con -race y contratos OpenAPI↔router
+make test-integration      # necesita PostgreSQL desechable, bwrap y AGENTRIX_ENGINE_BIN; falla si algo se salta
+make engine-test           # motor: fmt, clippy, tests
+cd web && npm run lint && npm test && npm run test:parity && npm run build && npm run size
 git diff --check
 ```
 
-Declare los fallos reales. La suite Go tiene fallos conocidos en `src/executor` dentro del entorno restringido observado el 2026-09-19; no los silencie ni los describa como éxito.
+Si el motor se compila localmente, use `CARGO_TARGET_DIR` fuera de `/tmp` (el tmpfs se queda sin cuota). Declare los fallos reales; no los silencie ni los describa como éxito.
 
 ## Seguridad y operaciones
 
 - No instale paquetes, cambie versiones, levante servicios externos ni ejecute scripts de base de datos sin autorización.
-- `db-reset`, `setup_postgres.sh` y scripts SQL son mutaciones, no verificaciones.
+- `make demo-reset`, `cmd/migrate` y cualquier SQL son mutaciones, no verificaciones. Los tests de integración usan solo un PostgreSQL desechable.
 - No ejecute código no confiable fuera de un sandbox real.
-- No trate el fallback directo a `python3` ni la cola en memoria como comportamiento de producción aceptable.
+- `AGENTRIX_SANDBOX=direct` solo existe para `MODE=dev`; la configuración lo rechaza en cualquier otro modo. No existe cola en memoria.
 - No registre secretos, código de bots, percepciones privadas, SQL ni rutas internas completas.
 - Conserve cambios ajenos y el historial Git. No haga commit o push sin autorización.
 

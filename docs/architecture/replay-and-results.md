@@ -1,41 +1,38 @@
 # Replay y resultados
 
-## Estado actual
+## Formato
 
-El worker abre un archivo NDJSON antes de iniciar el bucle y escribe:
+`agentrix-replay/2` es NDJSON comprimido con gzip:
 
-1. metadata;
-2. snapshot público del tick 0;
-3. snapshots públicos secuenciales por cada estado resultante;
-4. resultado final.
+1. `metadata`: `match_id`, `run_id`, `spec_hash`, `tick_rate` racional, participantes (slot, agente, submission, digest).
+2. Un `snapshot` público por tick desde 0, con `state_hash` producido por Rust.
+3. `result`: `final_tick` y `final_state_hash`, que deben sellar el último snapshot.
 
-Cada snapshot contiene un `stateHash` producido por Rust. El escritor comprueba ticks consecutivos, coincidencia entre envoltura y snapshot y que el hash final coincida con el último frame.
+El escritor (`src/replay/ndjson.go`) exige ticks consecutivos y el sello final. El visor (`web/src/viewer/replayParser.js`) vuelve a validar la secuencia, el sello y el formato, y rechaza formatos anteriores.
 
-Si el ejecutable `zstd` existe, se crea además `<replay>.ndjson.zst` conservando el raw. La consulta prefiere actualmente el raw y solo descomprime Zstandard si aquel falta. Por tanto, la compresión es una copia auxiliar, no el artefacto canónico ni una política de retención.
+## Commit y publicación (outbox)
 
-## Limitaciones actuales
+1. El worker escribe el replay en **staging**, con clave derivada del run.
+2. `CommitRun` registra en la misma transacción que los resultados la fila `replays` con `publication = staging`, su SHA-256 y su tamaño.
+3. `PublishPendingReplays`, desde el worker y el reconciliador, verifica el digest, mueve el archivo a su clave definitiva y marca `published`. Un fallo marca `publish_failed` y reintenta con backoff exponencial.
+4. La API sirve un replay solo cuando está `published` y la partida es visible para quien lo pide. El digest se verificó al publicar; la API no lo vuelve a verificar al servirlo, pero expone el SHA-256 para que el cliente lo compare (el smoke lo hace). Mientras tanto, la partida muestra que el resultado es oficial y el replay está en publicación.
 
-- El hash encadenado detecta cambios en snapshots, pero no firma ni vuelve inmutable el archivo.
-- La metadata no registra `game_version`, `engine_digest`, `config_hash` ni plataforma.
-- El registro `Replay` no se inserta como entidad independiente; la partida conserva el ID.
-- Replay, resultados y partida se escriben en operaciones separadas sin commit idempotente ni fencing.
-- Una falla parcial puede dejar artefactos o filas inconsistentes.
-
-## Objetivo aprobado
-
-- Escritura progresiva para no perder toda la evidencia ante una caída.
-- Metadata completa antes del primer snapshot.
-- Snapshot público separado de percepciones privadas.
-- Sello final por digest sobre el stream completo.
-- Almacenamiento inmutable después del commit.
-- Commit idempotente asociado a job, intento y fencing token.
-- Una única ejecución válida origina el resultado vigente; intentos anteriores permanecen auditables.
-- HTTP sirve únicamente replays completos, sellados y autorizados.
+Un run perdido o fallido descarta su staging. El GC de huérfanos elimina artefactos sin fila después de un periodo de gracia.
 
 ## Resultado
 
-Rust decide ganador, puntuaciones, posiciones y causa de término. Go valida la coherencia estructural y persiste el resultado; no recalcula reglas Starfighter. Un resultado oficial futuro nace provisional y solo se confirma según la política competitiva, capacidad todavía no implementada.
+Rust decide ganador, puntuaciones, posiciones y causa de término. Go valida la coherencia estructural (un resultado por slot, posiciones válidas) y persiste. No recalcula reglas de Starfighter. Resultados y replay son inmutables: los triggers de PostgreSQL rechazan cualquier modificación.
+
+## Rankings
+
+Los rankings se recalculan a partir de los runs confirmados de partidas competitivas del concurso, bajo un advisory lock por concurso:
+
+- `ranking_applied_runs` registra exactamente qué runs se proyectaron;
+- el digest de ese conjunto se expone como procedencia;
+- el orden es determinista, con desempates explícitos, empates en esquema 1224 y descalificados al final.
+
+Un snapshot publicado es inmutable y versionado.
 
 ## Renderer
 
-La web consume el NDJSON y dibuja Canvas 2D. No ejecuta el engine ni integra las físicas. Controles como scrub, pausa y velocidad dependen de snapshots completos. No existe directo por WebSocket en el MVP actual.
+La web descarga el replay, lo valida y lo dibuja en Canvas 2D. No ejecuta el motor. Controles: reproducir/pausar, paso, reinicio y velocidad. Con `prefers-reduced-motion`, el visor arranca pausado. No hay directo por WebSocket.

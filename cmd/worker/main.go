@@ -1,3 +1,6 @@
+// Command worker executes matches. It refuses to start unless the sandbox
+// can enforce isolation and limits, the engine binary answers the protocol
+// handshake, and the database is the canonical baseline.
 package main
 
 import (
@@ -6,111 +9,134 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/config"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/database"
+	"github.com/Agentrix-Group/Agentrix/src/engine"
 	"github.com/Agentrix-Group/Agentrix/src/executor"
 	"github.com/Agentrix-Group/Agentrix/src/game"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/Agentrix-Group/Agentrix/src/service"
 	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
 func main() {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "agentrix-worker: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	cfg := config.NewConfiguration()
-	tracer.Configure(tracer.Config{
-		Level:  cfg.Logging.Level,
-		Format: cfg.Logging.Format,
-		Color:  cfg.Logging.Color,
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("invalid configuration:\n%w", err)
+	}
+	tracer.Configure(tracer.Config{Level: cfg.Logging.Level, Format: cfg.Logging.Format, Color: cfg.Logging.Color})
+	defer func() { _ = tracer.Sync() }()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	runtime, err := executor.NewRuntime(cfg.Worker.Sandbox, cfg.Worker.PodmanImage)
+	if err != nil {
+		return err
+	}
+	if err := runtime.Check(); err != nil {
+		return fmt.Errorf("sandbox %s unavailable (fail closed): %w", runtime.Name(), err)
+	}
+	if runtime.Name() == "direct-unsandboxed" {
+		tracer.WarnEvent(ctx, tracer.ScopeWorker, "sandbox.direct", "Running bots WITHOUT isolation (dev/test only)")
+	}
+
+	games, err := game.LoadRegistry(cfg.GamesDir)
+	if err != nil {
+		return err
+	}
+	modules := games.List()
+	gameID := os.Getenv("WORKER_GAME")
+	if gameID == "" {
+		if len(modules) != 1 {
+			return fmt.Errorf("WORKER_GAME is required when several game modules are installed")
+		}
+		gameID = modules[0].ID
+	}
+	module, ok := games.Get(gameID)
+	if !ok {
+		return fmt.Errorf("game %q is not installed", gameID)
+	}
+	binary := cfg.Worker.EngineBinary
+	if binary == "" {
+		binary = module.Engine.Binary
+	}
+	engineSHA, engineVersion, err := probeEngine(ctx, binary, module.EngineProtocol)
+	if err != nil {
+		return err
+	}
+
+	artifacts, err := connection.NewArtifactStore(cfg.ArtifactsDir)
+	if err != nil {
+		return err
+	}
+	db, err := connection.OpenDatabase(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	if err := database.CheckSchemaCompatible(ctx, db); err != nil {
+		return fmt.Errorf("database schema: %w", err)
+	}
+	// The worker never issues tokens; a throwaway secret satisfies the constructor.
+	tokens, err := auth.NewTokens([]byte("worker-does-not-issue-access-tokens-0000"), time.Minute)
+	if err != nil {
+		return err
+	}
+	opts := service.DefaultOptions()
+	opts.LeaseTTL, opts.MaxRunAttempts = cfg.Worker.LeaseTTL, cfg.Worker.MaxAttempts
+	svc := service.New(repository.NewStore(db), games, artifacts, tokens, opts)
+
+	if err := svc.RegisterWorker(ctx, model.WorkerInfo{ID: cfg.Worker.ID, SandboxRuntime: runtime.Name()},
+		model.EngineArtifact{SHA256: engineSHA, GameID: module.ID, GameVersion: module.Version, EngineVersion: engineVersion,
+			ProtocolVersion: module.EngineProtocol, SourceCommit: cfg.Worker.EngineCommit}); err != nil {
+		return fmt.Errorf("register worker: %w", err)
+	}
+	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.ready", "Worker registered",
+		tracer.String("worker_id", cfg.Worker.ID), tracer.String("engine_sha256", engineSHA),
+		tracer.String("engine_version", engineVersion), tracer.String("sandbox", runtime.Name()))
+
+	exec := executor.NewExecutor(runtime, artifacts, executor.SubprocessEngineFactory(binary))
+	worker := executor.NewWorker(svc, exec, executor.NewAdmission(runtime), executor.WorkerOptions{
+		ID: cfg.Worker.ID, EngineSHA256: engineSHA, Sandbox: runtime.Name(), Concurrency: cfg.Worker.Concurrency,
+		PollInterval: cfg.Worker.PollInterval, LeaseTTL: cfg.Worker.LeaseTTL, ReconcileEvery: cfg.Worker.ReconcileEvery,
+		HeartbeatFile: os.Getenv("AGENTRIX_HEARTBEAT_FILE"),
 	})
-	defer tracer.Sync()
+	worker.Run(ctx)
+	tracer.InfoEvent(context.Background(), tracer.ScopeWorker, "worker.stopped", "Worker stopped")
+	return nil
+}
 
-	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.starting", "Agentrix Worker iniciando",
-		tracer.String("mode", cfg.Mode),
-	)
-
-	// Production Fail-Closed Validations
-	if cfg.Mode != config.ModeDev {
-		bwrap := &executor.BubblewrapRuntime{}
-		podman := &executor.PodmanRuntime{}
-		if !bwrap.IsAvailable() && !podman.IsAvailable() {
-			tracer.FatalEvent(ctx, tracer.ScopeWorker, "sandbox.unavailable", "En producción, el worker requiere Bubblewrap o Podman instalado",
-				tracer.Origin(tracer.OriginPlatform))
-		}
-	}
-
-	// Initialize Artifact Store
-	artifacts, err := connection.NewArtifactStore(ctx, cfg)
+// probeEngine hashes the binary and completes a protocol handshake to learn
+// the engine version the worker will announce.
+func probeEngine(ctx context.Context, binary, protocol string) (string, string, error) {
+	sha, _, err := connection.SHA256File(binary)
 	if err != nil {
-		tracer.FatalEvent(ctx, tracer.ScopeArtifact, "artifact.unavailable", "No se pudo preparar el almacén de artefactos",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
+		return "", "", fmt.Errorf("engine binary %s: %w", binary, err)
 	}
-
-	// Load Game Registry
-	registry := game.GetRegistry()
-	if err := registry.LoadGamesFromDir("./games"); err != nil {
-		tracer.FatalEvent(ctx, tracer.ScopeSystem, "starfighter.unavailable", "No se pudo cargar el manifiesto del juego",
-			tracer.Origin(tracer.OriginGame), tracer.Err(err))
+	client := engine.NewSubprocessClient()
+	if err := client.Start(ctx, engine.StartConfig{BinaryPath: binary, ExpectedDigest: sha, HandshakeTimeout: 10 * time.Second}); err != nil {
+		return "", "", fmt.Errorf("engine handshake: %w", err)
 	}
-
-	// Initialize Database Connection
-	conn, err := connection.NewConnection(ctx, cfg)
-	if err != nil {
-		if cfg.Mode != config.ModeDev {
-			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "database.required", "En producción, el worker requiere PostgreSQL configurado y disponible",
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-		tracer.WarnEvent(ctx, tracer.ScopeDatabase, "database.unavailable", "Sin conexión; worker continúa en modo degradado",
-			tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-	} else {
-		defer conn.Close()
-		if err := database.CheckSchemaCompatible(ctx, conn.Db); err != nil {
-			tracer.FatalEvent(ctx, tracer.ScopeDatabase, "schema.incompatible",
-				fmt.Sprintf("Esquema de base de datos incompatible: %v. Ejecute 'make db-migrate'", err),
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
-		tracer.InfoEvent(ctx, tracer.ScopeDatabase, "database.ready", "Base de datos y esquema listos")
+	version := client.EngineVersion()
+	closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Close(closeCtx); err != nil {
+		return "", "", fmt.Errorf("engine shutdown after handshake: %w", err)
 	}
-
-	// Authoritative Queue
-	var queue connection.JobQueue
-	if conn != nil && conn.Db != nil {
-		queue, err = connection.NewPostgresJobQueue(conn.Db, "")
-		if err != nil {
-			tracer.WarnEvent(ctx, tracer.ScopeQueue, "queue.degraded", "No se pudo preparar la cola PostgreSQL",
-				tracer.Origin(tracer.OriginInfrastructure), tracer.Err(err))
-		}
+	if protocol != engine.ProtocolVersion {
+		return "", "", fmt.Errorf("module requires protocol %s, this worker speaks %s", protocol, engine.ProtocolVersion)
 	}
-	if queue == nil {
-		if cfg.Mode != config.ModeDev {
-			tracer.FatalEvent(ctx, tracer.ScopeQueue, "queue.required", "En producción, el worker requiere la cola autoritativa en PostgreSQL")
-		}
-		queue = connection.NewJobQueue(100)
-	}
-	defer queue.Close()
-
-	// Compose Layers
-	repo := repository.NewRepository(conn)
-	sandbox := executor.NewSandbox(0)
-	svc := service.NewService(repo, artifacts, queue, sandbox)
-
-	// Setup Match Executor & Worker Pool
-	matchExecutor := executor.NewMatchExecutor(svc, sandbox)
-	workerPool := executor.NewWorkerPool(queue, matchExecutor, 2)
-	workerPool.Start(ctx)
-	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.pool.started", "Worker pool activo procesando partidas")
-
-	// Wait for shutdown signal
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-
-	sig := <-sigChan
-	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.stopping", "Señal recibida, deteniendo worker pool...",
-		tracer.String("signal", sig.String()))
-	workerPool.Stop()
-	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.stopped", "Worker detenido limpiamente")
+	return sha, version, nil
 }

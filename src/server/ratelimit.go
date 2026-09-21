@@ -1,98 +1,77 @@
 package server
 
 import (
-	"net"
-	"net/http"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/Agentrix-Group/Agentrix/src/common"
 )
 
-type clientLimit struct {
-	count     int
-	resetTime time.Time
-}
-
-// RateLimiter provides IP-based sliding window rate limiting for sensitive endpoints.
+// RateLimiter is a sliding-window-log limiter per key with a bounded number
+// of tracked keys. When the table is full, new keys are rejected (fail
+// closed) until entries expire; the janitor goroutine stops with Stop.
 type RateLimiter struct {
-	mu          sync.Mutex
-	limits      map[string]*clientLimit
-	maxRequests int
-	window      time.Duration
+	mu      sync.Mutex
+	limit   int
+	window  time.Duration
+	maxKeys int
+	hits    map[string][]time.Time
+	now     func() time.Time
+	stop    chan struct{}
+	once    sync.Once
 }
 
-func NewRateLimiter(maxRequests int, window time.Duration) *RateLimiter {
-	rl := &RateLimiter{
-		limits:      make(map[string]*clientLimit),
-		maxRequests: maxRequests,
-		window:      window,
+func NewRateLimiter(limit int, window time.Duration, maxKeys int) *RateLimiter {
+	l := &RateLimiter{limit: limit, window: window, maxKeys: maxKeys, hits: map[string][]time.Time{},
+		now: time.Now, stop: make(chan struct{})}
+	go l.janitor()
+	return l
+}
+
+// Allow records a hit for key and reports whether it is within the limit;
+// otherwise it returns the time until a slot frees up.
+func (l *RateLimiter) Allow(key string) (bool, time.Duration) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	cutoff := now.Add(-l.window)
+	hits := l.hits[key]
+	kept := hits[:0]
+	for _, t := range hits {
+		if t.After(cutoff) {
+			kept = append(kept, t)
+		}
 	}
-	go rl.cleanupLoop()
-	return rl
+	if len(kept) == 0 {
+		delete(l.hits, key)
+		if len(l.hits) >= l.maxKeys {
+			return false, l.window
+		}
+	}
+	if len(kept) >= l.limit {
+		l.hits[key] = kept
+		return false, kept[0].Sub(cutoff)
+	}
+	l.hits[key] = append(kept, now)
+	return true, 0
 }
 
-func (rl *RateLimiter) cleanupLoop() {
-	ticker := time.NewTicker(rl.window * 2)
-	for range ticker.C {
-		rl.mu.Lock()
-		now := time.Now()
-		for ip, cl := range rl.limits {
-			if now.After(cl.resetTime) {
-				delete(rl.limits, ip)
+func (l *RateLimiter) janitor() {
+	ticker := time.NewTicker(l.window)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-l.stop:
+			return
+		case <-ticker.C:
+			l.mu.Lock()
+			cutoff := l.now().Add(-l.window)
+			for key, hits := range l.hits {
+				if len(hits) == 0 || !hits[len(hits)-1].After(cutoff) {
+					delete(l.hits, key)
+				}
 			}
+			l.mu.Unlock()
 		}
-		rl.mu.Unlock()
 	}
 }
 
-func (rl *RateLimiter) Allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-
-	now := time.Now()
-	cl, exists := rl.limits[ip]
-	if !exists || now.After(cl.resetTime) {
-		rl.limits[ip] = &clientLimit{
-			count:     1,
-			resetTime: now.Add(rl.window),
-		}
-		return true
-	}
-
-	if cl.count >= rl.maxRequests {
-		return false
-	}
-
-	cl.count++
-	return true
-}
-
-func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodOptions {
-			next.ServeHTTP(w, r)
-			return
-		}
-		ip := extractIP(r)
-		if !rl.Allow(ip) {
-			common.WriteErrorMessage(w, common.RATE_LIMIT_EXCEEDED_ERROR, "Too many requests. Please try again later.")
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func extractIP(r *http.Request) string {
-	xff := r.Header.Get("X-Forwarded-For")
-	if xff != "" {
-		parts := strings.Split(xff, ",")
-		return strings.TrimSpace(parts[0])
-	}
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		return ip
-	}
-	return r.RemoteAddr
-}
+func (l *RateLimiter) Stop() { l.once.Do(func() { close(l.stop) }) }

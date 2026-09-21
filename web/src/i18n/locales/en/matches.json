@@ -1,57 +1,38 @@
 {
-  "title": "Matches & Evaluations",
-  "refresh": "Refresh",
-  "loading": "Loading matches...",
-  "empty": "No matches found.",
-  "createButton": "New Match",
-  "card": {
-    "matchNumber": "Match #{{id}}",
-    "game": "Game: {{game}}",
-    "seed": "Seed: {{seed}}",
-    "results": "Results:",
-    "rankResult": "Rank {{rank}}: {{submission}} ({{score}} pts)",
-    "watchReplay": "Watch Replay",
-    "runMatch": "Run Match",
-    "runningMatch": "Running..."
+  "title": "Matches",
+  "backToContest": "Back to contest",
+  "empty": "No matches.",
+  "roster": "Participants",
+  "mode": "Mode",
+  "state": "State",
+  "updated": "Updated",
+  "modes": {
+    "competitive": "Competitive",
+    "exhibition": "Exhibition",
+    "demo": "Demo"
   },
-  "wizard": {
-    "title": "Create New Starfighter Match",
-    "subtitle": "Configure competitors and authoritative deterministic seed.",
-    "gameLabel": "Game:",
-    "gameOfficial": "Starfighter (Official)",
-    "contestLabel": "Tournament (optional):",
-    "noContest": "Friendly / Standalone Match",
-    "player1Label": "Bot Player 1 (Submission):",
-    "player2Label": "Bot Player 2 (Submission):",
-    "selectSubmissionPlaceholder": "Select a submission...",
-    "manualPrompt": "Or enter submission identifier:",
-    "seedLabel": "Deterministic seed:",
-    "randomSeed": "Random",
-    "runImmediately": "Queue execution immediately after creation",
-    "submit": "Create Match",
-    "cancel": "Cancel",
-    "submitting": "Creating match...",
-    "validationError": "You must specify two competing submissions for Starfighter (1v1)."
-  },
-  "runningState": {
-    "badgeText": "Simulating...",
-    "liveDescription": "Simulation running on Bevy engine (60 Hz)"
-  },
-  "status": {
-    "pending": "Pending",
-    "running": "Running",
-    "finished": "Finished",
-    "failed": "Failed"
-  },
-  "messages": {
-    "runError": "Failed to run match: {{error}}",
-    "createSuccess": "Match created successfully.",
-    "createError": "Failed to create match: {{error}}"
-  },
-  "filter": {
-    "all": "All",
-    "pending": "Pending",
-    "running": "Running",
-    "finished": "Finished"
-  }
+  "contest": "contest",
+  "queued": "Run queued (attempt {{attempt}}).",
+  "retry": "Retry",
+  "run": "Run",
+  "cancel": "Cancel match",
+  "watchReplay": "Watch replay",
+  "progress": "Progress",
+  "replayPublishing": "The result is official; the replay is being published.",
+  "slots": "Slots",
+  "seed": "Seed",
+  "results": "Official results",
+  "noResults": "No results yet.",
+  "rank": "Rank",
+  "participant": "Participant",
+  "score": "Score",
+  "outcome": "Outcome",
+  "runs": "Runs",
+  "noRuns": "The match has not run yet.",
+  "attempt": "Attempt",
+  "engine": "Engine",
+  "spec": "Spec",
+  "finished": "Finished",
+  "error": "Error",
+  "committed": "official"
 }

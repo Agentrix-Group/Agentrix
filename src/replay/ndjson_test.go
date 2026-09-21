@@ -1,60 +1,62 @@
 package replay
 
 import (
+	"bytes"
 	"encoding/json"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/stretchr/testify/require"
 )
 
-func TestStreamWriterProducesSealedSequentialReplay(t *testing.T) {
-	r := require.New(t)
-	file, err := os.CreateTemp(t.TempDir(), "replay-*.ndjson")
-	r.NoError(err)
-
-	writer, err := NewStreamWriter(file, model.ReplayMetadata{
-		ReplayID: "rep-1", MatchID: "match-1", GameID: "starfighter", Seed: 42,
-		Participants: []string{"bot-1", "bot-2"}, FixedTimestepMs: 17, CreatedAt: time.Now().UTC(),
-	})
-	r.NoError(err)
-	state, err := json.Marshal(map[string]any{"tick": 0, "fighters": []any{}, "bullets": []any{}, "stateHash": "hash-0"})
-	r.NoError(err)
-	r.NoError(writer.WriteSnapshot(model.ReplaySnapshot{Tick: 0, PublicSnapshot: state, StateHash: "hash-0"}))
-	r.Error(writer.WriteSnapshot(model.ReplaySnapshot{Tick: 2, PublicSnapshot: state, StateHash: "hash-2"}))
-	r.NoError(writer.Complete(model.ReplayResult{
-		FinalTick: 0, Winner: "bot-1", Scores: map[string]int{"bot-1": 1, "bot-2": 0},
-		Reason: "eliminated", FinalStateHash: "hash-0", FinishedAt: time.Now().UTC(),
-	}))
-	r.NoError(writer.Close())
-
-	input, err := os.Open(file.Name())
-	r.NoError(err)
-	defer input.Close()
-	document, err := DecodeNDJSON(input)
-	r.NoError(err)
-	r.Equal("match-1", document.Metadata.MatchID)
-	r.Len(document.Snapshots, 1)
-	r.Equal("hash-0", document.Result.FinalStateHash)
+func metadata() Metadata {
+	return Metadata{ReplayID: "r", MatchID: "m", RunID: "run", SpecHash: "s", GameID: "g", GameVersion: "1.0.0", ConfigHash: "c",
+		EngineVersion: "1", EngineSHA256: "e", Seed: 1, TickRate: TickRate{60, 1},
+		Participants: []Participant{{PlayerID: "a", SlotIndex: 0}, {PlayerID: "b", SlotIndex: 1}}, CreatedAt: time.Now()}
 }
 
-func TestStreamWriterRejectsNonCompetitiveResultReason(t *testing.T) {
-	r := require.New(t)
-	file, err := os.CreateTemp(t.TempDir(), "replay-*.ndjson")
-	r.NoError(err)
+func snapshot(tick int, hash string) Snapshot {
+	return Snapshot{Tick: tick, StateHash: hash, PublicSnapshot: json.RawMessage(`{"tick":` + string(rune('0'+tick)) + `}`)}
+}
 
-	writer, err := NewStreamWriter(file, model.ReplayMetadata{
-		ReplayID: "rep-2", MatchID: "match-2", GameID: "starfighter", Seed: 7,
-		Participants: []string{"bot-1", "bot-2"}, FixedTimestepMs: 17, CreatedAt: time.Now().UTC(),
-	})
-	r.NoError(err)
-	state := json.RawMessage(`{"tick":0,"fighters":[],"bullets":[],"stateHash":"hash-0"}`)
-	r.NoError(writer.WriteSnapshot(model.ReplaySnapshot{Tick: 0, PublicSnapshot: state, StateHash: "hash-0"}))
-	r.Error(writer.Complete(model.ReplayResult{
-		FinalTick: 0, Scores: map[string]int{"bot-1": 0, "bot-2": 0},
-		Reason: "execution_error", FinalStateHash: "hash-0", FinishedAt: time.Now().UTC(),
-	}))
-	r.NoError(writer.Close())
+func TestWriterSealsSequentialReplay(t *testing.T) {
+	var buf bytes.Buffer
+	w, err := NewWriter(&buf, metadata())
+	require.NoError(t, err)
+	require.NoError(t, w.WriteSnapshot(snapshot(0, "h0")))
+	require.Error(t, w.WriteSnapshot(snapshot(2, "h2")), "gaps are rejected")
+	require.NoError(t, w.WriteSnapshot(snapshot(1, "h1")))
+	require.Error(t, w.Complete(Result{FinalTick: 1, FinalStateHash: "other", Scores: map[string]int{}, Reason: "x", FinishedAt: time.Now()}))
+	require.NoError(t, w.Complete(Result{FinalTick: 1, FinalStateHash: "h1", Scores: map[string]int{"a": 1}, Reason: "eliminated", FinishedAt: time.Now()}))
+	require.Error(t, w.WriteSnapshot(snapshot(2, "h2")), "sealed replays are closed")
+	doc, err := Decode(&buf)
+	require.NoError(t, err)
+	require.Len(t, doc.Snapshots, 2)
+	require.Equal(t, FormatVersion, doc.Metadata.Format)
+}
+
+func TestMetadataRequiresDigestsAndTickRate(t *testing.T) {
+	m := metadata()
+	m.TickRate = TickRate{}
+	_, err := NewWriter(&bytes.Buffer{}, m)
+	require.Error(t, err)
+	m = metadata()
+	m.SpecHash = ""
+	_, err = NewWriter(&bytes.Buffer{}, m)
+	require.Error(t, err)
+	m = metadata()
+	m.Participants[1].PlayerID = "a"
+	_, err = NewWriter(&bytes.Buffer{}, m)
+	require.Error(t, err)
+}
+
+func TestDecodeRejectsTruncatedOrForeignStreams(t *testing.T) {
+	var buf bytes.Buffer
+	w, err := NewWriter(&buf, metadata())
+	require.NoError(t, err)
+	require.NoError(t, w.WriteSnapshot(snapshot(0, "h0")))
+	_, err = Decode(bytes.NewReader(buf.Bytes()))
+	require.Error(t, err, "unsealed stream")
+	_, err = Decode(bytes.NewBufferString(`{"type":"metadata","format":"agentrix-replay/1"}` + "\n"))
+	require.Error(t, err)
 }

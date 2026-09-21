@@ -1,110 +1,2024 @@
+# Canonical Agentrix API contract. Verified against the router by src/server/openapi_contract_test.go.
 openapi: 3.1.0
 info:
   title: Agentrix API
-  description: REST API backend and competition platform for Agentrix
-  version: 1.0.0
+  version: 2.0.0
+  description: 'Canonical Agentrix API. Every route declares its authorization policy in `x-agentrix-policy`: anonymous callers hold the capabilities
+    of the `spectator` role; `authenticated: true` additionally requires a signed-in user. Errors always use the `Error` envelope. This document
+    is verified against the router by `src/server/openapi_contract_test.go`.'
 servers:
-  - url: http://localhost:8080
-    description: Local development server
+- url: http://localhost:8080
 paths:
-  # Authentication
-  /api/v1/auth/login:
-    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1login'
-  /api/v1/auth/register:
-    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1register'
-  /api/v1/auth/refresh:
-    $ref: './auth.yaml#/paths/~1api~1v1~1auth~1refresh'
-  /api/v1/me:
-    $ref: './auth.yaml#/paths/~1api~1v1~1me'
-
-  # Users (Canonical Identity)
-  /api/v1/users:
-    $ref: './users.yaml#/paths/~1api~1v1~1users'
-  /api/v1/users/{id}:
-    $ref: './users.yaml#/paths/~1api~1v1~1users~1{id}'
-  /api/v1/me/agents:
-    $ref: './users.yaml#/paths/~1api~1v1~1me~1agents'
-
-  # Contests
-  /api/v1/contests:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests'
-  /api/v1/contests/{id}:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}'
-  /api/v1/contests/{id}/agents:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1agents'
-  /api/v1/contests/{id}/entries:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1entries'
-  /api/v1/contests/{id}/rankings/recalculate:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1recalculate'
-  /api/v1/contests/{id}/rankings/publish:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1publish'
-  /api/v1/contests/{id}/rankings/snapshots:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1snapshots'
-  /api/v1/contests/{id}/rankings/snapshots/{version}:
-    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1snapshots~1{version}'
-
-  # Categories
-  /api/v1/categories:
-    $ref: './categories.yaml#/paths/~1api~1v1~1categories'
-  /api/v1/categories/{id}:
-    $ref: './categories.yaml#/paths/~1api~1v1~1categories~1{id}'
-
-  # Games
-  /api/v1/games:
-    $ref: './games.yaml#/paths/~1api~1v1~1games'
-  /api/v1/games/{id}:
-    $ref: './games.yaml#/paths/~1api~1v1~1games~1{id}'
-
-  # Agents
-  /api/v1/agents:
-    $ref: './agents.yaml#/paths/~1api~1v1~1agents'
-  /api/v1/agents/{id}:
-    $ref: './agents.yaml#/paths/~1api~1v1~1agents~1{id}'
-
-  # Submissions
-  /api/v1/submissions:
-    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions'
-  /api/v1/submissions/{id}:
-    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions~1{id}'
-  /api/v1/submissions/upload:
-    $ref: './submissions.yaml#/paths/~1api~1v1~1submissions~1upload'
-
-  # Matches
-  /api/v1/matches:
-    $ref: './matches.yaml#/paths/~1api~1v1~1matches'
-  /api/v1/matches/{id}:
-    $ref: './matches.yaml#/paths/~1api~1v1~1matches~1{id}'
-  /api/v1/matches/{id}/run:
-    $ref: './matches.yaml#/paths/~1api~1v1~1matches~1{id}~1run'
-
-  # Results
-  /api/v1/results:
-    $ref: './results.yaml#/paths/~1api~1v1~1results'
-  /api/v1/results/{id}:
-    $ref: './results.yaml#/paths/~1api~1v1~1results~1{id}'
-
-  # Rankings
-  /api/v1/rankings:
-    $ref: './rankings.yaml#/paths/~1api~1v1~1rankings'
-  /api/v1/rankings/{id}:
-    $ref: './rankings.yaml#/paths/~1api~1v1~1rankings~1{id}'
-
-  # Replays
-  /api/v1/replays/{id}:
-    $ref: './replays.yaml#/paths/~1api~1v1~1replays~1{id}'
-  /api/v1/replays/{id}/stream:
-    $ref: './replays.yaml#/paths/~1api~1v1~1replays~1{id}~1stream'
-
-  # Permissions
-  # Health & Observability
   /health/live:
-    $ref: './health.yaml#/paths/~1health~1live'
+    get:
+      summary: Liveness probe
+      operationId: get_health_live
+      tags:
+      - Health
+      x-agentrix-policy: &id001
+        public: true
   /health/ready:
-    $ref: './health.yaml#/paths/~1health~1ready'
-
+    get:
+      summary: Aggregate readiness (details require admin:access)
+      operationId: get_health_ready
+      tags:
+      - Health
+      x-agentrix-policy: *id001
+  /api/v1/auth/register:
+    post:
+      summary: Register a player account
+      operationId: post_auth_register
+      tags:
+      - Sessions
+      x-agentrix-policy: *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+  /api/v1/auth/login:
+    post:
+      summary: Log in; sets the HttpOnly refresh cookie
+      operationId: post_auth_login
+      tags:
+      - Sessions
+      x-agentrix-policy: *id001
+      description: Returns a short-lived access token (bearer). The refresh token is ONLY delivered as the HttpOnly cookie `agentrix_refresh`
+        (Path=/api/v1/auth, SameSite=Strict, Secure in production); it never appears in the body.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+  /api/v1/auth/refresh:
+    post:
+      summary: Rotate the refresh cookie and mint a new access token
+      operationId: post_auth_refresh
+      tags:
+      - Sessions
+      x-agentrix-policy: *id001
+      description: 'Single-use rotation in one transaction. Reusing a rotated token revokes the whole session family (`refresh_token_reused`).
+        Requires the CSRF header `X-Requested-With: agentrix`.'
+      parameters:
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - agentrix
+  /api/v1/auth/logout:
+    post:
+      summary: Revoke the current session family
+      operationId: post_auth_logout
+      tags:
+      - Sessions
+      x-agentrix-policy: *id001
+      description: Revokes the family identified by the refresh cookie (or the bearer session). Access tokens of that family stop working immediately.
+      parameters:
+      - name: X-Requested-With
+        in: header
+        required: true
+        schema:
+          type: string
+          enum:
+          - agentrix
+  /api/v1/auth/logout-all:
+    post:
+      summary: Revoke every session of the current user
+      operationId: post_auth_logout_all
+      tags:
+      - Sessions
+      x-agentrix-policy:
+        capabilities:
+        - users:read:own
+        authenticated: true
+      security:
+      - bearer: []
+  /api/v1/me:
+    get:
+      summary: Current account with roles and effective capabilities
+      operationId: get_me
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:read:own
+        authenticated: true
+      security:
+      - bearer: []
+  /api/v1/users:
+    get:
+      summary: List accounts
+      operationId: get_users
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: status
+        in: query
+        schema:
+          $ref: '#/components/schemas/UserStatus'
+    post:
+      summary: Create an account with explicit roles
+      operationId: post_users
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:roles:manage
+        authenticated: true
+      security:
+      - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateUserRequest'
+  /api/v1/users/{id}:
+    get:
+      summary: Read an account (own or any)
+      operationId: get_users_id
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:read:own
+        - users:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: Update email or password
+      operationId: patch_users_id
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:update:own
+        - users:update:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserRequest'
+  /api/v1/users/{id}/roles:
+    put:
+      summary: Replace the exact role set (effective on the next request)
+      operationId: put_users_id_roles
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:roles:manage
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolesRequest'
+  /api/v1/users/{id}/status:
+    put:
+      summary: Set account status explicitly; leaving active revokes sessions
+      operationId: put_users_id_status
+      tags:
+      - Users
+      x-agentrix-policy:
+        capabilities:
+        - users:update:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserStatusRequest'
+  /api/v1/games:
+    get:
+      summary: Installed game modules
+      operationId: get_games
+      tags:
+      - Games
+      x-agentrix-policy:
+        capabilities:
+        - contests:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+  /api/v1/games/{id}:
+    get:
+      summary: Game module
+      operationId: get_games_id
+      tags:
+      - Games
+      x-agentrix-policy:
+        capabilities:
+        - contests:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/agents:
+    get:
+      summary: List own agents (owner=* or owner id requires agents:read:any)
+      operationId: get_agents
+      tags:
+      - Agents
+      x-agentrix-policy:
+        capabilities:
+        - agents:read:own
+        - agents:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: owner
+        in: query
+        schema:
+          type: string
+    post:
+      summary: Create an agent
+      operationId: post_agents
+      tags:
+      - Agents
+      x-agentrix-policy:
+        capabilities:
+        - agents:create
+        authenticated: true
+      security:
+      - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAgentRequest'
+  /api/v1/agents/{id}:
+    get:
+      summary: Read an agent (own or any)
+      operationId: get_agents_id
+      tags:
+      - Agents
+      x-agentrix-policy:
+        capabilities:
+        - agents:read:own
+        - agents:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: Rename or describe an agent
+      operationId: patch_agents_id
+      tags:
+      - Agents
+      x-agentrix-policy:
+        capabilities:
+        - agents:update:own
+        - agents:update:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAgentRequest'
+  /api/v1/agents/{id}/status:
+    put:
+      summary: Activate or disable an agent (explicit status)
+      operationId: put_agents_id_status
+      tags:
+      - Agents
+      x-agentrix-policy:
+        capabilities:
+        - agents:update:own
+        - agents:update:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentStatusRequest'
+  /api/v1/agents/{id}/submissions:
+    get:
+      summary: Submission versions of an agent
+      operationId: get_agents_id_submissions
+      tags:
+      - Submissions
+      x-agentrix-policy:
+        capabilities:
+        - submissions:read:own
+        - submissions:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: 'Upload a bot bundle (ZIP: agentrix.json + bot.py); admission runs in the worker sandbox'
+      operationId: post_agents_id_submissions
+      tags:
+      - Submissions
+      x-agentrix-policy:
+        capabilities:
+        - submissions:create:own
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                bundle:
+                  type: string
+                  format: binary
+                  description: ZIP <= 2 MiB with exactly agentrix.json and bot.py
+              additionalProperties: false
+              required:
+              - bundle
+  /api/v1/submissions/{id}:
+    get:
+      summary: Read a submission (status, digest, admission error)
+      operationId: get_submissions_id
+      tags:
+      - Submissions
+      x-agentrix-policy:
+        capabilities:
+        - submissions:read:own
+        - submissions:read:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/submissions/{id}/disable:
+    post:
+      summary: Retire a ready submission
+      operationId: post_submissions_id_disable
+      tags:
+      - Submissions
+      x-agentrix-policy:
+        capabilities:
+        - agents:update:own
+        - agents:update:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/contests:
+    get:
+      summary: List contests (drafts only with contests:manage)
+      operationId: get_contests
+      tags:
+      - Contests
+      x-agentrix-policy:
+        capabilities:
+        - contests:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+    post:
+      summary: Create a draft contest
+      operationId: post_contests
+      tags:
+      - Contests
+      x-agentrix-policy:
+        capabilities:
+        - contests:manage
+        authenticated: true
+      security:
+      - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateContestRequest'
+  /api/v1/contests/{id}:
+    get:
+      summary: Read a contest
+      operationId: get_contests_id
+      tags:
+      - Contests
+      x-agentrix-policy:
+        capabilities:
+        - contests:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    patch:
+      summary: Edit contest details (scoring policy only while draft)
+      operationId: patch_contests_id
+      tags:
+      - Contests
+      x-agentrix-policy:
+        capabilities:
+        - contests:manage
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateContestRequest'
+  /api/v1/contests/{id}/transitions:
+    post:
+      summary: Apply a state machine transition
+      operationId: post_contests_id_transitions
+      tags:
+      - Contests
+      x-agentrix-policy:
+        capabilities:
+        - contests:manage
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TransitionRequest'
+  /api/v1/contests/{id}/entries:
+    get:
+      summary: Contest roster
+      operationId: get_contests_id_entries
+      tags:
+      - Entries
+      x-agentrix-policy:
+        capabilities:
+        - contests:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Enroll an agent locked to an exact ready submission
+      operationId: post_contests_id_entries
+      tags:
+      - Entries
+      x-agentrix-policy:
+        capabilities:
+        - entries:create:own
+        - entries:manage:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EnrollRequest'
+  /api/v1/contests/{id}/entries/{entryId}/submission:
+    put:
+      summary: Re-lock the entry to another ready submission (registration open)
+      operationId: put_contests_id_entries_entryId_submission
+      tags:
+      - Entries
+      x-agentrix-policy:
+        capabilities:
+        - entries:create:own
+        - entries:manage:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entryId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResubmitRequest'
+  /api/v1/contests/{id}/entries/{entryId}/withdraw:
+    post:
+      summary: Withdraw an entry (audited, reason required)
+      operationId: post_contests_id_entries_entryId_withdraw
+      tags:
+      - Entries
+      x-agentrix-policy:
+        capabilities:
+        - entries:create:own
+        - entries:manage:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entryId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+  /api/v1/contests/{id}/entries/{entryId}/disqualify:
+    post:
+      summary: Disqualify an entry (audited, reason required)
+      operationId: post_contests_id_entries_entryId_disqualify
+      tags:
+      - Entries
+      x-agentrix-policy:
+        capabilities:
+        - entries:manage:any
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: entryId
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+  /api/v1/contests/{id}/rankings:
+    get:
+      summary: Current ranking projection (committed runs only)
+      operationId: get_contests_id_rankings
+      tags:
+      - Rankings
+      x-agentrix-policy:
+        capabilities:
+        - rankings:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/contests/{id}/rankings/recalculate:
+    post:
+      summary: Recompute the projection transactionally
+      operationId: post_contests_id_rankings_recalculate
+      tags:
+      - Rankings
+      x-agentrix-policy:
+        capabilities:
+        - rankings:publish
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/contests/{id}/rankings/snapshots:
+    get:
+      summary: Published snapshots
+      operationId: get_contests_id_rankings_snapshots
+      tags:
+      - Rankings
+      x-agentrix-policy:
+        capabilities:
+        - rankings:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Publish a new immutable snapshot version
+      operationId: post_contests_id_rankings_snapshots
+      tags:
+      - Rankings
+      x-agentrix-policy:
+        capabilities:
+        - rankings:publish
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/contests/{id}/rankings/snapshots/{version}:
+    get:
+      summary: Read a snapshot version
+      operationId: get_contests_id_rankings_snapshots_version
+      tags:
+      - Rankings
+      x-agentrix-policy:
+        capabilities:
+        - rankings:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: version
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 1
+  /api/v1/matches:
+    get:
+      summary: List matches
+      operationId: get_matches
+      tags:
+      - Matches
+      x-agentrix-policy:
+        capabilities:
+        - matches:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: contest_id
+        in: query
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Create a match with immutable slots (competitive rosters come from entries)
+      operationId: post_matches
+      tags:
+      - Matches
+      x-agentrix-policy:
+        capabilities:
+        - matches:create
+        authenticated: true
+      security:
+      - bearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateMatchRequest'
+  /api/v1/matches/{id}:
+    get:
+      summary: 'Match detail: slots, runs, committed results and replay'
+      operationId: get_matches_id
+      tags:
+      - Matches
+      x-agentrix-policy:
+        capabilities:
+        - matches:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/matches/{id}/runs:
+    post:
+      summary: Schedule a run (transactional; Idempotency-Key required)
+      operationId: post_matches_id_runs
+      tags:
+      - Matches
+      x-agentrix-policy:
+        capabilities:
+        - matches:run
+        authenticated: true
+      description: 'Creates the next MatchRun (new attempt, sealed ExecutionSpec with engine and submission digests) and its job in one transaction.
+        Repeating the same key returns the original ticket with `Idempotency-Replayed: true`. A different key while a run is queued/running returns
+        409 `run_in_progress` with the real `run_id`/`job_id` in `error.details`. Reusing a key for another request returns 409 `idempotency_key_reused`.
+        Without a live worker engine: 503 `engine_unavailable`.'
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          pattern: ^[A-Za-z0-9_.:-]{8,128}$
+  /api/v1/matches/{id}/cancel:
+    post:
+      summary: Cancel a match that is not executing
+      operationId: post_matches_id_cancel
+      tags:
+      - Matches
+      x-agentrix-policy:
+        capabilities:
+        - matches:cancel
+        authenticated: true
+      security:
+      - bearer: []
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReasonRequest'
+  /api/v1/replays/{id}:
+    get:
+      summary: Published replay metadata
+      operationId: get_replays_id
+      tags:
+      - Replays
+      x-agentrix-policy:
+        capabilities:
+        - replays:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/replays/{id}/stream:
+    get:
+      summary: 'Replay NDJSON stream (Content-Encoding: gzip; ETag = sha256)'
+      operationId: get_replays_id_stream
+      tags:
+      - Replays
+      x-agentrix-policy:
+        capabilities:
+        - replays:view
+        authenticated: false
+      security:
+      - bearer: []
+      - {}
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+  /api/v1/admin/readiness:
+    get:
+      summary: Per-component readiness DTO (no secrets)
+      operationId: get_admin_readiness
+      tags:
+      - Admin
+      x-agentrix-policy:
+        capabilities:
+        - admin:access
+        authenticated: true
+      security:
+      - bearer: []
 components:
   securitySchemes:
-    bearerAuth:
-      $ref: './components/security.yaml#/bearerAuth'
-    sessionAuth:
-      $ref: './components/security.yaml#/sessionAuth'
+    bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT (HS256, 10 min, bound to a session family)
+  schemas:
+    UserStatus:
+      type: string
+      enum:
+      - active
+      - suspended
+      - disabled
+    Role:
+      type: string
+      enum:
+      - admin
+      - organizer
+      - player
+      - referee
+      - spectator
+    Capability:
+      type: string
+      enum:
+      - users:read:own
+      - users:read:any
+      - users:update:own
+      - users:update:any
+      - users:roles:manage
+      - agents:create
+      - agents:read:own
+      - agents:read:any
+      - agents:update:own
+      - agents:update:any
+      - submissions:create:own
+      - submissions:read:own
+      - submissions:read:any
+      - contests:view
+      - contests:manage
+      - entries:create:own
+      - entries:manage:any
+      - matches:view
+      - matches:create
+      - matches:run
+      - matches:cancel
+      - rankings:view
+      - rankings:publish
+      - replays:view
+      - admin:access
+    ContestState:
+      type: string
+      enum:
+      - draft
+      - registration_open
+      - registration_closed
+      - running
+      - finished
+      - cancelled
+      - archived
+    EntryStatus:
+      type: string
+      enum:
+      - enrolled
+      - withdrawn
+      - disqualified
+    SubmissionStatus:
+      type: string
+      enum:
+      - validating
+      - ready
+      - rejected
+      - disabled
+    MatchMode:
+      type: string
+      enum:
+      - competitive
+      - exhibition
+      - demo
+    MatchState:
+      type: string
+      enum:
+      - scheduled
+      - queued
+      - running
+      - finished
+      - failed
+      - cancelled
+    RunState:
+      type: string
+      enum:
+      - created
+      - reserved
+      - running
+      - committed
+      - failed
+      - timed_out
+      - aborted
+    Outcome:
+      type: string
+      enum:
+      - win
+      - loss
+      - draw
+      - disqualified
+    ErrorClass:
+      type: string
+      enum:
+      - infrastructure
+      - sandbox
+      - engine
+      - artifact
+      - lease_lost
+      - cancelled
+      - spec
+    TickRate:
+      type: object
+      properties:
+        numerator:
+          type: integer
+          minimum: 1
+        denominator:
+          type: integer
+          minimum: 1
+      additionalProperties: false
+      required:
+      - numerator
+      - denominator
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+            request_id:
+              type: string
+          additionalProperties: false
+          required:
+          - code
+          - message
+          - request_id
+      additionalProperties: false
+      required:
+      - error
+    Liveness:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - alive
+      additionalProperties: false
+      required:
+      - status
+    HealthStatus:
+      type: string
+      enum:
+      - healthy
+      - degraded
+      - down
+      - unknown
+    ReadinessSummary:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/HealthStatus'
+        checked_at: &id002
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - status
+      - checked_at
+    Readiness:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/HealthStatus'
+        checked_at: *id002
+        components:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                enum:
+                - database
+                - artifacts
+                - games
+                - workers
+                - queue
+                - integrity
+                - replays
+              status:
+                $ref: '#/components/schemas/HealthStatus'
+              message:
+                type: string
+              details:
+                type: object
+                additionalProperties: true
+            additionalProperties: false
+            required:
+            - name
+            - status
+            - message
+      additionalProperties: false
+      required:
+      - status
+      - checked_at
+      - components
+    RegisterRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          pattern: ^[A-Za-z0-9_.-]{3,32}$
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          minLength: 6
+          maxLength: 128
+      additionalProperties: false
+      required:
+      - username
+      - email
+      - password
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+      additionalProperties: false
+      required:
+      - username
+      - password
+    User:
+      type: object
+      properties:
+        id: &id003
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        status:
+          $ref: '#/components/schemas/UserStatus'
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+        capabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Capability'
+          description: Present on /me and session responses only.
+        created_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - username
+      - status
+      - roles
+      - created_at
+    UserList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/User'
+      additionalProperties: false
+      required:
+      - items
+    Session:
+      type: object
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          enum:
+          - Bearer
+        expires_at: *id002
+        expires_in:
+          type: integer
+        user:
+          $ref: '#/components/schemas/User'
+      additionalProperties: false
+      required:
+      - access_token
+      - token_type
+      - expires_at
+      - expires_in
+      - user
+    RevokedSessions:
+      type: object
+      properties:
+        revoked_sessions:
+          type: integer
+      additionalProperties: false
+      required:
+      - revoked_sessions
+    CreateUserRequest:
+      type: object
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+        password:
+          type: string
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          minItems: 1
+      additionalProperties: false
+      required:
+      - username
+      - email
+      - password
+      - roles
+    UpdateUserRequest:
+      type: object
+      properties:
+        email:
+          type: string
+        current_password:
+          type: string
+        new_password:
+          type: string
+      additionalProperties: false
+    RolesRequest:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            $ref: '#/components/schemas/Role'
+          minItems: 1
+      additionalProperties: false
+      required:
+      - roles
+    UserStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/UserStatus'
+      additionalProperties: false
+      required:
+      - status
+    Game:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        version:
+          type: string
+        description:
+          type: string
+        min_players:
+          type: integer
+        max_players:
+          type: integer
+        tick_rate:
+          $ref: '#/components/schemas/TickRate'
+        max_ticks:
+          type: integer
+        viewer:
+          type: string
+        engine_protocol:
+          type: string
+        bot_protocol:
+          type: string
+        replay_format:
+          type: string
+        runtimes:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+      required:
+      - id
+      - name
+      - version
+      - min_players
+      - max_players
+      - tick_rate
+      - max_ticks
+      - viewer
+      - engine_protocol
+      - bot_protocol
+      - replay_format
+      - runtimes
+    GameList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Game'
+      additionalProperties: false
+      required:
+      - items
+    Agent:
+      type: object
+      properties:
+        id: *id003
+        owner_user_id: *id003
+        owner_username:
+          type: string
+        game_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+        created_at: *id002
+        updated_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - owner_user_id
+      - owner_username
+      - game_id
+      - name
+      - description
+      - status
+      - created_at
+      - updated_at
+    AgentList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+      additionalProperties: false
+      required:
+      - items
+    CreateAgentRequest:
+      type: object
+      properties:
+        game_id:
+          type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        description:
+          type: string
+          maxLength: 2000
+      additionalProperties: false
+      required:
+      - game_id
+      - name
+    UpdateAgentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+      additionalProperties: false
+    AgentStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+          - active
+          - disabled
+      additionalProperties: false
+      required:
+      - status
+    Submission:
+      type: object
+      properties:
+        id: *id003
+        agent_id: *id003
+        version:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/SubmissionStatus'
+        runtime:
+          type: string
+        entrypoint:
+          type: string
+        artifact_sha256: &id004
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        size_bytes:
+          type: integer
+        manifest:
+          type: object
+        admission_error:
+          type: string
+        created_at: *id002
+        updated_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - agent_id
+      - version
+      - status
+      - runtime
+      - entrypoint
+      - artifact_sha256
+      - size_bytes
+      - manifest
+      - created_at
+      - updated_at
+    SubmissionList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Submission'
+      additionalProperties: false
+      required:
+      - items
+    ScoringPolicy:
+      type: object
+      properties:
+        win_points:
+          type: integer
+        draw_points:
+          type: integer
+        loss_points:
+          type: integer
+        disqualification_penalty:
+          type: integer
+          minimum: 0
+        tiebreakers:
+          type: array
+          items:
+            type: string
+            enum:
+            - score_diff
+            - wins
+            - head_to_head
+            - score_for
+          uniqueItems: true
+      additionalProperties: false
+      required:
+      - win_points
+      - draw_points
+      - loss_points
+      - disqualification_penalty
+      - tiebreakers
+    Contest:
+      type: object
+      properties:
+        id: *id003
+        game_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        state:
+          $ref: '#/components/schemas/ContestState'
+        allowed_transitions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContestState'
+        starts_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        scoring_policy:
+          $ref: '#/components/schemas/ScoringPolicy'
+        created_at: *id002
+        updated_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - game_id
+      - name
+      - description
+      - state
+      - allowed_transitions
+      - starts_at
+      - ends_at
+      - scoring_policy
+      - created_at
+      - updated_at
+    ContestList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Contest'
+      additionalProperties: false
+      required:
+      - items
+    CreateContestRequest:
+      type: object
+      properties:
+        game_id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        starts_at: *id002
+        ends_at: *id002
+        scoring_policy:
+          $ref: '#/components/schemas/ScoringPolicy'
+      additionalProperties: false
+      required:
+      - game_id
+      - name
+    UpdateContestRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        starts_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        ends_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        scoring_policy:
+          $ref: '#/components/schemas/ScoringPolicy'
+      additionalProperties: false
+    TransitionRequest:
+      type: object
+      properties:
+        state:
+          $ref: '#/components/schemas/ContestState'
+        reason:
+          type: string
+      additionalProperties: false
+      required:
+      - state
+    Entry:
+      type: object
+      properties:
+        id: *id003
+        contest_id: *id003
+        agent_id: *id003
+        agent_name:
+          type: string
+        user_id: *id003
+        username:
+          type: string
+        submission_id: *id003
+        submission_version:
+          type: integer
+        status:
+          $ref: '#/components/schemas/EntryStatus'
+        status_reason:
+          type: string
+        status_changed_at: *id002
+        created_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - contest_id
+      - agent_id
+      - agent_name
+      - user_id
+      - username
+      - submission_id
+      - submission_version
+      - status
+      - created_at
+    EntryList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Entry'
+      additionalProperties: false
+      required:
+      - items
+    EnrollRequest:
+      type: object
+      properties:
+        agent_id: *id003
+        submission_id: *id003
+      additionalProperties: false
+      required:
+      - agent_id
+      - submission_id
+    ResubmitRequest:
+      type: object
+      properties:
+        submission_id: *id003
+      additionalProperties: false
+      required:
+      - submission_id
+    ReasonRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          minLength: 1
+          maxLength: 500
+      additionalProperties: false
+      required:
+      - reason
+    Slot:
+      type: object
+      properties:
+        id: *id003
+        slot_index:
+          type: integer
+          minimum: 0
+        agent_id: *id003
+        submission_id: *id003
+        contest_entry_id: *id003
+        display_name:
+          type: string
+      additionalProperties: false
+      required:
+      - id
+      - slot_index
+      - agent_id
+      - submission_id
+      - display_name
+    Match:
+      type: object
+      properties:
+        id: *id003
+        contest_id: *id003
+        game_id: &id005
+          type: string
+        mode: &id006
+          $ref: '#/components/schemas/MatchMode'
+        state: &id007
+          $ref: '#/components/schemas/MatchState'
+        seed: &id008
+          type: integer
+          minimum: 0
+        committed_run_id: *id003
+        created_at: *id002
+        updated_at: *id002
+        finished_at: *id002
+        slots: &id009
+          type: array
+          items:
+            $ref: '#/components/schemas/Slot'
+      additionalProperties: false
+      required:
+      - id
+      - game_id
+      - mode
+      - state
+      - seed
+      - created_at
+      - updated_at
+      - slots
+    MatchList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Match'
+      additionalProperties: false
+      required:
+      - items
+    Run:
+      type: object
+      properties:
+        id: *id003
+        attempt:
+          type: integer
+          minimum: 1
+        state:
+          $ref: '#/components/schemas/RunState'
+        execution_spec_hash: *id004
+        engine_sha256: *id004
+        engine_version:
+          type: string
+        tick_rate:
+          $ref: '#/components/schemas/TickRate'
+        created_at: *id002
+        reserved_at: *id002
+        started_at: *id002
+        finished_at: *id002
+        error_class:
+          $ref: '#/components/schemas/ErrorClass'
+        error_message:
+          type: string
+      additionalProperties: false
+      required:
+      - id
+      - attempt
+      - state
+      - execution_spec_hash
+      - engine_sha256
+      - engine_version
+      - tick_rate
+      - created_at
+    Result:
+      type: object
+      properties:
+        slot_id: *id003
+        slot_index:
+          type: integer
+        display_name:
+          type: string
+        score:
+          type: integer
+        rank:
+          type: integer
+          minimum: 1
+        outcome:
+          $ref: '#/components/schemas/Outcome'
+      additionalProperties: false
+      required:
+      - slot_id
+      - slot_index
+      - display_name
+      - score
+      - rank
+      - outcome
+    Replay:
+      type: object
+      properties:
+        id: *id003
+        match_id: *id003
+        match_run_id: *id003
+        format_version:
+          type: string
+        compression:
+          type: string
+          enum:
+          - none
+          - gzip
+        sha256: *id004
+        size_bytes:
+          type: integer
+        frame_count:
+          type: integer
+        publication_state:
+          type: string
+          enum:
+          - staging
+          - published
+          - publish_failed
+        published_at: *id002
+        available:
+          type: boolean
+      additionalProperties: false
+      required:
+      - id
+      - match_id
+      - match_run_id
+      - format_version
+      - compression
+      - sha256
+      - size_bytes
+      - frame_count
+      - publication_state
+      - available
+    MatchDetail:
+      type: object
+      properties:
+        id: *id003
+        contest_id: *id003
+        game_id: *id005
+        mode: *id006
+        state: *id007
+        seed: *id008
+        committed_run_id: *id003
+        created_at: *id002
+        updated_at: *id002
+        finished_at: *id002
+        slots: *id009
+        runs:
+          type: array
+          items:
+            $ref: '#/components/schemas/Run'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Result'
+          description: Results of the committed run only.
+        replay:
+          oneOf:
+          - $ref: '#/components/schemas/Replay'
+          - type: 'null'
+      additionalProperties: false
+      required:
+      - id
+      - game_id
+      - mode
+      - state
+      - seed
+      - created_at
+      - updated_at
+      - slots
+      - runs
+      - results
+      - replay
+    CreateMatchRequest:
+      type: object
+      properties:
+        contest_id: *id003
+        mode:
+          $ref: '#/components/schemas/MatchMode'
+        entry_ids:
+          type: array
+          items: *id003
+          description: Competitive roster, in slot order.
+        submission_ids:
+          type: array
+          items: *id003
+          description: Exhibition/demo roster, in slot order.
+        seed:
+          type: integer
+          minimum: 0
+      additionalProperties: false
+      required:
+      - mode
+    RunTicket:
+      type: object
+      properties:
+        match_id: *id003
+        run_id: *id003
+        job_id: *id003
+        attempt:
+          type: integer
+          minimum: 1
+        state:
+          $ref: '#/components/schemas/MatchState'
+      additionalProperties: false
+      required:
+      - match_id
+      - run_id
+      - job_id
+      - attempt
+      - state
+    RankingRow:
+      type: object
+      properties:
+        rank:
+          type: integer
+        entry_id: *id003
+        agent_id: *id003
+        agent_name:
+          type: string
+        user_id: *id003
+        username:
+          type: string
+        points:
+          type: integer
+        matches_played:
+          type: integer
+        wins:
+          type: integer
+        draws:
+          type: integer
+        losses:
+          type: integer
+        disqualifications:
+          type: integer
+        score_for:
+          type: integer
+        score_against:
+          type: integer
+      additionalProperties: false
+      required:
+      - rank
+      - entry_id
+      - agent_id
+      - agent_name
+      - user_id
+      - username
+      - points
+      - matches_played
+      - wins
+      - draws
+      - losses
+      - disqualifications
+      - score_for
+      - score_against
+    Rankings:
+      type: object
+      properties:
+        contest_id: *id003
+        rankings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RankingRow'
+        stale:
+          type: boolean
+        computed_at:
+          type:
+          - string
+          - 'null'
+          format: date-time
+        applied_runs_count:
+          type: integer
+        applied_runs_digest: *id004
+      additionalProperties: false
+      required:
+      - contest_id
+      - rankings
+      - stale
+      - computed_at
+      - applied_runs_count
+      - applied_runs_digest
+    Snapshot:
+      type: object
+      properties:
+        id: *id003
+        contest_id: *id003
+        version:
+          type: integer
+          minimum: 1
+        rankings:
+          type: array
+          items:
+            $ref: '#/components/schemas/RankingRow'
+        rankings_sha256: *id004
+        applied_runs_digest: *id004
+        applied_runs_count:
+          type: integer
+        published_by: *id003
+        published_at: *id002
+      additionalProperties: false
+      required:
+      - id
+      - contest_id
+      - version
+      - rankings
+      - rankings_sha256
+      - applied_runs_digest
+      - applied_runs_count
+      - published_by
+      - published_at
+    SnapshotList:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Snapshot'
+      additionalProperties: false
+      required:
+      - items

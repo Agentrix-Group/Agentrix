@@ -1,528 +1,209 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  Shield,
-  Users,
-  Trophy,
-  Activity,
-  RefreshCw,
-  Upload,
-  CheckCircle2,
-  XCircle,
-  AlertCircle,
-  Server,
-  Database,
-  Cpu,
-  Flame,
-  Search,
-} from 'lucide-react';
+import { RefreshCw, UserPlus } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
-import { formatDate } from '../i18n/formatters.js';
-import { LoadingState } from '../components/LoadingState.jsx';
-import { ErrorState } from '../components/ErrorState.jsx';
-import { EmptyState } from '../components/EmptyState.jsx';
+import { useResource, usePolling } from '../hooks/hooks.js';
+import { useSession } from '../auth/SessionContext.jsx';
+import { LoadingState, ErrorState, useErrorMessage } from '../components/States.jsx';
+import { StatusBadge } from '../components/StatusBadge.jsx';
+import { Modal } from '../components/Modal.jsx';
+import { useToast } from '../components/Toast.jsx';
+import { formatDateTime } from '../i18n/formatters.js';
 
-export function AdminPage({ currentUser }) {
-  const { t, i18n } = useTranslation(['common']);
-  const language = i18n.language?.startsWith('en') ? 'en' : 'es';
+const ROLES = ['admin', 'organizer', 'player', 'referee', 'spectator'];
+const STATUSES = ['active', 'suspended', 'disabled'];
 
-  const [activeTab, setActiveTab] = useState('users'); // 'users' | 'contests' | 'audit'
-
-  // Users state
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(false);
-  const [usersError, setUsersError] = useState('');
-  const [userSearch, setUserSearch] = useState('');
-
-  // Contests state
-  const [contests, setContests] = useState([]);
-  const [contestsLoading, setContestsLoading] = useState(false);
-  const [contestsError, setContestsError] = useState('');
-  const [actionFeedback, setActionFeedback] = useState(null); // { type: 'success' | 'error', message: '' }
-  const [actionInProgress, setActionInProgress] = useState(false);
-
-  // System audit state
-  const [health, setHealth] = useState(null);
-  const [healthLoading, setHealthLoading] = useState(false);
-
-  // -----------------------------------------------------------------
-  // Loaders
-  // -----------------------------------------------------------------
-  const loadUsers = useCallback(async () => {
-    setUsersLoading(true);
-    setUsersError('');
-    try {
-      const data = await ApiService.listUsers();
-      setUsers(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setUsersError(err?.message || 'No se pudieron consultar las cuentas de usuario.');
-    } finally {
-      setUsersLoading(false);
-    }
-  }, []);
-
-  const loadContests = useCallback(async () => {
-    setContestsLoading(true);
-    setContestsError('');
-    try {
-      const data = await ApiService.listContests();
-      setContests(Array.isArray(data) ? data : []);
-    } catch (err) {
-      setContestsError(err?.message || 'No se pudieron consultar los torneos.');
-    } finally {
-      setContestsLoading(false);
-    }
-  }, []);
-
-  const loadHealth = useCallback(async () => {
-    setHealthLoading(true);
-    try {
-      const res = await ApiService.getHealth();
-      setHealth(res || { status: 'healthy', database: 'connected' });
-    } catch {
-      setHealth({ status: 'healthy', database: 'connected' });
-    } finally {
-      setHealthLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (activeTab === 'users') {
-      loadUsers();
-    } else if (activeTab === 'contests') {
-      loadContests();
-    } else if (activeTab === 'audit') {
-      loadHealth();
-    }
-  }, [activeTab, loadUsers, loadContests, loadHealth]);
-
-  // -----------------------------------------------------------------
-  // Contest actions
-  // -----------------------------------------------------------------
-  const handleRecalculateRankings = async (contestId) => {
-    setActionInProgress(true);
-    setActionFeedback(null);
-    try {
-      const res = await ApiService.recalculateRankings(contestId);
-      const count = Array.isArray(res) ? res.length : 0;
-      setActionFeedback({
-        type: 'success',
-        message: `Puntuaciones recalculadas exitosamente para ${contestId} (${count} agentes posicionados).`,
-      });
-    } catch (err) {
-      setActionFeedback({
-        type: 'error',
-        message: `Error al recalcular puntuaciones: ${err?.message || 'Operación fallida'}`,
-      });
-    } finally {
-      setActionInProgress(false);
-    }
-  };
-
-  const handlePublishSnapshot = async (contestId) => {
-    setActionInProgress(true);
-    setActionFeedback(null);
-    try {
-      const snap = await ApiService.publishRankingSnapshot(contestId);
-      setActionFeedback({
-        type: 'success',
-        message: `Snapshot publicado exitosamente: Versión v${snap?.version || 1} para el torneo ${contestId}.`,
-      });
-    } catch (err) {
-      setActionFeedback({
-        type: 'error',
-        message: `Error al publicar snapshot: ${err?.message || 'Operación fallida'}`,
-      });
-    } finally {
-      setActionInProgress(false);
-    }
-  };
-
-  const handleToggleUserActivation = async (userId) => {
-    try {
-      await ApiService.activateUser(userId);
-      await loadUsers();
-    } catch (err) {
-      alert(`Error al actualizar estado del usuario: ${err?.message}`);
-    }
-  };
-
-  // Filter users
-  const filteredUsers = users.filter((u) => {
-    if (!userSearch) return true;
-    const q = userSearch.toLowerCase();
-    return (
-      (u.username && u.username.toLowerCase().includes(q)) ||
-      (u.email && u.email.toLowerCase().includes(q)) ||
-      (u.role_id && u.role_id.toLowerCase().includes(q)) ||
-      (u.id && u.id.toLowerCase().includes(q))
+function DetailValue({ value }) {
+  if (Array.isArray(value)) {
+    return value.length === 0 ? <span className="muted">—</span> : (
+      <ul className="detail-list">{value.map((v, i) => <li key={i}><DetailValue value={v} /></li>)}</ul>
     );
-  });
+  }
+  if (value && typeof value === 'object') {
+    return <dl className="detail-grid">{Object.entries(value).map(([k, v]) => <React.Fragment key={k}><dt>{k}</dt><dd><DetailValue value={v} /></dd></React.Fragment>)}</dl>;
+  }
+  return <code>{String(value)}</code>;
+}
 
+/** Renders the readiness DTO exactly as reported by the backend. A failed
+ * request is shown as "unknown", never as healthy. */
+function Readiness() {
+  const { t, i18n } = useTranslation('admin');
+  const readiness = useResource((signal) => ApiService.readiness({ signal }), []);
+  usePolling(readiness.reload, 10000, true);
+  const status = readiness.error ? 'unknown' : readiness.data?.status;
   return (
-    <div className="admin-page">
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-        <div
-          style={{
-            display: 'inline-flex',
-            padding: '10px',
-            background: 'rgba(239, 68, 68, 0.12)',
-            borderRadius: '8px',
-            color: 'var(--danger, #ef4444)',
-          }}
-        >
-          <Shield size={26} aria-hidden="true" />
-        </div>
-        <div>
-          <h1 style={{ margin: 0, fontSize: '1.8rem' }}>Panel de Administración</h1>
-          <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: '0.95rem' }}>
-            Control operativo de la plataforma Agentrix: gestión de cuentas, auditoría de torneos y estado del motor.
-          </p>
-        </div>
+    <section className="card" aria-labelledby="readiness-title">
+      <div className="card-row">
+        <h2 id="readiness-title">{t('readiness')} {status && <StatusBadge state={status} />}</h2>
+        <button type="button" className="btn btn-secondary" onClick={readiness.reload}><RefreshCw size={16} aria-hidden="true" /> {t('refresh')}</button>
       </div>
-
-      {/* Tabs */}
-      <div
-        style={{
-          display: 'flex',
-          gap: '8px',
-          borderBottom: '1px solid var(--border-color, #334155)',
-          marginBottom: '28px',
-        }}
-      >
-        {[
-          { id: 'users', label: 'Usuarios y Permisos', icon: Users },
-          { id: 'contests', label: 'Gestión de Torneos', icon: Trophy },
-          { id: 'audit', label: 'Auditoría y Salud', icon: Activity },
-        ].map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            type="button"
-            className={`btn btn-secondary ${activeTab === id ? 'active' : ''}`}
-            onClick={() => setActiveTab(id)}
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '8px',
-              border: 'none',
-              borderRadius: '6px 6px 0 0',
-              borderBottom: activeTab === id ? '3px solid var(--accent, #3b82f6)' : '3px solid transparent',
-              background: activeTab === id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-              padding: '10px 18px',
-              fontSize: '0.95rem',
-            }}
-          >
-            <Icon size={17} aria-hidden="true" /> {label}
-          </button>
-        ))}
-      </div>
-
-      {/* Feedback banner */}
-      {actionFeedback && (
-        <div
-          role="status"
-          className="card"
-          style={{
-            marginBottom: '20px',
-            borderLeft: `4px solid ${actionFeedback.type === 'success' ? 'var(--success, #22c55e)' : 'var(--danger, #ef4444)'}`,
-            background: actionFeedback.type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-          }}
-        >
-          {actionFeedback.type === 'success' ? (
-            <CheckCircle2 size={20} color="var(--success, #22c55e)" aria-hidden="true" />
-          ) : (
-            <AlertCircle size={20} color="var(--danger, #ef4444)" aria-hidden="true" />
-          )}
-          <span>{actionFeedback.message}</span>
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* TAB: USERS */}
-      {/* ------------------------------------------------------------- */}
-      {activeTab === 'users' && (
-        <div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '20px',
-              gap: '16px',
-              flexWrap: 'wrap',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: '1 1 300px' }}>
-              <Search size={18} color="var(--text-secondary)" aria-hidden="true" />
-              <input
-                type="text"
-                className="input"
-                placeholder="Buscar usuarios por nombre, email o rol..."
-                value={userSearch}
-                onChange={(e) => setUserSearch(e.target.value)}
-                style={{ width: '100%' }}
-                aria-label="Buscar usuarios"
-              />
-            </div>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={loadUsers}
-              disabled={usersLoading}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-            >
-              <RefreshCw size={16} className={usersLoading ? 'animate-spin' : ''} aria-hidden="true" /> Refrescar
-            </button>
+      {readiness.loading && !readiness.data && <LoadingState />}
+      {readiness.error && <ErrorState error={readiness.error} onRetry={readiness.reload} title={t('readinessUnavailable')} />}
+      {readiness.data && !readiness.error && (
+        <>
+          <p className="muted small">{t('checkedAt', { at: formatDateTime(readiness.data.checked_at, i18n.language) })}</p>
+          <div className="component-grid">
+            {readiness.data.components.map((c) => (
+              <article key={c.name} className={`component component-${c.status}`}>
+                <header className="card-row"><h3>{t(`components.${c.name}`, { defaultValue: c.name })}</h3><StatusBadge state={c.status} /></header>
+                <p>{c.message}</p>
+                {c.details && <details><summary>{t('details')}</summary><DetailValue value={c.details} /></details>}
+              </article>
+            ))}
           </div>
-
-          {usersLoading && <LoadingState message="Consultando usuarios..." />}
-          {usersError && <ErrorState message={usersError} onRetry={loadUsers} />}
-
-          {!usersLoading && !usersError && (
-            <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color, #334155)', background: 'rgba(0,0,0,0.2)' }}>
-                      <th style={{ padding: '14px 16px' }}>Usuario</th>
-                      <th style={{ padding: '14px 16px' }}>Email</th>
-                      <th style={{ padding: '14px 16px' }}>Rol</th>
-                      <th style={{ padding: '14px 16px' }}>Estado</th>
-                      <th style={{ padding: '14px 16px' }}>Registro</th>
-                      <th style={{ padding: '14px 16px', textAlign: 'right' }}>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} style={{ padding: '36px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                          No se encontraron usuarios coincidentes.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredUsers.map((u) => (
-                        <tr key={u.id} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <td style={{ padding: '14px 16px', fontWeight: 600 }}>{u.username}</td>
-                          <td style={{ padding: '14px 16px', color: 'var(--text-secondary)' }}>{u.email}</td>
-                          <td style={{ padding: '14px 16px' }}>
-                            <span
-                              style={{
-                                padding: '3px 8px',
-                                borderRadius: '4px',
-                                fontSize: '0.8rem',
-                                fontWeight: 600,
-                                background:
-                                  u.role_id === 'admin'
-                                    ? 'rgba(239, 68, 68, 0.15)'
-                                    : u.role_id === 'organizer'
-                                    ? 'rgba(245, 158, 11, 0.15)'
-                                    : 'rgba(59, 130, 246, 0.15)',
-                                color:
-                                  u.role_id === 'admin'
-                                    ? 'var(--danger, #ef4444)'
-                                    : u.role_id === 'organizer'
-                                    ? 'var(--warning, #f59e0b)'
-                                    : 'var(--accent, #3b82f6)',
-                              }}
-                            >
-                              {u.role_id || u.role}
-                            </span>
-                          </td>
-                          <td style={{ padding: '14px 16px' }}>
-                            {u.active ? (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--success, #22c55e)', fontSize: '0.85rem' }}>
-                                <CheckCircle2 size={15} /> Activo
-                              </span>
-                            ) : (
-                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'var(--danger, #ef4444)', fontSize: '0.85rem' }}>
-                                <XCircle size={15} /> Inactivo
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: '14px 16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                            {u.created_at ? formatDate(u.created_at, language) : 'N/A'}
-                          </td>
-                          <td style={{ padding: '14px 16px', textAlign: 'right' }}>
-                            <button
-                              type="button"
-                              className="btn btn-secondary"
-                              onClick={() => handleToggleUserActivation(u.id)}
-                              style={{ fontSize: '0.8rem', padding: '4px 10px' }}
-                            >
-                              {u.active ? 'Desactivar' : 'Activar'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
-        </div>
+        </>
       )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* TAB: CONTESTS */}
-      {/* ------------------------------------------------------------- */}
-      {activeTab === 'contests' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '1.3rem', margin: 0 }}>Gestión de Torneos y Rankings</h2>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={loadContests}
-              disabled={contestsLoading}
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}
-            >
-              <RefreshCw size={16} className={contestsLoading ? 'animate-spin' : ''} aria-hidden="true" /> Refrescar
-            </button>
-          </div>
-
-          {contestsLoading && <LoadingState message="Consultando torneos..." />}
-          {contestsError && <ErrorState message={contestsError} onRetry={loadContests} />}
-
-          {!contestsLoading && !contestsError && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-              {contests.map((c) => (
-                <div
-                  key={c.id}
-                  className="card"
-                  style={{
-                    padding: '24px',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '20px',
-                  }}
-                >
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-                      <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{c.name}</h3>
-                      <span
-                        style={{
-                          fontSize: '0.75rem',
-                          fontWeight: 600,
-                          padding: '2px 8px',
-                          borderRadius: '4px',
-                          background: 'rgba(255,255,255,0.08)',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        {c.state}
-                      </span>
-                    </div>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', margin: '0 0 8px 0' }}>
-                      ID: <code>{c.id}</code> | Juego: <strong>{c.game_id}</strong>
-                    </p>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <button
-                      type="button"
-                      className="btn btn-secondary"
-                      onClick={() => handleRecalculateRankings(c.id)}
-                      disabled={actionInProgress}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
-                    >
-                      <RefreshCw size={15} aria-hidden="true" /> Recalcular Puntuaciones
-                    </button>
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => handlePublishSnapshot(c.id)}
-                      disabled={actionInProgress}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.85rem' }}
-                    >
-                      <Upload size={15} aria-hidden="true" /> Publicar Snapshot
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ------------------------------------------------------------- */}
-      {/* TAB: AUDIT & HEALTH */}
-      {/* ------------------------------------------------------------- */}
-      {activeTab === 'audit' && (
-        <div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-            <div className="card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <Server size={22} color="var(--accent, #3b82f6)" />
-                <h3 style={{ margin: 0 }}>Estado del Servidor</h3>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Liveness Probe (/health/live):</span>
-                  <span style={{ color: 'var(--success, #22c55e)', fontWeight: 600 }}>Operativo (200 OK)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Readiness Probe (/health/ready):</span>
-                  <span style={{ color: 'var(--success, #22c55e)', fontWeight: 600 }}>Listo (200 OK)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Aislamiento Sandbox:</span>
-                  <span style={{ color: 'var(--success, #22c55e)', fontWeight: 600 }}>Fallo cerrado activo</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <Database size={22} color="var(--warning, #f59e0b)" />
-                <h3 style={{ margin: 0 }}>Base de Datos y Migraciones</h3>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>PostgreSQL Engine:</span>
-                  <span style={{ fontWeight: 600 }}>PostgreSQL 16 (pgx driver)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Versión de Esquema:</span>
-                  <span style={{ color: 'var(--accent, #3b82f6)', fontWeight: 600 }}>Goose v4 (Deterministic Rankings)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Fencing Token Concurrency:</span>
-                  <span style={{ color: 'var(--success, #22c55e)', fontWeight: 600 }}>Activo en match_jobs</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-                <Cpu size={22} color="var(--success, #22c55e)" />
-                <h3 style={{ margin: 0 }}>Motor Starfighter Rust</h3>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', fontSize: '0.9rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Arquitectura del Motor:</span>
-                  <span style={{ fontWeight: 600 }}>Bevy ECS + Rapier 2D</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.05)', paddingBottom: '8px' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Tasa de Simulación:</span>
-                  <span style={{ color: 'var(--accent, #3b82f6)', fontWeight: 600 }}>60.0 Hz Fixed Timestep</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Compresión de Replays:</span>
-                  <span style={{ color: 'var(--success, #22c55e)', fontWeight: 600 }}>NDJSON + Zstandard (.zst)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
-export default AdminPage;
+function CreateUserModal({ onClose, onCreated }) {
+  const { t } = useTranslation('admin');
+  const describe = useErrorMessage();
+  const [form, setForm] = useState({ username: '', email: '', password: '', roles: ['player'] });
+  const [error, setError] = useState(null);
+  const submit = async (e) => {
+    e.preventDefault();
+    try {
+      onCreated(await ApiService.createUser(form));
+    } catch (err) {
+      setError(describe(err));
+    }
+  };
+  return (
+    <Modal title={t('createUser')} onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        {['username', 'email', 'password'].map((k) => (
+          <label key={k} className="field"><span>{t(k)}</span>
+            <input required type={k === 'password' ? 'password' : k === 'email' ? 'email' : 'text'} value={form[k]} onChange={(e) => setForm({ ...form, [k]: e.target.value })} />
+          </label>
+        ))}
+        <fieldset className="field"><legend>{t('roles')}</legend>
+          {ROLES.map((r) => (
+            <label key={r} className="checkbox-row"><input type="checkbox" checked={form.roles.includes(r)}
+              onChange={() => setForm({ ...form, roles: form.roles.includes(r) ? form.roles.filter((x) => x !== r) : [...form.roles, r] })} /> {r}</label>
+          ))}
+        </fieldset>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('common:buttons.cancel')}</button>
+          <button type="submit" className="btn" disabled={form.roles.length === 0}>{t('createUser')}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function RolesModal({ user, onClose, onSaved }) {
+  const { t } = useTranslation('admin');
+  const describe = useErrorMessage();
+  const [roles, setRoles] = useState(user.roles);
+  const [error, setError] = useState(null);
+  const save = async (e) => {
+    e.preventDefault();
+    try {
+      onSaved(await ApiService.replaceRoles(user.id, roles));
+    } catch (err) {
+      setError(describe(err));
+    }
+  };
+  return (
+    <Modal title={t('editRoles', { name: user.username })} onClose={onClose}>
+      <form className="form" onSubmit={save}>
+        <fieldset className="field"><legend>{t('roles')}</legend>
+          {ROLES.map((r) => (
+            <label key={r} className="checkbox-row"><input type="checkbox" checked={roles.includes(r)}
+              onChange={() => setRoles(roles.includes(r) ? roles.filter((x) => x !== r) : [...roles, r])} /> {r}</label>
+          ))}
+        </fieldset>
+        <p className="muted small">{t('rolesImmediate')}</p>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('common:buttons.cancel')}</button>
+          <button type="submit" className="btn" disabled={roles.length === 0}>{t('save')}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Users() {
+  const { t } = useTranslation('admin');
+  const { can, currentUser } = useSession();
+  const toast = useToast();
+  const describe = useErrorMessage();
+  const [filter, setFilter] = useState('');
+  const users = useResource((signal) => ApiService.listUsers(filter || undefined, { signal }), [filter]);
+  const [dialog, setDialog] = useState(null);
+
+  const setStatus = async (user, status) => {
+    try {
+      await ApiService.setUserStatus(user.id, status);
+      toast.success(t('statusChanged', { name: user.username, status: t(`common:states.${status}`) }));
+      users.reload();
+    } catch (err) {
+      toast.error(describe(err));
+    }
+  };
+
+  return (
+    <section className="card" aria-labelledby="users-title">
+      <div className="card-row">
+        <h2 id="users-title">{t('users')}</h2>
+        <div className="actions">
+          <label className="field inline"><span>{t('filter')}</span>
+            <select value={filter} onChange={(e) => setFilter(e.target.value)}>
+              <option value="">{t('all')}</option>
+              {STATUSES.map((s) => <option key={s} value={s}>{t(`common:states.${s}`)}</option>)}
+            </select>
+          </label>
+          {can('users:roles:manage') && <button type="button" className="btn" onClick={() => setDialog({ kind: 'create' })}><UserPlus size={16} aria-hidden="true" /> {t('createUser')}</button>}
+        </div>
+      </div>
+      {users.loading && !users.data && <LoadingState />}
+      {users.error && <ErrorState error={users.error} onRetry={users.reload} />}
+      {users.data && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>{t('username')}</th><th>{t('email')}</th><th>{t('roles')}</th><th>{t('status')}</th><th><span className="visually-hidden">{t('actions')}</span></th></tr></thead>
+            <tbody>
+              {users.data.items.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.username}</td>
+                  <td className="muted">{u.email}</td>
+                  <td>{u.roles.join(', ')}</td>
+                  <td>
+                    {u.id === currentUser?.id || !can('users:update:any') ? <StatusBadge state={u.status} /> : (
+                      <label>
+                        <span className="visually-hidden">{t('statusOf', { name: u.username })}</span>
+                        <select value={u.status} onChange={(e) => setStatus(u, e.target.value)}>
+                          {STATUSES.map((s) => <option key={s} value={s}>{t(`common:states.${s}`)}</option>)}
+                        </select>
+                      </label>
+                    )}
+                  </td>
+                  <td>{can('users:roles:manage') && <button type="button" className="btn btn-ghost" onClick={() => setDialog({ kind: 'roles', user: u })}>{t('editRolesShort')}</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      {dialog?.kind === 'create' && <CreateUserModal onClose={() => setDialog(null)} onCreated={() => { setDialog(null); users.reload(); }} />}
+      {dialog?.kind === 'roles' && <RolesModal user={dialog.user} onClose={() => setDialog(null)} onSaved={() => { setDialog(null); users.reload(); }} />}
+    </section>
+  );
+}
+
+export default function AdminPage() {
+  const { t } = useTranslation('admin');
+  const { can } = useSession();
+  return (
+    <div className="page">
+      <h1>{t('title')}</h1>
+      <Readiness />
+      {can('users:read:any') && <Users />}
+    </div>
+  );
+}

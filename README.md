@@ -1,90 +1,82 @@
 # Agentrix
 
-Agentrix es una plataforma universitaria para concursos de agentes. El repositorio contiene un MVP experimental de extremo a extremo para **Starfighter**, el único juego admitido actualmente: una API y un worker en Go coordinan bots Python persistentes y un motor autoritativo headless en Rust; la web React reproduce snapshots públicos guardados como NDJSON.
+Agentrix es una plataforma universitaria para concursos de agentes. El repositorio contiene el MVP de extremo a extremo para **Starfighter**, el único juego admitido: una API y un worker en Go coordinan bots Python persistentes, aislados con Bubblewrap, y un motor autoritativo headless en Rust (`agentrix_engine`). La web React reproduce los replays publicados.
 
-El proyecto **no está certificado para producción**. La simulación y el visor existen, pero el aislamiento de bots, la recuperación de trabajos, el sellado de resultados y el despliegue todavía tienen brechas documentadas.
+El proyecto **no está certificado para producción**. El estado verificado y las brechas abiertas están en el informe de consolidación y en `docs/`.
 
-## Estado actual
+## Cadena canónica
 
-| Componente | Estado | Evidencia principal |
-| --- | --- | --- |
-| API REST y worker Go | Parcial | Se construyen en un único binario y proceso; todavía no se despliegan por separado. |
-| Motor Starfighter | Implementado | `agentrix_engine` usa Bevy y Avian2D y expone `agentrix-engine/1` por JSON Lines. |
-| Bots Python | Parcial | El proceso persiste durante la partida y usa tick 0, pero el sandbox no es apto para producción. |
-| PostgreSQL | Parcial | Guarda datos estructurados y trabajos; la reserva carece de heartbeat y fencing. |
-| Replay | Parcial | NDJSON progresivo con snapshots públicos y hashes; faltan sello inmutable y metadatos completos de reproducción. |
-| Web | Implementado para el corte público | React, tema claro y visor Canvas 2D posterior a la partida. No hay directo por WebSocket. |
-| Multi-juego, Gym y sim-core | No implementado | Son etapas posteriores al cierre del MVP seguro. |
+```text
+User → Agent → Submission → ContestEntry → Match → MatchSlot → MatchRun → Result/Replay → RankingSnapshot
+```
+
+- Una `Submission` es un artefacto inmutable, direccionado por SHA-256. El worker la admite en el sandbox (`validating → ready | rejected`).
+- Una `ContestEntry` fija la submission exacta con la que compite un agente.
+- Programar una partida crea en una sola transacción un `MatchRun`, su `ExecutionSpec` sellado por hash y un `match_job`, todo protegido por `Idempotency-Key`.
+- El worker ejecuta **solo** el `ExecutionSpec`. El commit exige lease vigente y fencing token. Resultados y replay se confirman juntos, y el replay se publica por outbox.
+- Los rankings se recalculan de forma transaccional a partir de las corridas confirmadas. Un snapshot es una fotografía publicada e inmutable.
 
 ## Componentes
 
 ```text
-web React ──HTTP──> API Go ──> PostgreSQL / artifacts
-                         │
-                         └── worker Go
-                               ├── bots Python persistentes
-                               ├── agentrix-engine/1
-                               └── motor Rust Starfighter
+web (nginx + React) ──/api/v1──> API Go ──> PostgreSQL 16
+                                   │           ▲
+                              artifacts        │ leases, fencing, outbox
+                                   │           │
+                                   └── worker Go ──> bots Python (bubblewrap + rlimits)
+                                                └──> starfighter-engine (Rust, agentrix-engine/1)
 ```
 
-Go conserva las acciones y percepciones específicas del juego como JSON opaco. Rust valida esas acciones, ejecuta las reglas, produce percepciones privadas y emite el snapshot público y el resultado autoritativos.
+| Binario | Función |
+| --- | --- |
+| `cmd/api` | HTTP, sesiones, RBAC por capacidades. Nunca ejecuta bots. Subcomando `healthcheck`. |
+| `cmd/worker` | Reserva, ejecución, heartbeat, commit y reconciliación: leases vencidos, admisión, publicación de replays, rankings y GC. |
+| `cmd/migrate` | Migraciones Goose (`up`, `status`). La API y el worker **no** migran; verifican la versión del esquema y los objetos críticos. |
+| `cmd/bootstrap` | Datos de demo reales: crea el admin mediante el caso de uso y hace todo lo demás por HTTP. Es idempotente. |
+| `cmd/smoke` | Verificación HTTP de 12 pasos contra un stack vivo. |
 
-## Requisitos de desarrollo
+## Requisitos
 
-- Go según `go.mod` (actualmente 1.25).
-- Rust estable según `agentrix_engine/rust-toolchain.toml`.
-- Python 3 para los bots.
-- Node.js y npm compatibles con `web/package-lock.json`.
-- PostgreSQL para persistencia y cola autoritativas.
-- Repositorio hermano `agentrix_engine` para construir el motor.
+- Go según `go.mod`.
+- Rust estable. Motor en `../agentrix_engine`, en el commit fijado por `engine.lock`.
+- Python 3 y `bwrap` para el sandbox.
+- Node 22 y npm (`web/package-lock.json`).
+- PostgreSQL 16.
+- Docker o Podman con Compose para el stack completo.
 
-## Comandos comprobados
+## Verificación
 
 ```bash
-GOCACHE=/tmp/agentrix-go-cache go build -mod=readonly ./...
-GOCACHE=/tmp/agentrix-go-cache go vet -mod=readonly ./...
-cd web && npm test -- --run && npm run build
-cd ../../agentrix_engine && cargo test --locked
+make check                      # gofmt (solo verificación), vet, tests unitarios con -race y contratos OpenAPI↔router
+make test-integration           # PostgreSQL + sandbox + motor reales; falla si algún test se salta
+make engine-test                # fmt, clippy y tests del motor
+cd web && npm run lint && npm test && npm run test:parity && npm run build && npm run size
 ```
 
-`go test -mod=readonly ./...` es el comando correcto para la suite Go, pero al 2026-09-19 falla en `src/executor` cuando Bubblewrap es detectable y los procesos de prueba no consiguen iniciar dentro del entorno restringido. No debe presentarse como una validación verde hasta resolver y volver a ejecutar esos casos.
+`make test-integration` necesita `DB_HOST`, `DB_PORT`, `DB_USER` y `DB_PASSWORD` de un PostgreSQL de pruebas desechable, más `AGENTRIX_ENGINE_BIN`. Los tests crean y eliminan bases propias.
 
-Para construir el motor y el binario Go:
+## Demo con Compose
 
 ```bash
-make build-engine
-make build
+./script/checkout_engine.sh                                      # motor en el commit de engine.lock
+docker compose up --build -d --wait postgres api worker web      # volúmenes vacíos → migrate → api/worker/web
+docker compose --profile demo run --rm bootstrap                 # admin, jugador, bots, concurso, partida real, replay, ranking
+docker compose --profile smoke run --rm smoke                    # 12 comprobaciones HTTP
+cd web && E2E_BASE_URL=http://127.0.0.1:3000 npx playwright test # e2e escritorio y móvil
 ```
 
-## Arranque rápido y verificación de demo (Fase 7 / Fase 9)
+Con Podman, `podman-compose` acepta los mismos argumentos. La web queda en `http://127.0.0.1:3000` y la API en `:8080`. Las credenciales de demo están en `.env.demo`, que solo vale para `MODE=demo`.
 
-El stack completo de Agentrix incluye plano de control en Go, base de datos PostgreSQL con migraciones versionadas (Goose v4), motor de simulación Starfighter en Rust, bots de ejemplo en Python y frontend web en React + Vite.
+El worker necesita `seccomp=unconfined`, `apparmor=unconfined` y `systempaths=unconfined` para que Bubblewrap pueda crear namespaces y montar un `/proc` propio. Sin esas opciones **no arranca** (falla cerrado) en lugar de ejecutar bots sin aislamiento. En hosts Ubuntu 24.04 además hay que poner `kernel.apparmor_restrict_unprivileged_userns=0`.
 
-1. **Levantar el stack completo:**
-   ```bash
-   make demo-up
-   # o alternativamente: docker compose up --build -d
-   ```
-2. **Inicializar y poblar con datos y ejecuciones auténticas:**
-   ```bash
-   make demo-reset
-   # ejecuta migraciones automáticas y cmd/bootstrap con simulación real del motor
-   ```
-3. **Ejecutar verificación de humo integral (13 pasos):**
-   ```bash
-   make demo-smoke
-   # verifica: liveness, readiness, login admin/pilot, RBAC (403), submissions,
-   # slots, simulación con motor y bots reales, timeout, resultados, replay zstd y ranking
-   ```
-4. **Detener el stack:**
-   ```bash
-   make demo-down
-   ```
+## Configuración
 
-`make build` ejecuta formateo con escritura, pruebas y compilación. Revise primero el worktree. Los targets de base de datos modifican PostgreSQL y no deben ejecutarse como comprobación rutinaria.
+`MODE` puede ser `dev`, `test`, `demo` o `production`.
+
+- Fuera de `dev`, `ACCESS_SECRET` es obligatorio, debe tener ≥ 32 bytes y no puede ser un placeholder.
+- En producción, `COOKIE_SECURE=true` es obligatorio. CORS no acepta `*`.
+- `AGENTRIX_SANDBOX` puede ser `bubblewrap`, `podman` o `direct`. `direct` solo se permite en `dev`.
 
 ## Documentación
 
-La fuente de navegación es [docs/index.md](docs/index.md). El alcance real del MVP está en [docs/product/mvp-scope.md](docs/product/mvp-scope.md) y la única hoja de ruta vigente en [docs/roadmap/current.md](docs/roadmap/current.md).
-
-Los documentos bajo `docs/archive/` son históricos y no dirigen desarrollo nuevo.
+La navegación empieza en [docs/index.md](docs/index.md). Arquitectura: [docs/architecture/](docs/architecture/). Decisiones: [docs/decisions/](docs/decisions/). El contrato HTTP es [open-api/openapi.yaml](open-api/openapi.yaml): un único archivo, que un test compara con las rutas y políticas reales. Los documentos bajo `docs/archive/` son históricos.

@@ -76,9 +76,12 @@ Los ejemplos válidos e inválidos están en [`examples/`](./examples/).
 
 ## Determinismo y frecuencia
 
-La simulación opera a **60 Hz exactos** (`1.0 / tick_hz` de paso manual en Bevy)
-utilizando el campo `tickHz: 60.0` en `initialize_match` (con fallback de
-compatibilidad a `fixedTimestepMs`). Véase
+La frecuencia es una razón exacta: `tickRate: {"numerator": 60, "denominator": 1}`
+en `initialize_match`. Es la única representación del paso de tiempo: el motor
+deriva `Duration::from_secs_f64(denominator / numerator)` para Bevy, el replay
+publica la misma razón y el visor calcula su intervalo de reproducción desde
+ella. `fixedTimestepMs` y `tickHz` ya no existen y el motor los rechaza como
+campos desconocidos. Véase
 [`docs/decisions/0005-protocol-state-machine-and-exact-timestep.md`](../../../docs/decisions/0005-protocol-state-machine-and-exact-timestep.md).
 
 Con la misma versión del motor, arquitectura compatible, semilla,

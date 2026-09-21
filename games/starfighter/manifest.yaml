@@ -1,35 +1,68 @@
+# Starfighter game module for Agentrix.
+#
+# This manifest is the module contract consumed by the generic platform
+# (src/game). The platform treats `config` as opaque data: it is sealed into
+# every ExecutionSpec and forwarded verbatim to the engine, which rejects
+# unknown or missing keys.
 id: starfighter
 name: Starfighter Arena
 version: 0.1.0
-binary_path: bin/starfighter-engine
 description: >
   2D Newtonian space dogfight. Ships move by inertia (thrust, drag, active
   braking), manage a shared health/energy pool, can raise an energy shield
   that reduces incoming bullet damage, and fire cooldown-limited bullets.
-  The engine owns the continuous arena dimensions declared in settings.
-  Duelo entre dos naves simétricas, sin equipos.
-min_players: 2
-max_players: 2
+engine_protocol: agentrix-engine/1
+bot_protocol: agentrix-bot/1
+replay_format: agentrix-replay/2
+viewer: starfighter
+players:
+  min: 2
+  max: 2
+# Exact simulation rate: 60 ticks per second. No millisecond approximation.
+tick_rate:
+  numerator: 60
+  denominator: 1
 max_ticks: 3600
-fixed_timestep_ms: 17
+runtimes: [python3]
+limits:
+  turn_timeout_ms: 500
+  init_timeout_ms: 2000
+  wall_time_ms: 600000
+  memory_mb: 256
+  cpu_seconds: 120
+  max_processes: 16
+  max_output_kb: 8192
+  max_file_size_kb: 1024
+  max_stderr_kb: 64
+  max_line_bytes: 65536
+engine:
+  binary: bin/starfighter-engine
+config:
+  arena_width: 2000
+  arena_height: 1000
+  ship_max_health: 100
+  ship_max_energy: 100
+  bullet_damage: 25
+  asteroid_damage: 100
+  shoot_energy_cost: 15
+  shield_energy_cost_per_tick: 1
+  shield_damage_reduction: 0.7
+  energy_regen_per_tick: 0.5
+  radar_range: 800
+  asteroid_count: 5
+schemas:
+  perception: contracts/perception.schema.json
+  action: contracts/action.schema.json
+admission:
+  # Perception sent to a candidate bot during admission; it must answer with
+  # a valid action for tick 0.
+  perception: contracts/admission_perception.json
+# Reference bots are ordinary submissions uploaded by the demo bootstrap for
+# exhibition/demo matches. They never replace a competitor.
 reference_agents:
   - id: hunter
-    path: games/starfighter/examples/bot_hunter.py
+    path: examples/bot_hunter.py
   - id: evasive
-    path: games/starfighter/examples/bot_evasive.py
-settings:
-  # Simulation
-  tick_hz: "60"
-  arena_width: "2000"
-  arena_height: "1000"
-  # Ship model
-  ship_max_health: "100"
-  ship_max_energy: "100"
-  bullet_damage: "25"
-  asteroid_damage: "100"
-  shoot_energy_cost: "15"
-  shield_energy_cost_per_tick: "1"
-  shield_damage_reduction: "0.7"
-  energy_regen_per_tick: "0.5"
-  # Perception
-  radar_range: "800"
+    path: examples/bot_evasive.py
+  - id: random
+    path: examples/bot_random.py

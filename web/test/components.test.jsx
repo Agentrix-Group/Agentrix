@@ -1,130 +1,66 @@
-import React from 'react';
-import { describe, it, expect, beforeEach } from 'vitest';
+import React, { useState } from 'react';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
-import i18n from '../src/i18n/index.js';
-import { Navbar } from '../src/components/Navbar.jsx';
-import { MatchCard } from '../src/components/MatchCard.jsx';
-import { RankingsPage } from '../src/pages/RankingsPage.jsx';
+import { Modal } from '../src/components/Modal.jsx';
+import { StatusBadge } from '../src/components/StatusBadge.jsx';
+import { RunStepper } from '../src/components/RunStepper.jsx';
+import { validateBundleFile } from '../src/components/BundleDropzone.jsx';
 
-describe('Localized React Components Rendering', () => {
-  beforeEach(async () => {
-    localStorage.clear();
-    await act(async () => {
-      await i18n.changeLanguage('es');
-    });
+function Harness({ onClose = () => {} }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setOpen(true)}>open</button>
+      {open && (
+        <Modal title="Dialog" onClose={() => { onClose(); setOpen(false); }}>
+          <input aria-label="first" />
+          <button type="button">last</button>
+        </Modal>
+      )}
+    </>
+  );
+}
+
+describe('Modal accessibility', () => {
+  it('focuses inside, traps Tab, closes with Escape and restores focus and scroll', () => {
+    const onClose = vi.fn();
+    render(<Harness onClose={onClose} />);
+    const opener = screen.getByText('open');
+    opener.focus();
+    fireEvent.click(opener);
+    const dialog = screen.getByRole('dialog');
+    expect(dialog.getAttribute('aria-modal')).toBe('true');
+    expect(document.body.style.overflow).toBe('hidden');
+    const close = screen.getByLabelText(/cerrar|close/i);
+    expect(document.activeElement).toBe(close);
+    const last = screen.getByText('last');
+    last.focus();
+    fireEvent.keyDown(document, { key: 'Tab' });
+    expect(document.activeElement).toBe(close);
+    close.focus();
+    fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
+    expect(document.activeElement).toBe(last);
+    act(() => { fireEvent.keyDown(document, { key: 'Escape' }); });
+    expect(onClose).toHaveBeenCalled();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(opener);
+    expect(document.body.style.overflow).toBe('');
   });
+});
 
-  it('renders Navbar in Spanish by default', () => {
-    render(<Navbar activeTab="home" onSelectTab={() => {}} currentUser={null} onLogout={() => {}} />);
-
-    expect(screen.getByRole('button', { name: 'Agentrix' })).toBeDefined();
-    expect(screen.getByText('Inicio')).toBeDefined();
-    expect(screen.queryByText('Mis agentes')).toBeNull();
-    expect(screen.getByText('Partidas')).toBeDefined();
-    expect(screen.getByText('Clasificación')).toBeDefined();
-    expect(screen.queryByText('Visor de repeticiones')).toBeNull();
-    expect(screen.getByText('Ingresar')).toBeDefined();
-    const menuButton = screen.getByRole('button', { name: 'Abrir menú' });
-    fireEvent.click(menuButton);
-    expect(screen.getByRole('button', { name: 'Cerrar menú' }).getAttribute('aria-expanded')).toBe('true');
+describe('status components', () => {
+  it('renders canonical states only from the value received', () => {
+    render(<StatusBadge state="registration_open" />);
+    expect(screen.getByText(/inscripción abierta|registration open/i)).toBeTruthy();
   });
-
-  it('switches Navbar language to English via the language selector', async () => {
-    render(<Navbar activeTab="home" onSelectTab={() => {}} currentUser={null} onLogout={() => {}} />);
-
-    const select = screen.getByLabelText('Seleccionar idioma');
-    fireEvent.change(select, { target: { value: 'en' } });
-
-    expect(screen.getByRole('button', { name: 'Agentrix' })).toBeDefined();
-    expect(screen.getByText('Dashboard')).toBeDefined();
-    expect(screen.queryByText('My Agents')).toBeNull();
-    expect(screen.getByText('Matches')).toBeDefined();
-    expect(screen.getByText('Leaderboard')).toBeDefined();
-    expect(screen.queryByText('Replay Viewer')).toBeNull();
-    expect(screen.getByText('Sign in')).toBeDefined();
+  it('stepper marks failures without claiming success', () => {
+    const { container } = render(<RunStepper state="failed" />);
+    expect(container.querySelector('.step-error')).toBeTruthy();
+    expect(container.querySelectorAll('.step-done').length).toBeLessThan(3);
   });
-
-  it('renders MatchCard with localized status and attributes in Spanish and English', async () => {
-    const mockMatch = {
-      id: 'm-12345678-abcd',
-      game_id: 'starfighter',
-      status: 'finished',
-      seed: 42,
-      replay_id: 'rep-001',
-      results: [
-        { id: 'r1', rank: 1, submission_id: 'sub-alpha', score: 100 },
-      ],
-    };
-
-    const { rerender } = render(
-      <MatchCard match={mockMatch} onWatchReplay={() => {}} onTriggerRun={() => {}} />
-    );
-
-    // Spanish verification
-    expect(screen.getByText('Partida #m-123456')).toBeDefined();
-    expect(screen.getByText('Finalizada')).toBeDefined();
-    expect(screen.getByText(/Juego: starfighter/)).toBeDefined();
-    expect(screen.getByText(/Puesto 1: sub-alpha/)).toBeDefined();
-    expect(screen.getByText('Ver repetición')).toBeDefined();
-
-    // Switch to English
-    await act(async () => {
-      await i18n.changeLanguage('en');
-    });
-    rerender(<MatchCard match={mockMatch} onWatchReplay={() => {}} onTriggerRun={() => {}} />);
-
-    expect(screen.getByText('Match #m-123456')).toBeDefined();
-    expect(screen.getByText('Finished')).toBeDefined();
-    expect(screen.getByText(/Game: starfighter/)).toBeDefined();
-    expect(screen.getByText(/Rank 1: sub-alpha/)).toBeDefined();
-    expect(screen.getByText('Watch Replay')).toBeDefined();
-  });
-
-  it('does not offer match execution in the public match card unless authorized', () => {
-    const pendingMatch = { id: 'm-pending', game_id: 'starfighter', status: 'pending', seed: 7 };
-    const { rerender } = render(
-      <MatchCard
-        match={pendingMatch}
-        onWatchReplay={() => {}}
-        onTriggerRun={() => {}}
-      />
-    );
-
-    expect(screen.queryByRole('button', { name: 'Ejecutar partida' })).toBeNull();
-
-    rerender(
-      <MatchCard
-        match={pendingMatch}
-        onWatchReplay={() => {}}
-        onTriggerRun={() => {}}
-        canRun={true}
-      />
-    );
-    expect(screen.getByRole('button', { name: 'Ejecutar partida' })).toBeDefined();
-  });
-
-  it('renders RankingsPage table headers localized in Spanish and English', async () => {
-    const { rerender } = render(<RankingsPage />);
-
-    expect(screen.getByText('Clasificación del torneo')).toBeDefined();
-    expect(screen.getByText('Puesto')).toBeDefined();
-    expect(screen.getByText('Agente')).toBeDefined();
-    expect(screen.getByText('Participante')).toBeDefined();
-    expect(screen.getByText('Puntuación')).toBeDefined();
-    expect(screen.getByText('Partidas')).toBeDefined();
-    expect(screen.getByText('V / E / D')).toBeDefined();
-
-    await act(async () => {
-      await i18n.changeLanguage('en');
-    });
-    rerender(<RankingsPage />);
-
-    expect(screen.getByText('Tournament Leaderboard')).toBeDefined();
-    expect(screen.getByText('Rank')).toBeDefined();
-    expect(screen.getByText('Agent')).toBeDefined();
-    expect(screen.getByText('Participant')).toBeDefined();
-    expect(screen.getByText('Score')).toBeDefined();
-    expect(screen.getByText('Matches')).toBeDefined();
-    expect(screen.getByText('W / D / L')).toBeDefined();
+  it('validates bundle type and size on the client', () => {
+    expect(validateBundleFile({ name: 'bot.py', size: 10 })).toBe('invalidZipType');
+    expect(validateBundleFile({ name: 'bot.zip', size: 3 * 1024 * 1024 })).toBe('fileTooLarge');
+    expect(validateBundleFile({ name: 'bot.zip', size: 100 })).toBeNull();
   });
 });

@@ -37,3 +37,15 @@ web/dist/
 # OS files
 .DS_Store
 Thumbs.db
+
+# go build ./cmd/... outputs at the repository root
+/api
+/worker
+/migrate
+/bootstrap
+/smoke
+/fake-engine
+
+# Playwright
+web/test-results/
+web/playwright-report/

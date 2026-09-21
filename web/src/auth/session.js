@@ -1,194 +1,90 @@
 /**
- * Central Session and Token Manager for Agentrix
- * Implements Sprint FQ-1 requirements (ADR-0009 / F0.3 / F1.4).
+ * Session state kept in memory only. Nothing sensitive is written to
+ * localStorage: the access token dies with the tab and the refresh token is
+ * an HttpOnly cookie managed by the browser.
  */
+import { cookieRequest } from '../api/client.js';
 
-export const ACCESS_TOKEN_KEY = 'agentrix_token';
-export const REFRESH_TOKEN_KEY = 'agentrix_refresh_token';
+let accessToken = null;
+let currentUser = null;
+let refreshing = null;
+const listeners = new Set();
+
+function emit(event) {
+  listeners.forEach((listener) => {
+    try {
+      listener(event, { user: currentUser });
+    } catch (err) {
+      console.error('session listener failed', err);
+    }
+  });
+}
+
+export function subscribe(listener) {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
 
 export function getAccessToken() {
+  return accessToken;
+}
+
+export function getCurrentUser() {
+  return currentUser;
+}
+
+/** Stores a session DTO returned by login or refresh. */
+export function setSession(session) {
+  accessToken = session?.access_token || null;
+  currentUser = session?.user || null;
+  emit('changed');
+}
+
+export function clearSession() {
+  accessToken = null;
+  currentUser = null;
+  emit('changed');
+}
+
+/** Marks the session as expired after a failed refresh. */
+export function expireSession() {
+  const hadSession = Boolean(accessToken);
+  clearSession();
+  if (hadSession) emit('expired');
+}
+
+async function doRefresh() {
   try {
-    return localStorage.getItem(ACCESS_TOKEN_KEY) || null;
+    const session = await cookieRequest('/auth/refresh');
+    setSession(session);
+    return true;
   } catch {
-    return null;
+    return false;
   }
-}
-
-export function setAccessToken(token) {
-  try {
-    if (token) {
-      localStorage.setItem(ACCESS_TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(ACCESS_TOKEN_KEY);
-    }
-  } catch {
-    // Ignore localStorage errors (e.g. private mode quota)
-  }
-}
-
-export function getRefreshToken() {
-  try {
-    return localStorage.getItem(REFRESH_TOKEN_KEY) || null;
-  } catch {
-    return null;
-  }
-}
-
-export function setRefreshToken(token) {
-  try {
-    if (token) {
-      localStorage.setItem(REFRESH_TOKEN_KEY, token);
-    } else {
-      localStorage.removeItem(REFRESH_TOKEN_KEY);
-    }
-  } catch {
-    // Ignore localStorage errors
-  }
-}
-
-export function saveTokens(tokens) {
-  if (tokens?.access_token) {
-    setAccessToken(tokens.access_token);
-  }
-  if (tokens?.refresh_token) {
-    setRefreshToken(tokens.refresh_token);
-  }
-}
-
-export function clearTokens() {
-  try {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
-  } catch {
-    // Ignore errors
-  }
-}
-
-// Session expired listeners
-const sessionExpiredListeners = new Set();
-
-export function onSessionExpired(callback) {
-  sessionExpiredListeners.add(callback);
-  return () => sessionExpiredListeners.delete(callback);
-}
-
-export function notifySessionExpired() {
-  clearTokens();
-  for (const callback of sessionExpiredListeners) {
-    try {
-      callback();
-    } catch (e) {
-      console.error('[Agentrix Session] Error in sessionExpired callback:', e);
-    }
-  }
-}
-
-// Coordinated concurrent token refresh (F0.3)
-let activeRefreshPromise = null;
-
-export async function refreshAuthTokens(baseUrl) {
-  if (activeRefreshPromise) {
-    return activeRefreshPromise;
-  }
-
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) {
-    notifySessionExpired();
-    throw new Error('No refresh token available');
-  }
-
-  activeRefreshPromise = (async () => {
-    try {
-      const response = await fetch(`${baseUrl}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({ refresh_token: refreshToken }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Refresh failed with status ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (!data?.access_token) {
-        throw new Error('Invalid refresh token response');
-      }
-
-      saveTokens(data);
-      return data;
-    } catch (err) {
-      notifySessionExpired();
-      throw err;
-    } finally {
-      activeRefreshPromise = null;
-    }
-  })();
-
-  return activeRefreshPromise;
 }
 
 /**
- * Capability-based Authorization Helpers (F1.4)
- * Allows dynamic capability resolution from participant object.
+ * Rotates the refresh cookie once for all concurrent callers of this tab.
+ * Across tabs, the Web Locks API serializes rotations so two tabs never
+ * present the same single-use refresh token.
  */
+export function refreshSession() {
+  if (!refreshing) {
+    const run = typeof navigator !== 'undefined' && navigator.locks?.request
+      ? navigator.locks.request('agentrix-refresh', doRefresh)
+      : doRefresh();
+    refreshing = Promise.resolve(run).finally(() => {
+      refreshing = null;
+    });
+  }
+  return refreshing;
+}
+
+/** Capabilities come exclusively from the backend (/me or session DTO). */
 export function hasCapability(user, capability) {
-  if (!user) return false;
-
-  // Direct capability list from backend (/me or /auth/login)
-  if (Array.isArray(user.capabilities) && user.capabilities.includes(capability)) {
-    return true;
-  }
-
-  // Fallback role-based capabilities mapping
-  const role = user.role_id || user.role;
-  if (role === 'admin') {
-    return true; // Admin has all capabilities
-  }
-
-  if (role === 'organizer') {
-    return [
-      'matches:run',
-      'matches:schedule',
-      'contests:create',
-      'contests:view',
-      'matches:view',
-      'rankings:view',
-      'replays:view',
-      'admin:access',
-    ].includes(capability);
-  }
-
-  if (role === 'participant' || role === 'pilot' || role === 'player') {
-    return [
-      'agents:create',
-      'submissions:upload',
-      'contests:enroll',
-      'contests:view',
-      'matches:view',
-      'rankings:view',
-      'replays:view',
-    ].includes(capability);
-  }
-
-  // Default spectator capabilities
-  return ['contests:view', 'matches:view', 'rankings:view', 'replays:view'].includes(capability);
+  return Boolean(user && Array.isArray(user.capabilities) && user.capabilities.includes(capability));
 }
 
-export function canRunMatch(user) {
-  return hasCapability(user, 'matches:run');
-}
-
-export function canScheduleMatch(user) {
-  return hasCapability(user, 'matches:schedule');
-}
-
-export function canCreateAgent(user) {
-  return hasCapability(user, 'agents:create');
-}
-
-export function canUploadSubmission(user) {
-  return hasCapability(user, 'submissions:upload');
+export function hasAnyCapability(user, ...capabilities) {
+  return capabilities.some((c) => hasCapability(user, c));
 }

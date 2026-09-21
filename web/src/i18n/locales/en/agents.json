@@ -1,80 +1,31 @@
 {
-  "title": "My Autonomous Agents",
-  "subtitle": "Develop and validate Python bots for Starfighter.",
-  "authRequired": {
-    "title": "Authentication Required",
-    "description": "Please log in to manage your agents and code submissions."
-  },
-  "register": {
-    "title": "Register New Agent",
-    "namePlaceholder": "Agent Name (e.g. HunterAlpha)",
-    "descriptionPlaceholder": "Description / Strategy notes",
-    "submit": "Create Agent"
-  },
-  "list": {
-    "title": "Your Agents",
-    "titleWithCount": "Your Agents ({{count}})",
-    "empty": "No agents registered yet. Create one above!",
-    "idLabel": "ID: {{id}}..."
-  },
-  "details": {
-    "selectPrompt": "Select or create an agent to view details.",
-    "noDescription": "No description",
-    "enroll": "Enroll in Tournament"
-  },
-  "submission": {
-    "uploadTitle": "Admit Starfighter Bot",
-    "language": "Language:",
-    "publish": "Validate and publish ZIP",
-    "chooseZip": "Choose the ZIP package",
-    "zipHelp": "It must contain agentrix.json and bot.py at the root. Maximum 2 MiB.",
-    "admissionCheck": "Agentrix checks syntax, initialization, and the tick 0 response.",
-    "starterTitle": "Starfighter Starter Template",
-    "downloadStarter": "Download Starfighter Starter Kit (.zip)",
-    "starterHelp": "Ready-to-admit ZIP package with reference agentrix.json and bot.py.",
-    "viewSpec": "View package specification",
-    "hideSpec": "Hide package specification",
-    "manifestDesc": "agentrix.json must declare name, entrypoint: 'bot.py', and protocol_version: '1.0'.",
-    "botDesc": "bot.py must handle 'init' message and respond with 'action' at tick 0.",
-    "selectedFile": "Selected file: {{name}} ({{size}})",
-    "clearFile": "Remove file",
-    "validationStages": {
-      "uploading": "Uploading ZIP package...",
-      "validating": "Validating in sandbox (syntax, initialization, and tick 0)...",
-      "ready": "Admission completed successfully",
-      "rejected": "Admission rejected"
-    },
-    "rejection": {
-      "title": "Bot validation failed",
-      "guidanceTitle": "Checklist to resolve validation failure:",
-      "rule1": "agentrix.json must exist at ZIP root with entrypoint='bot.py' and protocol_version='1.0'.",
-      "rule2": "bot.py must contain valid Python syntax and reply to tick 0 within timeout.",
-      "rule3": "Must not use libraries outside Python standard library or make blocking/network calls.",
-      "downloadReference": "Download the Starter Kit to inspect the required structure."
-    },
-    "history": "Version History",
-    "emptyHistory": "No code versions uploaded yet.",
-    "table": {
-      "version": "Version",
-      "language": "Language",
-      "status": "Status",
-      "active": "Active",
-      "id": "Identifier",
-      "created": "Created",
-      "actions": "Actions",
-      "viewReason": "View reason",
-      "hideReason": "Hide reason"
-    }
-  },
-  "messages": {
-    "createdSuccess": "Agent created successfully!",
-    "createError": "Failed to create agent",
-    "submitSuccess": "Python bot v{{version}} admitted successfully.",
-    "submitError": "The bot did not pass admission",
-    "enrollSuccess": "Enrolled '{{name}}' in contest '{{contest}}'!",
-    "enrollError": "Failed to enroll agent",
-    "invalidZipType": "Only .zip package files are accepted.",
-    "fileTooLarge": "File exceeds the maximum allowed limit of 2 MiB.",
-    "admissionTimeout": "Validation took longer than expected. Check version history."
+  "create": "New agent",
+  "game": "Game",
+  "name": "Name",
+  "description": "Description",
+  "uploaded": "Version v{{version}} uploaded; admission is running in the sandbox.",
+  "disable": "Disable",
+  "activate": "Activate",
+  "versions": "Versions",
+  "noVersions": "No versions uploaded yet.",
+  "version": "Version",
+  "status": "Status",
+  "digest": "SHA-256",
+  "uploadedAt": "Uploaded",
+  "actions": "Actions",
+  "admissionRunning": "admission test running…",
+  "whyRejected": "See why",
+  "retire": "Retire version",
+  "title": "My agents",
+  "empty": "You have no agents yet.",
+  "emptyDescription": "Create an agent and upload a ZIP with agentrix.json and bot.py.",
+  "bundle": {
+    "noFile": "Choose a file.",
+    "invalidZipType": "Only .zip files are accepted.",
+    "fileTooLarge": "The file exceeds 2 MiB.",
+    "emptyFile": "The file is empty.",
+    "uploading": "Uploading…",
+    "prompt": "Drop a ZIP or click to choose it",
+    "hint": "It must contain exactly agentrix.json and bot.py (max 2 MiB)."
   }
 }

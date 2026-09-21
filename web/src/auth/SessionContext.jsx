@@ -1,135 +1,52 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { ApiService } from '../service/apiService.js';
-import {
-  getAccessToken,
-  clearTokens,
-  onSessionExpired,
-  hasCapability as checkCapability,
-  canRunMatch as checkCanRunMatch,
-  canScheduleMatch as checkCanScheduleMatch,
-  canCreateAgent as checkCanCreateAgent,
-  canUploadSubmission as checkCanUploadSubmission,
-} from './session.js';
+import { getCurrentUser, hasCapability, hasAnyCapability, subscribe } from './session.js';
 
 const SessionContext = createContext(null);
 
 export function SessionProvider({ children }) {
-  const [currentUser, setCurrentUser] = useState(null);
+  const [user, setUser] = useState(getCurrentUser());
   const [isLoading, setIsLoading] = useState(true);
-  const [sessionExpired, setSessionExpired] = useState(false);
-
-  const loadCurrentUser = useCallback(async () => {
-    const token = getAccessToken();
-    if (!token) {
-      setCurrentUser(null);
-      setIsLoading(false);
-      return;
-    }
-
-    try {
-      const user = await ApiService.getCurrentUser();
-      setCurrentUser(user);
-    } catch {
-      clearTokens();
-      setCurrentUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+  const [expired, setExpired] = useState(false);
 
   useEffect(() => {
-    loadCurrentUser();
-
-    // Listen to 401 expiration events emitted by HTTP client
-    const unsubscribe = onSessionExpired(() => {
-      setCurrentUser(null);
-      setSessionExpired(true);
+    const unsubscribe = subscribe((event, state) => {
+      setUser(state.user);
+      if (event === 'expired') setExpired(true);
     });
-
+    // A reload loses the in-memory access token: restore it from the cookie.
+    ApiService.restore().finally(() => setIsLoading(false));
     return unsubscribe;
-  }, [loadCurrentUser]);
+  }, []);
 
   const login = useCallback(async (username, password) => {
-    setSessionExpired(false);
-    const res = await ApiService.login(username, password);
-    if (res?.user) {
-      setCurrentUser(res.user);
-    } else {
-      await loadCurrentUser();
-    }
-    return res;
-  }, [loadCurrentUser]);
-
-  const logout = useCallback(() => {
-    ApiService.logout();
-    setCurrentUser(null);
-    setSessionExpired(false);
+    const session = await ApiService.login(username, password);
+    setExpired(false);
+    return session;
   }, []);
 
-  const dismissExpiredNotice = useCallback(() => {
-    setSessionExpired(false);
+  const logout = useCallback(async () => {
+    await ApiService.logout();
+    setExpired(false);
   }, []);
-
-  const hasCapability = useCallback((cap) => {
-    return checkCapability(currentUser, cap);
-  }, [currentUser]);
-
-  const canRunMatch = useCallback(() => {
-    return checkCanRunMatch(currentUser);
-  }, [currentUser]);
-
-  const canScheduleMatch = useCallback(() => {
-    return checkCanScheduleMatch(currentUser);
-  }, [currentUser]);
-
-  const canCreateAgent = useCallback(() => {
-    return checkCanCreateAgent(currentUser);
-  }, [currentUser]);
-
-  const canUploadSubmission = useCallback(() => {
-    return checkCanUploadSubmission(currentUser);
-  }, [currentUser]);
 
   const value = useMemo(() => ({
-    currentUser,
-    isAuthenticated: Boolean(currentUser),
+    currentUser: user,
+    isAuthenticated: Boolean(user),
     isLoading,
-    sessionExpired,
+    sessionExpired: expired,
+    dismissExpired: () => setExpired(false),
     login,
     logout,
-    dismissExpiredNotice,
-    hasCapability,
-    canRunMatch,
-    canScheduleMatch,
-    canCreateAgent,
-    canUploadSubmission,
-    reloadSession: loadCurrentUser,
-  }), [
-    currentUser,
-    isLoading,
-    sessionExpired,
-    login,
-    logout,
-    dismissExpiredNotice,
-    hasCapability,
-    canRunMatch,
-    canScheduleMatch,
-    canCreateAgent,
-    canUploadSubmission,
-    loadCurrentUser,
-  ]);
+    can: (capability) => hasCapability(user, capability),
+    canAny: (...capabilities) => hasAnyCapability(user, ...capabilities),
+  }), [user, isLoading, expired, login, logout]);
 
-  return (
-    <SessionContext.Provider value={value}>
-      {children}
-    </SessionContext.Provider>
-  );
+  return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 
 export function useSession() {
   const context = useContext(SessionContext);
-  if (!context) {
-    throw new Error('useSession must be used within a <SessionProvider>');
-  }
+  if (!context) throw new Error('useSession must be used within <SessionProvider>');
   return context;
 }

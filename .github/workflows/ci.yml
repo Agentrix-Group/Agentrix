@@ -6,77 +6,170 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   go:
-    name: Go (build, vet, race test)
-    runs-on: ubuntu-latest
+    name: Go (gofmt, vet, unit, race, contracts)
+    runs-on: ubuntu-24.04
     steps:
-      - name: Checkout Agentrix
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt (check only)
+        run: make fmt-check
+      - name: go vet
+        run: make vet
+      - name: Unit, race and OpenAPI/route-policy contract tests
+        run: make test-race
 
-      - name: Checkout Engine
-        uses: actions/checkout@v4
+  engine:
+    name: Engine (pinned commit; fmt, clippy, tests, release build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read engine pin
+        id: pin
+        run: echo "commit=$(jq -r .commit engine.lock)" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
         with:
           repository: Agentrix-Group/agentrix_engine
-          path: agentrix_engine
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
+          ref: ${{ steps.pin.outputs.commit }}
+          path: engine-src
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          go-version: '1.25.x'
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine-src
+      - run: sudo apt-get update && sudo apt-get install -y libudev-dev libasound2-dev pkg-config
+      - name: rustfmt
+        working-directory: engine-src
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: engine-src
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: tests
+        working-directory: engine-src
+        run: cargo test --locked
+      - name: release build
+        working-directory: engine-src
+        run: |
+          cargo build --locked --release --bin starfighter-engine
+          sha256sum target/release/starfighter-engine
+      - uses: actions/upload-artifact@v4
+        with:
+          name: starfighter-engine
+          path: engine-src/target/release/starfighter-engine
+          retention-days: 7
+
+  integration:
+    name: Integration (PostgreSQL 16, bubblewrap sandbox, real engine; no skips)
+    runs-on: ubuntu-24.04
+    needs: engine
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DB_HOST: localhost
+      DB_PORT: "5432"
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      AGENTRIX_ENGINE_BIN: ${{ github.workspace }}/bin/starfighter-engine
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
           cache: true
-
-      - name: Set up Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install engine and sandbox dependencies
+      - uses: actions/download-artifact@v4
+        with:
+          name: starfighter-engine
+          path: bin
+      - run: chmod +x bin/starfighter-engine
+      - name: Sandbox prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libasound2-dev libudev-dev pkg-config bubblewrap
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0 || true
-
-      - name: Build starfighter-engine binary
-        run: |
-          cargo build --release --bin starfighter-engine --manifest-path agentrix_engine/Cargo.toml
-          mkdir -p bin
-          cp agentrix_engine/target/release/starfighter-engine bin/
-          chmod +x bin/starfighter-engine
-
-      - name: Go Build
-        run: go build -mod=readonly ./...
-
-      - name: Go Vet
-        run: go vet -mod=readonly ./...
-
-      - name: Go Test with Race Detector
-        run: go test -mod=readonly -race ./...
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Ubuntu 24.04 restricts unprivileged user namespaces through AppArmor.
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Integration suite (fails on any skipped test)
+        run: make test-integration
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-log
+          path: integration.log
 
   web:
-    name: Web (lint, unit tests, parity, build)
-    runs-on: ubuntu-latest
+    name: Web (lint, unit, i18n parity, build, bundle budget, audit)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: web
     steps:
-      - name: Checkout Agentrix
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
-          cache: 'npm'
+          node-version: 22.x
+          cache: npm
           cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run test:parity
+      - run: npm run build
+      - run: npm run size
+      - name: Dependency audit (production dependencies)
+        run: npm audit --omit=dev --audit-level=high
 
-      - name: Install web dependencies
+  e2e:
+    name: Compose from scratch + HTTP smoke + Playwright (desktop/mobile)
+    runs-on: ubuntu-24.04
+    needs: [go, web]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned engine next to the repository
+        run: ENGINE_DIR="$GITHUB_WORKSPACE/../agentrix_engine" ./script/checkout_engine.sh
+      - name: Allow unprivileged user namespaces (bubblewrap inside the worker)
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: Build and start the stack from empty volumes
+        run: docker compose --profile demo up --build -d --wait postgres api worker web
+      - name: Demo bootstrap through the API
+        run: docker compose --profile demo run --rm bootstrap
+      - name: HTTP smoke
+        run: docker compose --profile smoke run --rm smoke
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Playwright
         working-directory: web
-        run: npm ci
-
-      - name: Run Web Unit Tests
-        working-directory: web
-        run: npm test -- --run
-
-      - name: Run i18n Parity Verification
-        working-directory: web
-        run: npm run test:parity
-
-      - name: Build Web Application
-        working-directory: web
-        run: npm run build
+        env:
+          E2E_BASE_URL: http://127.0.0.1:3000
+          E2E_USERNAME: player
+          E2E_PASSWORD: agentrix-demo-player
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+      - name: Compose logs
+        if: failure()
+        run: docker compose logs --no-color > compose.log && tail -n 300 compose.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: web/playwright-report

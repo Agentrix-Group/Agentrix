@@ -44,9 +44,10 @@ Cada sobre incluye `protocolVersion`, `type`, `matchId`, `sequence` y `payload`.
 | Rust valida secuencia monotónica de comandos | Implementado |
 | Ambos extremos validan `matchId` contra la sesión | Implementado |
 | Ambos extremos aplican máquina de estados de ciclo de vida | Implementado |
-| Timestep exacto a 60 Hz (`tickHz` / `1.0 / tick_hz`) | Implementado |
+| Timestep exacto por `tickRate {numerator, denominator}` | Implementado |
 | Runtime valida cada payload contra los JSON Schema | No implementado |
-| `engineDigest` se entrega y persiste | No implementado |
+| `initialize_match` estricto (`deny_unknown_fields`, `expectedEngineVersion`, digests de participantes) | Implementado |
+| Digest del motor fijado en el ExecutionSpec y verificado por el worker | Implementado |
 
 Deserializar un campo no demuestra que fue comprobado. La certificación del MVP requiere pruebas negativas bilaterales para versión, secuencia, partida, tipos, campos requeridos, tamaños y orden del ciclo de vida (véase ADR-0005).
 

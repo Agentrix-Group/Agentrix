@@ -1,179 +1,86 @@
+// Package service implements the use cases of Agentrix. Every command that
+// touches more than one row runs in a single repository transaction; every
+// command validates the state machine transition it applies and the
+// ownership of the resources it touches.
 package service
 
 import (
-	"context"
-	"errors"
-	"fmt"
+	"time"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
+	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/model"
-	replaystream "github.com/Agentrix-Group/Agentrix/src/replay"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/google/uuid"
 )
 
-type Service interface {
-	// Auth & Users
-	Login(ctx context.Context, username, password string) (*model.User, error)
-	Register(ctx context.Context, user *model.User) error
-	ListUsers(ctx context.Context) ([]model.User, error)
-	GetUser(ctx context.Context, id string) (*model.User, error)
-	UpdateUser(ctx context.Context, user *model.User) error
-	ActivateUser(ctx context.Context, id string, isActive bool) error
-	HasPermission(ctx context.Context, userId, permission string) (bool, error)
-
-	// Contests & Categories
-	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
-	GetPublicContest(ctx context.Context, id string) (*model.Contest, error)
-	ListContests(ctx context.Context) ([]model.Contest, error)
-	GetContest(ctx context.Context, id string) (*model.Contest, error)
-	CreateContest(ctx context.Context, contest *model.Contest) error
-	UpdateContest(ctx context.Context, contest *model.Contest) error
-	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error)
-	ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error)
-	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
-	ListCategories(ctx context.Context) ([]model.Category, error)
-	GetCategory(ctx context.Context, id string) (*model.Category, error)
-	CreateCategory(ctx context.Context, category *model.Category) error
-	UpdateCategory(ctx context.Context, category *model.Category) error
-	ActivateCategory(ctx context.Context, id string, isActive bool) error
-
-	// Games
-	ListGames(ctx context.Context) ([]model.Game, error)
-	GetGame(ctx context.Context, id string) (*model.Game, error)
-
-	// Agents
-	ListAgents(ctx context.Context) ([]model.Agent, error)
-	ListAgentsByOwner(ctx context.Context, ownerUserId string) ([]model.Agent, error)
-	GetAgent(ctx context.Context, id string) (*model.Agent, error)
-	CreateAgent(ctx context.Context, agent *model.Agent) error
-	UpdateAgent(ctx context.Context, agent *model.Agent) error
-	ActivateAgent(ctx context.Context, id string, isActive bool) error
-
-	// Submissions
-	ListSubmissions(ctx context.Context) ([]model.Submission, error)
-	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
-	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
-	CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error)
-
-	// Matches
-	ListMatches(ctx context.Context) ([]model.Match, error)
-	ListMatchesByContest(ctx context.Context, contestId string) ([]model.Match, error)
-	GetMatch(ctx context.Context, id string) (*model.Match, error)
-	CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error)
-	RunMatch(ctx context.Context, matchId string, idempotencyKey ...string) (*model.RunMatchResponse, error)
-	UpdateMatch(ctx context.Context, match *model.Match) error
-	ActivateMatch(ctx context.Context, id string, isActive bool) error
-
-	// Results
-	ListResults(ctx context.Context) ([]model.Result, error)
-	ListResultsByMatch(ctx context.Context, matchId string) ([]model.Result, error)
-	GetResult(ctx context.Context, id string) (*model.Result, error)
-	CreateResult(ctx context.Context, result *model.Result) error
-
-	// Rankings
-	ListRankings(ctx context.Context) ([]model.Ranking, error)
-	ListRankingsByContest(ctx context.Context, contestId string) ([]model.Ranking, error)
-	GetRanking(ctx context.Context, id string) (*model.Ranking, error)
-	CalculateRankings(ctx context.Context, contestId string) ([]model.Ranking, error)
-	ApplyMatchResultIncremental(ctx context.Context, matchId string) error
-	RecalculateContestRankings(ctx context.Context, contestId string) ([]model.Ranking, error)
-	PublishRankingSnapshot(ctx context.Context, contestId, publisherUserId string) (*model.RankingSnapshot, error)
-	ListRankingSnapshots(ctx context.Context, contestId string) ([]model.RankingSnapshot, error)
-	GetPublishedRankings(ctx context.Context, contestId string, version ...int) (*model.RankingSnapshot, error)
-
-	// Match execution runs & atomic commits
-	CommitMatchResult(ctx context.Context, commit model.MatchResultCommit) error
-	CreateMatchRun(ctx context.Context, run *model.MatchRun) error
-	GetMatchRun(ctx context.Context, id string) (*model.MatchRun, error)
-	GetLatestMatchRunByMatch(ctx context.Context, matchId string) (*model.MatchRun, error)
-	ListMatchRunsByMatch(ctx context.Context, matchId string) ([]*model.MatchRun, error)
-	StartMatchRun(ctx context.Context, runId, workerId string, fencingToken int64) error
-	FailMatchRun(ctx context.Context, runId string, lastError string) error
-	UpdateMatchRunStatusCAS(ctx context.Context, runId string, expectedStatus, newStatus model.MatchRunStatus) (bool, error)
-	UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error)
-
-	// Replays
-	GetReplay(ctx context.Context, id string) (*model.Replay, error)
-	OpenReplay(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error)
-	StreamReplay(ctx context.Context, id string) ([]byte, error)
-	PublishReplay(ctx context.Context, replayID string) (*model.Replay, error)
-	DiscardReplay(ctx context.Context, replayID string) error
-
-	// Readiness & Repository Access
-	CheckReadiness(ctx context.Context) (map[string]any, error)
-	GetUserCapabilities(ctx context.Context, userId string) ([]string, error)
-	GetRepository() repository.Repository
+type Options struct {
+	RefreshIdleTTL   time.Duration
+	SessionMaxTTL    time.Duration
+	MaxSessions      int
+	RegistrationOpen bool
+	IdempotencyTTL   time.Duration
+	// WorkerLiveWindow is how recent a worker heartbeat must be for its
+	// engine artifact to be selected by ScheduleRun.
+	WorkerLiveWindow time.Duration
+	MaxRunAttempts   int
+	LeaseTTL         time.Duration
 }
 
-type service struct {
-	repo      repository.Repository
-	artifacts connection.ArtifactStore
-	queue     connection.JobQueue
-	validator BotAdmissionValidator
+func DefaultOptions() Options {
+	return Options{
+		RefreshIdleTTL: 7 * 24 * time.Hour, SessionMaxTTL: 30 * 24 * time.Hour, MaxSessions: 10,
+		RegistrationOpen: true, IdempotencyTTL: 24 * time.Hour, WorkerLiveWindow: 2 * time.Minute,
+		MaxRunAttempts: 3, LeaseTTL: 60 * time.Second,
+	}
 }
 
-type BotAdmissionValidator interface {
-	ValidateBot(ctx context.Context, codePath string) error
+type Service struct {
+	store     *repository.Store
+	games     *game.Registry
+	artifacts *connection.ArtifactStore
+	tokens    *auth.Tokens
+	opts      Options
+	now       func() time.Time
+	newID     func() string
 }
 
-func NewService(repo repository.Repository, artifacts connection.ArtifactStore, queue connection.JobQueue, validators ...BotAdmissionValidator) Service {
-	svc := &service{
-		repo:      repo,
-		artifacts: artifacts,
-		queue:     queue,
+func New(store *repository.Store, games *game.Registry, artifacts *connection.ArtifactStore, tokens *auth.Tokens, opts Options) *Service {
+	return &Service{
+		store: store, games: games, artifacts: artifacts, tokens: tokens, opts: opts,
+		now:   func() time.Time { return time.Now().UTC().Truncate(time.Microsecond) },
+		newID: uuid.NewString,
 	}
-	if len(validators) > 0 {
-		svc.validator = validators[0]
-	}
-	return svc
 }
 
-func (s *service) CheckReadiness(ctx context.Context) (map[string]any, error) {
-	checks := make(map[string]any)
+// WithClock replaces the clock; used by tests of leases and expirations.
+func (s *Service) WithClock(now func() time.Time) *Service {
+	copy := *s
+	copy.now = now
+	return &copy
+}
 
-	// 1. Database Ping
-	if s.repo == nil {
-		checks["database"] = "DOWN: repository is nil"
-		return checks, errors.New("repository is nil")
-	}
-	if err := s.repo.Ping(ctx); err != nil {
-		checks["database"] = "DOWN: " + err.Error()
-		return checks, fmt.Errorf("database unavailable: %w", err)
-	}
-	checks["database"] = "UP"
+func (s *Service) Store() *repository.Store { return s.store }
 
-	// 2. Schema compatibility
-	if err := s.repo.CheckSchema(ctx); err != nil {
-		checks["schema"] = "DOWN: " + err.Error()
-		return checks, fmt.Errorf("schema incompatible: %w", err)
-	}
-	checks["schema"] = "UP"
+func (s *Service) Games() *game.Registry { return s.games }
 
-	// 3. Artifact Store
-	if s.artifacts != nil {
-		testFile := ".health_check"
-		if _, err := s.artifacts.Save(ctx, testFile, []byte("ok")); err != nil {
-			checks["artifacts"] = "DOWN: " + err.Error()
-			return checks, fmt.Errorf("artifacts store not writable: %w", err)
+func (s *Service) Artifacts() *connection.ArtifactStore { return s.artifacts }
+
+func (s *Service) module(gameID string) (*game.Module, error) {
+	m, ok := s.games.Get(gameID)
+	if !ok {
+		return nil, model.Validation("game_not_supported", "game %q is not installed on this platform", gameID)
+	}
+	return m, nil
+}
+
+func requireCap(p model.Principal, c model.Capability) error {
+	if !p.Can(c) {
+		if p.Anonymous() {
+			return model.Unauthorized("authentication_required", "authentication is required")
 		}
-		_ = s.artifacts.Delete(ctx, testFile)
-		checks["artifacts"] = "UP"
-	} else {
-		checks["artifacts"] = "DEGRADED"
+		return model.Forbidden("missing_capability", "missing capability %s", c)
 	}
-
-	// 4. Starfighter game registered in DB
-	g, err := s.repo.GetGame(ctx, "starfighter")
-	if err != nil || g == nil || !g.Active {
-		checks["starfighter"] = "DOWN: game starfighter not registered or inactive in database"
-		return checks, errors.New("required game 'starfighter' is not active in database")
-	}
-	checks["starfighter"] = "UP"
-
-	return checks, nil
-}
-
-func (s *service) GetRepository() repository.Repository {
-	return s.repo
+	return nil
 }

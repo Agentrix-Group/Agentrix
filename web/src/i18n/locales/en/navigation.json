@@ -1,20 +1,13 @@
 {
-  "brand": "Agentrix",
-  "mainNavigation": "Main navigation",
-  "openMenu": "Open menu",
-  "closeMenu": "Close menu",
-  "home": "Dashboard",
+  "main": "Main navigation",
+  "home": "Home",
   "contests": "Contests",
-  "agents": "My Agents",
   "matches": "Matches",
-  "rankings": "Leaderboard",
+  "rankings": "Rankings",
+  "agents": "My agents",
   "admin": "Admin",
-  "viewer": "Replay Viewer",
-  "signOut": "Sign Out",
-  "signIn": "Sign in",
-  "selectLanguage": "Select language",
-  "languages": {
-    "es": "Español",
-    "en": "English"
-  }
+  "switchLanguage": "Switch language",
+  "logout": "Log out",
+  "login": "Log in",
+  "logoutFailed": "The server could not end the session."
 }

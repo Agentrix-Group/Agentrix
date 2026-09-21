@@ -2,393 +2,178 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"sort"
-	"time"
+	"strings"
 
-	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
-	"github.com/google/uuid"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 )
 
-func (s *service) ListRankings(ctx context.Context) ([]model.Ranking, error) {
-	return s.repo.ListRankings(ctx)
-}
-
-func (s *service) ListRankingsByContest(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	return s.repo.ListRankingsByContest(ctx, contestId)
-}
-
-func (s *service) GetRanking(ctx context.Context, id string) (*model.Ranking, error) {
-	return s.repo.GetRanking(ctx, id)
-}
-
-// CalculateRankings delegates directly to deterministic recalculation.
-func (s *service) CalculateRankings(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	return s.RecalculateContestRankings(ctx, contestId)
-}
-
-type agentStats struct {
-	AgentId           string
-	UserId            string
-	Points            int
-	Score             int
-	MatchesPlayed     int
-	Wins              int
-	Losses            int
-	Draws             int
-	Disqualifications int
-	ScoreDiff         int
-	H2HPoints         map[string]int
-}
-
-func normalizeResultOutcome(res model.Result, allMatchResults []model.Result) string {
-	switch res.Status {
-	case "disqualified", "dq":
-		return "disqualified"
-	case "no_contest", "cancelled", "aborted":
-		return "no_contest"
-	case "win", "victory":
-		return "win"
-	case "loss", "defeat":
-		return "loss"
-	case "draw", "tie":
-		return "draw"
-	}
-
-	minRank := 999999
-	for _, r := range allMatchResults {
-		if r.Status == "disqualified" || r.Status == "no_contest" {
-			continue
-		}
-		if r.Rank < minRank {
-			minRank = r.Rank
-		}
-	}
-
-	rank1Count := 0
-	for _, r := range allMatchResults {
-		if r.Status == "disqualified" || r.Status == "no_contest" {
-			continue
-		}
-		if r.Rank == minRank {
-			rank1Count++
-		}
-	}
-
-	if res.Rank == minRank {
-		if rank1Count > 1 {
-			return "draw"
-		}
-		return "win"
-	}
-	return "loss"
-}
-
-func (s *service) RecalculateContestRankings(ctx context.Context, contestId string) ([]model.Ranking, error) {
-	contest, err := s.repo.GetContest(ctx, contestId)
+// recomputeLocked rebuilds the ranking projection of a contest from the
+// committed runs only. It must run inside a transaction that holds the
+// contest ranking lock.
+func (s *Service) recomputeLocked(ctx context.Context, q *repository.Queries, contest *model.Contest) ([]model.Ranking, model.RankingState, error) {
+	state, err := q.GetRankingState(ctx, contest.ID)
 	if err != nil {
-		return nil, fmt.Errorf("get contest %s: %w", contestId, err)
+		return nil, state, err
 	}
-	if contest == nil {
-		return nil, ErrContestNotFound
-	}
-
-	policy := model.DefaultScoringPolicy()
-	if contest.ScoringPolicy != nil {
-		policy = *contest.ScoringPolicy
-	}
-
-	statsMap := make(map[string]*agentStats)
-
-	// Pre-populate with all enrolled contest entries
-	entries, err := s.repo.ListContestEntries(ctx, contestId)
-	if err == nil {
-		for _, entry := range entries {
-			statsMap[entry.AgentId] = &agentStats{
-				AgentId:   entry.AgentId,
-				UserId:    entry.UserId,
-				H2HPoints: make(map[string]int),
-			}
-		}
-	}
-
-	matches, err := s.repo.ListMatchesByContest(ctx, contestId)
+	entries, err := q.RankingEntries(ctx, contest.ID)
 	if err != nil {
-		return nil, fmt.Errorf("list contest matches: %w", err)
+		return nil, state, err
 	}
-
-	// Sort matches chronologically for determinism
-	sort.Slice(matches, func(i, j int) bool {
-		var tI, tJ time.Time
-		if matches[i].FinishedAt != nil {
-			tI = *matches[i].FinishedAt
-		} else {
-			tI = matches[i].CreatedAt
-		}
-		if matches[j].FinishedAt != nil {
-			tJ = *matches[j].FinishedAt
-		} else {
-			tJ = matches[j].CreatedAt
-		}
-		if tI.Equal(tJ) {
-			return matches[i].Id < matches[j].Id
-		}
-		return tI.Before(tJ)
-	})
-
-	_ = s.repo.ClearAppliedRuns(ctx, contestId)
-
-	type matchParticipant struct {
-		agentId string
-		userId  string
-		res     model.Result
-		outcome string
+	results, err := q.CommittedResults(ctx, contest.ID)
+	if err != nil {
+		return nil, state, err
 	}
+	rankings := model.ComputeRankings(contest.ID, entries, results, contest.ScoringPolicy)
+	applied := map[string]string{}
+	for _, r := range results {
+		applied[r.RunID] = r.MatchID
+	}
+	lines := make([]string, 0, len(applied))
+	for run, match := range applied {
+		lines = append(lines, match+":"+run)
+	}
+	sort.Strings(lines)
+	digest := model.SHA256Hex([]byte(strings.Join(lines, "\n")))
+	now := s.now()
+	if err := q.ReplaceRankings(ctx, contest.ID, rankings, applied, digest, state.DirtyVersion, now); err != nil {
+		return nil, state, err
+	}
+	state.ComputedVersion = state.DirtyVersion
+	state.AppliedRunsCount = len(applied)
+	state.AppliedRunsDigest = digest
+	state.ComputedAt = &now
+	return rankings, state, nil
+}
 
-	for _, m := range matches {
-		isCommitted := false
-		runId := ""
-		if m.CommittedRunId != nil && *m.CommittedRunId != "" {
-			isCommitted = true
-			runId = *m.CommittedRunId
-		} else if m.Status == common.MatchStatusFinished {
-			isCommitted = true
-			runId = m.RunId
-			if runId == "" {
-				runId = m.Id + "-run"
-			}
+// RecomputeRankings refreshes the projection of one contest (worker
+// reconciler and explicit recalculation).
+func (s *Service) RecomputeRankings(ctx context.Context, contestID string) error {
+	return s.store.Tx(ctx, func(q *repository.Queries) error {
+		if err := q.LockContestRankings(ctx, contestID); err != nil {
+			return err
 		}
-
-		if !isCommitted {
-			continue
-		}
-
-		results, err := s.repo.ListResultsByMatch(ctx, m.Id)
+		contest, err := q.GetContest(ctx, contestID)
 		if err != nil {
-			return nil, fmt.Errorf("list results for match %s: %w", m.Id, err)
+			return err
 		}
-		if len(results) == 0 {
-			continue
-		}
-
-		var participants []matchParticipant
-		for _, res := range results {
-			sub, err := s.repo.GetSubmission(ctx, res.SubmissionId)
-			if err != nil {
-				return nil, fmt.Errorf("get submission %s for match %s: %w", res.SubmissionId, m.Id, err)
-			}
-			agent, err := s.repo.GetAgent(ctx, sub.AgentId)
-			if err != nil {
-				return nil, fmt.Errorf("get agent %s for submission %s: %w", sub.AgentId, res.SubmissionId, err)
-			}
-			outcome := normalizeResultOutcome(res, results)
-			participants = append(participants, matchParticipant{
-				agentId: agent.Id,
-				userId:  agent.OwnerUserId,
-				res:     res,
-				outcome: outcome,
-			})
-		}
-
-		for i, p := range participants {
-			st, exists := statsMap[p.agentId]
-			if !exists {
-				st = &agentStats{
-					AgentId:   p.agentId,
-					UserId:    p.userId,
-					H2HPoints: make(map[string]int),
-				}
-				statsMap[p.agentId] = st
-			}
-
-			st.MatchesPlayed++
-			st.Score += p.res.Score
-			st.Points += policy.PointsForResult(p.outcome)
-
-			switch p.outcome {
-			case "win":
-				st.Wins++
-			case "loss":
-				st.Losses++
-			case "draw":
-				st.Draws++
-			case "disqualified":
-				st.Disqualifications++
-			}
-
-			for j, opp := range participants {
-				if i == j {
-					continue
-				}
-				st.ScoreDiff += (p.res.Score - opp.res.Score)
-				if p.res.Score > opp.res.Score {
-					st.H2HPoints[opp.agentId] += policy.WinPoints
-				} else if p.res.Score == opp.res.Score {
-					st.H2HPoints[opp.agentId] += policy.DrawPoints
-				} else {
-					st.H2HPoints[opp.agentId] += policy.LossPoints
-				}
-			}
-		}
-
-		_ = s.repo.RecordAppliedRun(ctx, contestId, runId, m.Id)
-	}
-
-	var sortedList []*agentStats
-	for _, st := range statsMap {
-		sortedList = append(sortedList, st)
-	}
-
-	sort.Slice(sortedList, func(i, j int) bool {
-		a := sortedList[i]
-		b := sortedList[j]
-
-		if a.Points != b.Points {
-			return a.Points > b.Points
-		}
-
-		for _, rule := range policy.Tiebreakers {
-			switch rule {
-			case model.TiebreakerScoreDiff:
-				if a.ScoreDiff != b.ScoreDiff {
-					return a.ScoreDiff > b.ScoreDiff
-				}
-			case model.TiebreakerHeadToHead:
-				h2hA := a.H2HPoints[b.AgentId]
-				h2hB := b.H2HPoints[a.AgentId]
-				if h2hA != h2hB {
-					return h2hA > h2hB
-				}
-			case model.TiebreakerWins:
-				if a.Wins != b.Wins {
-					return a.Wins > b.Wins
-				}
-			case model.TiebreakerRivalSurvival:
-				if a.Score != b.Score {
-					return a.Score > b.Score
-				}
-			}
-		}
-
-		return a.AgentId < b.AgentId
+		_, _, err = s.recomputeLocked(ctx, q, contest)
+		return err
 	})
+}
 
-	var rankings []model.Ranking
-	now := time.Now().UTC()
-	for idx, st := range sortedList {
-		rk := model.Ranking{
-			Id:                uuid.New().String(),
-			ContestId:         contestId,
-			AgentId:           st.AgentId,
-			UserId:            st.UserId,
-			Score:             st.Score,
-			Points:            st.Points,
-			MatchesPlayed:     st.MatchesPlayed,
-			Wins:              st.Wins,
-			Losses:            st.Losses,
-			Draws:             st.Draws,
-			Disqualifications: st.Disqualifications,
-			TiebreakerScore:   float64(st.ScoreDiff),
-			Rank:              idx + 1,
-			UpdatedAt:         now,
+func (s *Service) RecalculateRankings(ctx context.Context, p model.Principal, contestID string) error {
+	if err := requireCap(p, model.CapRankingsPublish); err != nil {
+		return err
+	}
+	if _, err := s.visibleContest(ctx, p, contestID); err != nil {
+		return err
+	}
+	return s.RecomputeRankings(ctx, contestID)
+}
+
+// RecomputeDirtyRankings refreshes contests whose projection is behind.
+func (s *Service) RecomputeDirtyRankings(ctx context.Context, limit int) (int, error) {
+	ids, err := s.store.DirtyRankingContests(ctx, limit)
+	if err != nil {
+		return 0, err
+	}
+	for _, id := range ids {
+		if err := s.RecomputeRankings(ctx, id); err != nil {
+			return 0, err
 		}
+	}
+	return len(ids), nil
+}
 
-		if existing, err := s.repo.GetRankingByContestAndAgent(ctx, contestId, st.AgentId); err == nil && existing != nil {
-			rk.Id = existing.Id
+type RankingView struct {
+	Rankings []model.Ranking
+	State    model.RankingState
+}
+
+func (s *Service) GetRankings(ctx context.Context, p model.Principal, contestID string) (*RankingView, error) {
+	if err := requireCap(p, model.CapRankingsView); err != nil {
+		return nil, err
+	}
+	if _, err := s.visibleContest(ctx, p, contestID); err != nil {
+		return nil, err
+	}
+	rankings, err := s.store.ListRankings(ctx, contestID)
+	if err != nil {
+		return nil, err
+	}
+	state, err := s.store.GetRankingState(ctx, contestID)
+	if err != nil {
+		return nil, err
+	}
+	return &RankingView{Rankings: rankings, State: state}, nil
+}
+
+// PublishSnapshot freezes the current standings as a new immutable version.
+// The projection is recomputed inside the same transaction, so the snapshot
+// always covers every committed run.
+func (s *Service) PublishSnapshot(ctx context.Context, p model.Principal, contestID string) (*model.RankingSnapshot, error) {
+	if err := requireCap(p, model.CapRankingsPublish); err != nil {
+		return nil, err
+	}
+	var snapshot *model.RankingSnapshot
+	err := s.store.Tx(ctx, func(q *repository.Queries) error {
+		contest, err := q.LockContest(ctx, contestID)
+		if err != nil {
+			return err
 		}
-
-		if err := s.repo.UpsertRanking(ctx, &rk); err != nil {
-			return nil, fmt.Errorf("upsert ranking for agent %s: %w", st.AgentId, err)
+		if contest.State != model.ContestRunning && contest.State != model.ContestFinished {
+			return model.Conflict("snapshot_not_allowed", "rankings can be published while running or finished (state %s)", contest.State)
 		}
-		rankings = append(rankings, rk)
-	}
-
-	return rankings, nil
+		if err := q.LockContestRankings(ctx, contestID); err != nil {
+			return err
+		}
+		rankings, state, err := s.recomputeLocked(ctx, q, contest)
+		if err != nil {
+			return err
+		}
+		version, err := q.NextSnapshotVersion(ctx, contestID)
+		if err != nil {
+			return err
+		}
+		rows := make([]model.SnapshotRow, 0, len(rankings))
+		for _, r := range rankings {
+			rows = append(rows, r.SnapshotRow())
+		}
+		raw, err := model.CanonicalJSON(rows)
+		if err != nil {
+			return err
+		}
+		now := s.now()
+		snapshot = &model.RankingSnapshot{ID: s.newID(), ContestID: contestID, Version: version, Rankings: rankings,
+			RankingsSHA256: model.SHA256Hex(raw), AppliedRunsDigest: state.AppliedRunsDigest, AppliedRunsCount: state.AppliedRunsCount,
+			PublishedBy: p.UserID, PublishedAt: now}
+		if err := q.InsertSnapshot(ctx, snapshot, raw); err != nil {
+			return err
+		}
+		return q.Audit(ctx, p.UserID, "rankings.snapshot_published", "contest", contestID,
+			map[string]any{"version": version, "sha256": snapshot.RankingsSHA256}, now)
+	})
+	return snapshot, err
 }
 
-func (s *service) ApplyMatchResultIncremental(ctx context.Context, matchId string) error {
-	match, err := s.repo.GetMatch(ctx, matchId)
-	if err != nil {
-		return fmt.Errorf("get match %s: %w", matchId, err)
+func (s *Service) ListSnapshots(ctx context.Context, p model.Principal, contestID string) ([]model.RankingSnapshot, error) {
+	if err := requireCap(p, model.CapRankingsView); err != nil {
+		return nil, err
 	}
-	if match.ContestId == "" {
-		return nil
+	if _, err := s.visibleContest(ctx, p, contestID); err != nil {
+		return nil, err
 	}
-
-	runId := ""
-	if match.CommittedRunId != nil && *match.CommittedRunId != "" {
-		runId = *match.CommittedRunId
-	} else if match.RunId != "" {
-		runId = match.RunId
-	} else {
-		runId = match.Id + "-run"
-	}
-
-	applied, err := s.repo.IsRunAppliedToRanking(ctx, match.ContestId, runId)
-	if err != nil {
-		return fmt.Errorf("check applied run: %w", err)
-	}
-	if applied {
-		return nil
-	}
-
-	_, err = s.RecalculateContestRankings(ctx, match.ContestId)
-	return err
+	return s.store.ListSnapshots(ctx, contestID)
 }
 
-func (s *service) PublishRankingSnapshot(ctx context.Context, contestId, publisherUserId string) (*model.RankingSnapshot, error) {
-	contest, err := s.repo.GetContest(ctx, contestId)
-	if err != nil {
-		return nil, fmt.Errorf("get contest %s: %w", contestId, err)
+func (s *Service) GetSnapshot(ctx context.Context, p model.Principal, contestID string, version int) (*model.RankingSnapshot, error) {
+	if err := requireCap(p, model.CapRankingsView); err != nil {
+		return nil, err
 	}
-	if contest == nil {
-		return nil, ErrContestNotFound
+	if _, err := s.visibleContest(ctx, p, contestID); err != nil {
+		return nil, err
 	}
-
-	rankings, err := s.repo.ListRankingsByContest(ctx, contestId)
-	if err != nil {
-		return nil, fmt.Errorf("list rankings for snapshot: %w", err)
-	}
-
-	latest, err := s.repo.GetLatestRankingSnapshot(ctx, contestId)
-	if err != nil {
-		return nil, fmt.Errorf("get latest snapshot: %w", err)
-	}
-
-	version := 1
-	if latest != nil {
-		version = latest.Version + 1
-	}
-
-	var pubBy *string
-	if publisherUserId != "" {
-		pubBy = &publisherUserId
-	}
-
-	snapshot := &model.RankingSnapshot{
-		Id:          uuid.New().String(),
-		ContestId:   contestId,
-		Version:     version,
-		Rankings:    rankings,
-		PublishedBy: pubBy,
-		PublishedAt: time.Now().UTC(),
-	}
-
-	if err := s.repo.CreateRankingSnapshot(ctx, snapshot); err != nil {
-		return nil, fmt.Errorf("create ranking snapshot: %w", err)
-	}
-
-	return snapshot, nil
-}
-
-func (s *service) ListRankingSnapshots(ctx context.Context, contestId string) ([]model.RankingSnapshot, error) {
-	return s.repo.ListRankingSnapshots(ctx, contestId)
-}
-
-func (s *service) GetPublishedRankings(ctx context.Context, contestId string, version ...int) (*model.RankingSnapshot, error) {
-	if len(version) > 0 && version[0] > 0 {
-		return s.repo.GetRankingSnapshotByVersion(ctx, contestId, version[0])
-	}
-	return s.repo.GetLatestRankingSnapshot(ctx, contestId)
+	return s.store.GetSnapshot(ctx, contestID, version)
 }

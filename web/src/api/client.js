@@ -1,355 +1,153 @@
 /**
- * Robust API Client for Agentrix Backend
- * Complies with ADR-0009 and resolves F0.3 / F0.4.
+ * HTTP transport for the Agentrix API.
+ *
+ * - The access token lives only in memory (auth/session.js); the refresh
+ *   token is an HttpOnly cookie the browser sends to /api/v1/auth/*.
+ * - Requests use `credentials: 'include'` so the cookie also works when the
+ *   API is served from another origin allowed by CORS.
+ * - A 401 triggers one coordinated refresh and a single retry.
+ * - Errors are always ApiError instances built from the API envelope
+ *   {"error": {"code", "message", "details", "request_id"}}.
  */
-
-import {
-  getAccessToken,
-  getRefreshToken,
-  refreshAuthTokens,
-  notifySessionExpired,
-} from '../auth/session.js';
+import { getAccessToken, refreshSession, expireSession } from '../auth/session.js';
 
 const API_HOST = (import.meta.env?.VITE_API_URL || '').replace(/\/+$/, '');
 export const BASE_URL = `${API_HOST}/api/v1`;
-const DEFAULT_TIMEOUT_MS = 10000;
+export const CSRF_HEADER = 'X-Requested-With';
+export const CSRF_VALUE = 'agentrix';
+const DEFAULT_TIMEOUT_MS = 15000;
 
-export class ApiClientError extends Error {
-  constructor(message, { status, statusText, data = {}, correlationId = null, url = '' } = {}) {
-    super(message || (data && data.message) || `HTTP ${status}: ${statusText}`);
-    this.name = 'ApiClientError';
+export class ApiError extends Error {
+  constructor({ status = 0, code = 'network_error', message = '', details = null, requestId = null } = {}) {
+    super(message || code);
+    this.name = 'ApiError';
     this.status = status;
-    this.statusText = statusText;
-    this.data = data || {};
-    this.correlationId = correlationId || data?.correlation_id || data?.correlationId || null;
-    this.url = url;
-    this.errorCode = data?.errorCode || data?.error_code || null;
-    this.isAuth = status === 401;
-    this.isForbidden = status === 403;
-    this.isNotFound = status === 404;
-    this.isConflict = status === 409;
-    this.isValidation = status === 422 || (status === 400 && Boolean(data?.errors || data?.details));
-    this.isServer = status >= 500;
+    this.code = code;
+    this.details = details;
+    this.requestId = requestId;
   }
 
-  getUserMessage(t) {
-    if (this.errorCode && typeof t === 'function') {
-      const translation = t(`errors:codes.${this.errorCode}`, { defaultValue: null });
-      if (translation && translation !== `errors:codes.${this.errorCode}`) {
-        return translation;
-      }
+  get isUnauthorized() { return this.status === 401; }
+  get isForbidden() { return this.status === 403; }
+  get isNotFound() { return this.status === 404; }
+  get isConflict() { return this.status === 409; }
+  get isValidation() { return this.status === 422 || this.status === 400; }
+  get isNetwork() { return this.status === 0; }
+}
+
+export function buildQuery(params = {}) {
+  const search = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') search.append(key, String(value));
+  });
+  const text = search.toString();
+  return text ? `?${text}` : '';
+}
+
+async function toApiError(response) {
+  let body = null;
+  const text = await response.text();
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      body = null;
     }
-    return this.data?.message || this.message || 'Error de comunicación con el servidor';
   }
+  const envelope = body?.error;
+  return new ApiError({
+    status: response.status,
+    code: envelope?.code || `http_${response.status}`,
+    message: envelope?.message || response.statusText || `HTTP ${response.status}`,
+    details: envelope?.details || null,
+    requestId: envelope?.request_id || response.headers.get('x-request-id'),
+  });
 }
 
-export class NetworkError extends Error {
-  constructor(message, originalError = null) {
-    super(message || 'No se pudo establecer conexión con el servidor. Verifique su red.');
-    this.name = 'NetworkError';
-    this.isNetworkError = true;
-    this.code = 'NETWORK_ERROR';
-    this.originalError = originalError;
+function linkSignals(external, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException('timeout', 'TimeoutError')), timeoutMs);
+  const onAbort = () => controller.abort(external.reason);
+  if (external) {
+    if (external.aborted) controller.abort(external.reason);
+    else external.addEventListener('abort', onAbort, { once: true });
   }
-}
-
-export class TimeoutError extends Error {
-  constructor(timeoutMs) {
-    super(`La solicitud excedió el tiempo límite de espera (${timeoutMs}ms).`);
-    this.name = 'TimeoutError';
-    this.isTimeout = true;
-    this.code = 'TIMEOUT_ERROR';
-    this.timeoutMs = timeoutMs;
-  }
-}
-
-export function buildUrl(endpoint, queryParams = {}) {
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  const keys = Object.keys(queryParams).filter(
-    (k) => queryParams[k] !== undefined && queryParams[k] !== null && queryParams[k] !== ''
-  );
-  if (keys.length === 0) {
-    return cleanEndpoint;
-  }
-  const searchParams = new URLSearchParams();
-  for (const key of keys) {
-    searchParams.append(key, String(queryParams[key]));
-  }
-  return `${cleanEndpoint}?${searchParams.toString()}`;
-}
-
-export async function request(endpoint, options = {}) {
-  const token = getAccessToken();
-  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
-  const method = (options.method || 'GET').toUpperCase();
-
-  const headers = {
-    Accept: 'application/json, text/plain, */*',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...options.headers,
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      clearTimeout(timer);
+      if (external) external.removeEventListener('abort', onAbort);
+    },
   };
-
-  // Do NOT add Content-Type: application/json for GET or HEAD requests (F0.4)
-  if (method !== 'GET' && method !== 'HEAD' && options.body && !(options.body instanceof FormData)) {
-    if (!headers['Content-Type']) {
-      headers['Content-Type'] = 'application/json';
-    }
-  }
-
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
-  // Link external signal if provided
-  if (options.signal) {
-    options.signal.addEventListener('abort', () => controller.abort());
-  }
-
-  const fullUrl = `${BASE_URL}${endpoint}`;
-
-  try {
-    const response = await fetch(fullUrl, {
-      ...options,
-      method,
-      headers,
-      signal: controller.signal,
-    });
-
-    clearTimeout(timer);
-
-    const correlationId =
-      response.headers.get('x-correlation-id') ||
-      response.headers.get('x-request-id') ||
-      null;
-
-    // Handle 401 with coordinated refresh token renewal (F0.3)
-    if (
-      response.status === 401 &&
-      !options._retry &&
-      !endpoint.includes('/auth/login') &&
-      !endpoint.includes('/auth/refresh')
-    ) {
-      const refreshToken = getRefreshToken();
-      if (refreshToken) {
-        try {
-          const newTokens = await refreshAuthTokens(BASE_URL);
-          if (newTokens?.access_token) {
-            return await request(endpoint, {
-              ...options,
-              _retry: true,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${newTokens.access_token}`,
-              },
-            });
-          }
-        } catch {
-          // Refresh failed; notify session expired and proceed with original 401 error
-          notifySessionExpired();
-        }
-      }
-    }
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new ApiClientError(errorData.message || response.statusText, {
-        status: response.status,
-        statusText: response.statusText,
-        data: errorData,
-        correlationId,
-        url: fullUrl,
-      });
-    }
-
-    // Handle 204 No Content or empty responses gracefully
-    if (response.status === 204) {
-      return null;
-    }
-
-    const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) {
-      return await response.json().catch(() => null);
-    }
-    const text = await response.text();
-    return text ? JSON.parse(text).catch(() => text) : null;
-  } catch (err) {
-    clearTimeout(timer);
-    if (err instanceof ApiClientError) {
-      throw err;
-    }
-    if (timedOut || err.name === 'AbortError') {
-      if (timedOut) {
-        throw new TimeoutError(timeoutMs);
-      }
-      throw err;
-    }
-    throw new NetworkError(err.message, err);
-  }
 }
 
-export async function requestText(endpoint, options = {}) {
+/**
+ * request performs one API call.
+ * @param {string} path  path below /api/v1 (e.g. "/contests")
+ * @param {object} options { method, json, form, headers, signal, timeout, raw, auth }
+ */
+export async function request(path, options = {}) {
+  const { method = 'GET', json, form, signal, timeout = DEFAULT_TIMEOUT_MS, raw = false, retry = true } = options;
+  const headers = { Accept: 'application/json', ...(options.headers || {}) };
   const token = getAccessToken();
-  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS;
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
-  const fullUrl = `${BASE_URL}${endpoint}`;
-  try {
-    const response = await fetch(fullUrl, {
-      ...options,
-      headers: {
-        Accept: 'application/x-ndjson, text/plain, */*',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timer);
-
-    if (
-      response.status === 401 &&
-      !options._retry &&
-      !endpoint.includes('/auth/login') &&
-      !endpoint.includes('/auth/refresh')
-    ) {
-      const refreshToken = getRefreshToken();
-      if (refreshToken) {
-        try {
-          const newTokens = await refreshAuthTokens(BASE_URL);
-          if (newTokens?.access_token) {
-            return await requestText(endpoint, {
-              ...options,
-              _retry: true,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${newTokens.access_token}`,
-              },
-            });
-          }
-        } catch {
-          notifySessionExpired();
-        }
-      }
-    }
-
-    if (!response.ok) {
-      const correlationId =
-        response.headers.get('x-correlation-id') ||
-        response.headers.get('x-request-id') ||
-        null;
-      throw new ApiClientError(`HTTP ${response.status}: ${response.statusText}`, {
-        status: response.status,
-        statusText: response.statusText,
-        correlationId,
-        url: fullUrl,
-      });
-    }
-    return await response.text();
-  } catch (err) {
-    clearTimeout(timer);
-    if (err instanceof ApiClientError) throw err;
-    if (timedOut || err.name === 'AbortError') {
-      if (timedOut) throw new TimeoutError(timeoutMs);
-      throw err;
-    }
-    throw new NetworkError(err.message, err);
+  if (token && options.auth !== false) headers.Authorization = `Bearer ${token}`;
+  let body;
+  if (json !== undefined) {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(json);
+  } else if (form) {
+    body = form;
   }
+  const { signal: linked, cleanup } = linkSignals(signal, timeout);
+  let response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, { method, headers, body, signal: linked, credentials: 'include' });
+  } catch (err) {
+    cleanup();
+    if (signal?.aborted) throw err;
+    const timedOut = linked.aborted && linked.reason?.name === 'TimeoutError';
+    throw new ApiError({ status: 0, code: timedOut ? 'timeout' : 'network_error', message: timedOut ? 'The request timed out' : 'The server could not be reached' });
+  }
+  cleanup();
+
+  if (response.status === 401 && retry && token && options.auth !== false) {
+    const refreshed = await refreshSession();
+    if (refreshed) return request(path, { ...options, retry: false });
+    expireSession();
+  }
+  if (!response.ok) throw await toApiError(response);
+  if (raw) return response;
+  if (response.status === 204) return null;
+  const text = await response.text();
+  if (!text) return null;
+  const type = response.headers.get('content-type') || '';
+  if (!type.includes('application/json')) {
+    throw new ApiError({ status: response.status, code: 'unexpected_content', message: 'The server returned a non-JSON response' });
+  }
+  return JSON.parse(text);
 }
 
-export async function requestForm(endpoint, formData, options = {}) {
-  const token = getAccessToken();
-  const timeoutMs = options.timeout ?? DEFAULT_TIMEOUT_MS * 3; // 30s for uploads
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-
-  const fullUrl = `${BASE_URL}${endpoint}`;
+/** Calls an endpoint authenticated by the refresh cookie (CSRF header). */
+export async function cookieRequest(path, { signal } = {}) {
+  let response;
   try {
-    const response = await fetch(fullUrl, {
-      ...options,
+    response = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
-      body: formData,
-      headers: {
-        Accept: 'application/json, text/plain, */*',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...options.headers,
-      },
-      signal: controller.signal,
+      headers: { Accept: 'application/json', [CSRF_HEADER]: CSRF_VALUE },
+      credentials: 'include',
+      signal,
     });
-    clearTimeout(timer);
-
-    if (
-      response.status === 401 &&
-      !options._retry &&
-      !endpoint.includes('/auth/login') &&
-      !endpoint.includes('/auth/refresh')
-    ) {
-      const refreshToken = getRefreshToken();
-      if (refreshToken) {
-        try {
-          const newTokens = await refreshAuthTokens(BASE_URL);
-          if (newTokens?.access_token) {
-            return await requestForm(endpoint, formData, {
-              ...options,
-              _retry: true,
-              headers: {
-                ...options.headers,
-                Authorization: `Bearer ${newTokens.access_token}`,
-              },
-            });
-          }
-        } catch {
-          notifySessionExpired();
-        }
-      }
-    }
-
-    const correlationId =
-      response.headers.get('x-correlation-id') ||
-      response.headers.get('x-request-id') ||
-      null;
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new ApiClientError(errorData.message || response.statusText, {
-        status: response.status,
-        statusText: response.statusText,
-        data: errorData,
-        correlationId,
-        url: fullUrl,
-      });
-    }
-    return await response.json().catch(() => null);
-  } catch (err) {
-    clearTimeout(timer);
-    if (err instanceof ApiClientError) throw err;
-    if (timedOut || err.name === 'AbortError') {
-      if (timedOut) throw new TimeoutError(timeoutMs);
-      throw err;
-    }
-    throw new NetworkError(err.message, err);
+  } catch {
+    throw new ApiError({ status: 0, code: 'network_error', message: 'The server could not be reached' });
   }
+  if (!response.ok) throw await toApiError(response);
+  if (response.status === 204) return null;
+  return response.json();
 }
 
-export const api = {
-  get: (url, options = {}) => request(url, { ...options, method: 'GET' }),
-  post: (url, body, options = {}) =>
-    request(url, { ...options, method: 'POST', body: JSON.stringify(body) }),
-  put: (url, body, options = {}) =>
-    request(url, { ...options, method: 'PUT', body: JSON.stringify(body) }),
-  patch: (url, body, options = {}) =>
-    request(url, { ...options, method: 'PATCH', body: body ? JSON.stringify(body) : undefined }),
-  delete: (url, options = {}) => request(url, { ...options, method: 'DELETE' }),
-  text: (url, options = {}) => requestText(url, options),
-  form: (url, data, options = {}) => requestForm(url, data, options),
-};
+export function newIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}

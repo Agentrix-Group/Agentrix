@@ -1,24 +1,37 @@
-# Build Go binary
-FROM golang:1.24-bookworm AS builder
-WORKDIR /app
+# syntax=docker/dockerfile:1
+# Worker image. The engine is compiled here from the pinned engine source
+# (build context "engine", checked out at engine.lock's commit); no host
+# binary is copied in.
+
+FROM docker.io/library/rust:1.98-bookworm AS enginebuild
+RUN apt-get update && apt-get install -y --no-install-recommends pkg-config libudev-dev libasound2-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /engine
+COPY --from=engine . .
+RUN cargo build --locked --release --bin starfighter-engine \
+    && sha256sum target/release/starfighter-engine | tee /engine/starfighter-engine.sha256
+
+FROM docker.io/library/golang:1.26-bookworm AS build
+WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -mod=readonly -ldflags="-s -w" -o /agentrix-worker ./cmd/worker
+COPY cmd ./cmd
+COPY src ./src
+RUN CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags="-s -w" -o /out/worker ./cmd/worker
 
-# Final runtime stage with Python, Bubblewrap, and zstd
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    bubblewrap \
-    python3 \
-    zstd \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
-
+FROM docker.io/library/debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap python3 util-linux ca-certificates tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --uid 65532 --home /app agentrix \
+    && mkdir -p /data/artifacts && chown 65532:65532 /data/artifacts
 WORKDIR /app
-COPY --from=builder /agentrix-worker /app/agentrix-worker
-COPY bin/starfighter-engine /app/bin/starfighter-engine
+COPY --from=build /out/worker /app/worker
+COPY --from=enginebuild /engine/target/release/starfighter-engine /app/bin/starfighter-engine
+COPY --from=enginebuild /engine/starfighter-engine.sha256 /app/bin/starfighter-engine.sha256
 COPY games ./games
-
-ENV PATH="/app/bin:${PATH}"
-ENTRYPOINT ["/app/agentrix-worker"]
+USER agentrix
+ENV AGENTRIX_ENGINE_BIN=/app/bin/starfighter-engine GAMES_DIR=/app/games ARTIFACTS_DIR=/data/artifacts \
+    AGENTRIX_SANDBOX=bubblewrap AGENTRIX_HEARTBEAT_FILE=/tmp/agentrix-worker-heartbeat
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 \
+  CMD test -f /tmp/agentrix-worker-heartbeat && test $(( $(date +%s) - $(stat -c %Y /tmp/agentrix-worker-heartbeat) )) -lt 45
+ENTRYPOINT ["/usr/bin/tini", "--", "/app/worker"]

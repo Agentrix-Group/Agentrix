@@ -1,70 +1,130 @@
+# Agentrix demo stack. One command from an empty volume:
+#   docker compose --profile demo up --build     (or: make demo-up)
+# The engine is compiled inside the worker build from ../agentrix_engine,
+# which must be checked out at the commit pinned in engine.lock
+# (script/checkout_engine.sh does it and verifies the commit).
+name: agentrix-demo
+
+x-env: &env
+  env_file: .env.demo
+
 services:
   postgres:
-    image: postgres:16-alpine
+    image: docker.io/library/postgres:16
     environment:
       POSTGRES_DB: agentrix
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: agentrix_dev_password
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: agentrix
+      POSTGRES_PASSWORD: agentrix-demo-db-password
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d agentrix"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
+      test: ["CMD-SHELL", "pg_isready -U agentrix -d agentrix"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    build: { context: ., dockerfile: Dockerfile.api }
+    image: agentrix-api:local
+    <<: *env
+    entrypoint: ["/app/migrate", "up"]
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
 
   api:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    ports:
-      - "8080:8080"
-    environment:
-      MODE: dev
-      PORT: "8080"
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_USER: postgres
-      DB_PASSWORD: agentrix_dev_password
-      DB_NAME: agentrix
-      DB_SSLMODE: disable
-      ARTIFACTS_DIR: /app/artifacts
+    image: agentrix-api:local
+    <<: *env
     volumes:
-      - artifacts_data:/app/artifacts
+      - artifacts:/data/artifacts
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Declared here as well as in the Dockerfiles: podman drops HEALTHCHECK
+    # from OCI-format images.
+    healthcheck:
+      test: ["CMD", "/app/api", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile.worker
+      additional_contexts:
+        engine: ../agentrix_engine
+    image: agentrix-worker:local
+    <<: *env
     environment:
-      MODE: dev
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_USER: postgres
-      DB_PASSWORD: agentrix_dev_password
-      DB_NAME: agentrix
-      DB_SSLMODE: disable
-      ARTIFACTS_DIR: /app/artifacts
+      WORKER_ID: compose-worker-1
+      AGENTRIX_ENGINE_COMMIT: ${AGENTRIX_ENGINE_COMMIT:-}
     volumes:
-      - artifacts_data:/app/artifacts
+      - artifacts:/data/artifacts
+    # Bubblewrap needs unprivileged user namespaces (forbidden by the default
+    # seccomp/AppArmor profiles) and a fresh /proc for the bot's PID namespace
+    # (the runtime's masked /proc paths make the kernel refuse that mount, so
+    # systempaths=unconfined). The worker process itself runs as uid 65532;
+    # the bot isolation boundary is the bubblewrap sandbox (namespaces +
+    # rlimits) inside this container. Without these options the worker fails
+    # closed at startup instead of running bots unsandboxed.
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /tmp/agentrix-worker-heartbeat && test $$(( $$(date +%s) - $$(stat -c %Y /tmp/agentrix-worker-heartbeat) )) -lt 45"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate: { condition: service_completed_successfully }
+    restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: Dockerfile.web
+    build: { context: ., dockerfile: Dockerfile.web }
+    image: agentrix-web:local
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
     depends_on:
-      - api
+      api: { condition: service_healthy }
+    restart: unless-stopped
+
+  bootstrap:
+    image: agentrix-api:local
+    profiles: ["demo"]
+    <<: *env
+    environment:
+      AGENTRIX_API_URL: http://api:8080
+      DEMO_BOTS_DIR: /app/games/starfighter/examples
+    volumes:
+      - artifacts:/data/artifacts
+    entrypoint: ["/app/bootstrap"]
+    depends_on:
+      api: { condition: service_healthy }
+      worker: { condition: service_healthy }
+    restart: "no"
+
+  smoke:
+    image: agentrix-api:local
+    profiles: ["smoke"]
+    <<: *env
+    environment:
+      AGENTRIX_API_URL: http://api:8080
+      DEMO_BOTS_DIR: /app/games/starfighter/examples
+    entrypoint: ["/app/smoke"]
+    depends_on:
+      api: { condition: service_healthy }
+      worker: { condition: service_healthy }
+    restart: "no"
 
 volumes:
   pgdata:
-  artifacts_data:
+  artifacts:

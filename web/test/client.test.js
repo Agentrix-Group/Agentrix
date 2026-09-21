@@ -1,171 +1,86 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import {
-  api,
-  request,
-  buildUrl,
-  ApiClientError,
-  NetworkError,
-  TimeoutError,
-} from '../src/api/client.js';
+import { describe, it, expect, vi } from 'vitest';
+import { request, ApiError } from '../src/api/client.js';
+import { ApiService } from '../src/service/apiService.js';
+import { setSession, getAccessToken, subscribe, clearSession } from '../src/auth/session.js';
+import { mockFetch, jsonResponse, errorResponse } from './helpers.js';
 
-describe('Central HTTP Client (ADR-0009 / F0.4)', () => {
-  const originalFetch = global.fetch;
+const user = { id: 'u', username: 'alice', roles: ['player'], capabilities: [] };
 
-  beforeEach(() => {
-    localStorage.clear();
+describe('transport', () => {
+  it('maps the error envelope to ApiError', async () => {
+    mockFetch({ 'GET /matches/x': errorResponse(409, 'run_in_progress', 'busy', { run_id: 'r1' }) });
+    const err = await request('/matches/x').catch((e) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(409);
+    expect(err.code).toBe('run_in_progress');
+    expect(err.details).toEqual({ run_id: 'r1' });
+    expect(err.requestId).toBe('req-1');
   });
 
-  afterEach(() => {
-    global.fetch = originalFetch;
-    vi.restoreAllMocks();
+  it('sends credentials and the bearer token', async () => {
+    setSession({ access_token: 'tok', user });
+    const { calls } = mockFetch({ 'GET /me': jsonResponse(200, user) });
+    await request('/me');
+    expect(calls[0].init.credentials).toBe('include');
+    expect(calls[0].init.headers.Authorization).toBe('Bearer tok');
+    clearSession();
   });
 
-  it('buildUrl handles path and query parameters safely', () => {
-    expect(buildUrl('/contests')).toBe('/contests');
-    expect(buildUrl('matches')).toBe('/matches');
-    expect(buildUrl('/matches', { contest_id: 'c-1', limit: 10 })).toBe('/matches?contest_id=c-1&limit=10');
-    expect(buildUrl('/agents', { owner_user_id: 'user 1 & 2' })).toBe('/agents?owner_user_id=user+1+%26+2');
-    expect(buildUrl('/contests', { empty: '', undef: undefined, nul: null })).toBe('/contests');
-  });
-
-  it('does NOT attach Content-Type: application/json on GET requests', async () => {
-    let capturedHeaders = null;
-    global.fetch = vi.fn().mockImplementation((url, options) => {
-      capturedHeaders = options.headers;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: () => Promise.resolve({ success: true }),
-      });
+  it('refreshes once for concurrent 401s and retries', async () => {
+    setSession({ access_token: 'old', user });
+    let refreshes = 0;
+    const { calls } = mockFetch({
+      'GET /me': ({ init }) => (init.headers.Authorization === 'Bearer new' ? jsonResponse(200, user) : errorResponse(401, 'invalid_token')),
+      'POST /auth/refresh': () => { refreshes += 1; return jsonResponse(200, { access_token: 'new', user }); },
     });
-
-    await api.get('/contests');
-    expect(capturedHeaders['Content-Type']).toBeUndefined();
-    expect(capturedHeaders['Accept']).toContain('application/json');
+    const results = await Promise.all([request('/me'), request('/me'), request('/me')]);
+    expect(results.every((r) => r.id === 'u')).toBe(true);
+    expect(refreshes).toBe(1);
+    const refreshCall = calls.find((c) => c.path === '/auth/refresh');
+    expect(refreshCall.init.headers['X-Requested-With']).toBe('agentrix');
+    expect(getAccessToken()).toBe('new');
+    clearSession();
   });
 
-  it('attaches Content-Type: application/json on POST requests with JSON payload', async () => {
-    let capturedHeaders = null;
-    let capturedBody = null;
-    global.fetch = vi.fn().mockImplementation((url, options) => {
-      capturedHeaders = options.headers;
-      capturedBody = options.body;
-      return Promise.resolve({
-        ok: true,
-        status: 201,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: () => Promise.resolve({ id: '1' }),
-      });
-    });
-
-    await api.post('/contests', { name: 'Test Contest' });
-    expect(capturedHeaders['Content-Type']).toBe('application/json');
-    expect(capturedBody).toBe('{"name":"Test Contest"}');
+  it('expires the session when refresh fails', async () => {
+    setSession({ access_token: 'old', user });
+    const events = [];
+    const unsubscribe = subscribe((event) => events.push(event));
+    mockFetch({ 'GET /me': errorResponse(401, 'session_revoked'), 'POST /auth/refresh': errorResponse(401, 'invalid_refresh_token') });
+    const err = await request('/me').catch((e) => e);
+    expect(err.status).toBe(401);
+    expect(getAccessToken()).toBeNull();
+    expect(events).toContain('expired');
+    unsubscribe();
   });
 
-  it('attaches Authorization header when token exists in localStorage', async () => {
-    localStorage.setItem('agentrix_token', 'valid-jwt-token-123');
-    let capturedHeaders = null;
-    global.fetch = vi.fn().mockImplementation((url, options) => {
-      capturedHeaders = options.headers;
-      return Promise.resolve({
-        ok: true,
-        status: 200,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: () => Promise.resolve({ user: 'tester' }),
-      });
-    });
-
-    await api.get('/me');
-    expect(capturedHeaders['Authorization']).toBe('Bearer valid-jwt-token-123');
+  it('reports non-JSON bodies instead of crashing (JSON.parse bug regression)', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('<html>', { status: 200, headers: { 'Content-Type': 'text/html' } }));
+    const err = await request('/contests').catch((e) => e);
+    expect(err.code).toBe('unexpected_content');
   });
 
-  it('handles 204 No Content gracefully without failing on response.json()', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 204,
-      headers: new Headers(),
-    });
-
-    const result = await api.delete('/matches/m-123');
-    expect(result).toBeNull();
+  it('reports network failures as ApiError status 0', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new TypeError('Failed to fetch'));
+    const err = await request('/contests').catch((e) => e);
+    expect(err.isNetwork).toBe(true);
   });
 
-  it('extracts correlation ID from response headers upon API failure', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 404,
-      statusText: 'Not Found',
-      headers: new Headers({
-        'content-type': 'application/json',
-        'x-correlation-id': 'req-corr-98765',
-      }),
-      json: () => Promise.resolve({ errorCode: 'RESOURCE_NOT_FOUND', message: 'Match not found' }),
-    });
-
-    try {
-      await api.get('/matches/missing-id');
-      expect.fail('Should have thrown ApiClientError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiClientError);
-      expect(err.status).toBe(404);
-      expect(err.isNotFound).toBe(true);
-      expect(err.correlationId).toBe('req-corr-98765');
-      expect(err.errorCode).toBe('RESOURCE_NOT_FOUND');
-    }
+  it('scheduling a run always carries an Idempotency-Key', async () => {
+    const { calls } = mockFetch({ 'POST /matches/m/runs': jsonResponse(202, { run_id: 'r', job_id: 'j' }) });
+    await ApiService.scheduleRun('m');
+    await ApiService.scheduleRun('m', 'fixed-key-123');
+    expect(calls[0].init.headers['Idempotency-Key']).toMatch(/.{8,}/);
+    expect(calls[1].init.headers['Idempotency-Key']).toBe('fixed-key-123');
   });
 
-  it('correctly classifies authentication and forbidden errors', async () => {
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 401,
-      statusText: 'Unauthorized',
-      headers: new Headers(),
-      json: () => Promise.resolve({ message: 'Token expired' }),
-    });
-
-    try {
-      await api.get('/me');
-      expect.fail('Should have thrown ApiClientError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(ApiClientError);
-      expect(err.isAuth).toBe(true);
-      expect(err.isForbidden).toBe(false);
-    }
-  });
-
-  it('translates network failure into NetworkError', async () => {
-    global.fetch = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
-
-    try {
-      await api.get('/contests');
-      expect.fail('Should have thrown NetworkError');
-    } catch (err) {
-      expect(err).toBeInstanceOf(NetworkError);
-      expect(err.isNetworkError).toBe(true);
-      expect(err.code).toBe('NETWORK_ERROR');
-    }
-  });
-
-  it('translates timeout into TimeoutError', async () => {
-    global.fetch = vi.fn().mockImplementation((url, options) => {
-      return new Promise((resolve, reject) => {
-        options.signal.addEventListener('abort', () => {
-          const abortError = new Error('The operation was aborted.');
-          abortError.name = 'AbortError';
-          reject(abortError);
-        });
-      });
-    });
-
-    try {
-      await request('/long-running', { timeout: 50 });
-      expect.fail('Should have timed out');
-    } catch (err) {
-      expect(err).toBeInstanceOf(TimeoutError);
-      expect(err.isTimeout).toBe(true);
-      expect(err.timeoutMs).toBe(50);
-    }
+  it('aborts when the caller aborts', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_, init) => new Promise((_, reject) => {
+      init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')));
+    }));
+    const controller = new AbortController();
+    const pending = request('/contests', { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toThrow();
   });
 });

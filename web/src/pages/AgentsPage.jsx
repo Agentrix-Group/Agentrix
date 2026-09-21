@@ -1,471 +1,178 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Plus, Bot, Power } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
-import { formatDateTime, formatNumber } from '../i18n/formatters.js';
-import { Bot, ShieldCheck, UploadCloud, UserPlus, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { useResource, usePolling } from '../hooks/hooks.js';
+import { useSession } from '../auth/SessionContext.jsx';
+import { Link, useRouter } from '../router/Router.jsx';
+import { LoadingState, SkeletonRows, ErrorState, EmptyState, useErrorMessage } from '../components/States.jsx';
+import { StatusBadge } from '../components/StatusBadge.jsx';
+import { Modal } from '../components/Modal.jsx';
+import { useToast } from '../components/Toast.jsx';
 import { BundleDropzone } from '../components/BundleDropzone.jsx';
-import { StarterKitCard } from '../components/StarterKitCard.jsx';
-import { AdmissionStatusBanner, sanitizeAdmissionError } from '../components/AdmissionStatusBanner.jsx';
+import { formatDateTime } from '../i18n/formatters.js';
 
-export function AgentsPage({ currentUser }) {
-  const { t, i18n } = useTranslation(['agents', 'common', 'errors']);
-  const currentLang = i18n.language?.startsWith('en') ? 'en' : 'es';
-
-  const [agents, setAgents] = useState([]);
-  const [contests, setContests] = useState([]);
-  const [selectedAgent, setSelectedAgent] = useState(null);
-  const [bundle, setBundle] = useState(null);
-  const [submissions, setSubmissions] = useState([]);
-  const [newAgentName, setNewAgentName] = useState('');
-  const [newAgentDesc, setNewAgentDesc] = useState('');
-  const [selectedContestId, setSelectedContestId] = useState('');
-  const [statusMsg, setStatusMsg] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-
-  // FQ-2 Admission states
-  const [validationError, setValidationError] = useState(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [admissionStage, setAdmissionStage] = useState('idle'); // 'idle' | 'uploading' | 'validating' | 'ready' | 'rejected'
-  const [rejectionError, setRejectionError] = useState(null);
-  const [expandedRejectionIds, setExpandedRejectionIds] = useState(new Set());
-  const pollTimerRef = useRef(null);
-
-  const loadAgents = () => {
-    if (!currentUser) return;
-    ApiService.listAgents(currentUser.id)
-      .then((data) => {
-        setAgents(data || []);
-        if (data && data.length > 0 && !selectedAgent) {
-          selectAgent(data[0]);
-        }
-      })
-      .catch((err) => {
-        setErrorMsg(err.message || 'No se pudieron cargar los agentes');
-      });
-  };
-
-  const loadContests = () => {
-    ApiService.listContests()
-      .then((data) => {
-        setContests(data || []);
-        if (data && data.length > 0) {
-          setSelectedContestId(data[0].id);
-        }
-      })
-      .catch((err) => {
-        setErrorMsg(err.message || 'No se pudieron cargar los concursos');
-      });
-  };
-
-  const loadSubmissions = (agentId) => {
-    if (!agentId) return;
-    ApiService.listSubmissions(agentId)
-      .then((subs) => setSubmissions(subs || []))
-      .catch(() => setSubmissions([]));
-  };
-
-  useEffect(() => {
-    loadAgents();
-    loadContests();
-    return () => {
-      if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
-      }
-    };
-  }, [currentUser]);
-
-  const selectAgent = (agent) => {
-    setSelectedAgent(agent);
-    setStatusMsg('');
-    setErrorMsg('');
-    setValidationError(null);
-    setAdmissionStage('idle');
-    setRejectionError(null);
-    setBundle(null);
-    loadSubmissions(agent.id);
-  };
-
-  const handleCreateAgent = async (e) => {
+function CreateAgentModal({ games, onClose, onCreated }) {
+  const { t } = useTranslation('agents');
+  const describe = useErrorMessage();
+  const [form, setForm] = useState({ game_id: games[0]?.id || '', name: '', description: '' });
+  const [error, setError] = useState(null);
+  const submit = async (e) => {
     e.preventDefault();
-    if (!newAgentName.trim()) return;
-    setStatusMsg('');
-    setErrorMsg('');
-
+    setError(null);
     try {
-      await ApiService.createAgent({
-        name: newAgentName.trim(),
-        game_id: 'starfighter',
-        description: newAgentDesc.trim(),
-      });
-      setNewAgentName('');
-      setNewAgentDesc('');
-      setStatusMsg(t('agents:messages.createdSuccess'));
-      loadAgents();
+      onCreated(await ApiService.createAgent(form));
     } catch (err) {
-      setErrorMsg(err.message || t('agents:messages.createError'));
+      setError(describe(err));
     }
   };
+  return (
+    <Modal title={t('create')} onClose={onClose}>
+      <form className="form" onSubmit={submit}>
+        <label className="field"><span>{t('game')}</span>
+          <select value={form.game_id} onChange={(e) => setForm({ ...form, game_id: e.target.value })}>
+            {games.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+        </label>
+        <label className="field"><span>{t('name')}</span>
+          <input required maxLength={64} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        </label>
+        <label className="field"><span>{t('description')}</span>
+          <textarea maxLength={2000} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+        </label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <div className="form-actions">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>{t('common:buttons.cancel')}</button>
+          <button type="submit" className="btn">{t('create')}</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 
-  const pollSubmissionAdmission = async (submissionId, agentId) => {
-    setAdmissionStage('validating');
-    const maxAttempts = 15;
-    const intervalMs = 1500;
+function AgentDetail({ agentId, onChanged }) {
+  const { t, i18n } = useTranslation('agents');
+  const toast = useToast();
+  const describe = useErrorMessage();
+  const agent = useResource((signal) => ApiService.getAgent(agentId, { signal }), [agentId]);
+  const subs = useResource((signal) => ApiService.listSubmissions(agentId, { signal }), [agentId]);
+  const [uploading, setUploading] = useState(false);
+  const admitting = (subs.data?.items || []).some((s) => s.status === 'validating');
+  usePolling(subs.reload, 1500, admitting);
 
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => {
-          pollTimerRef.current = setTimeout(resolve, intervalMs);
-        });
-      }
+  if (agent.loading) return <LoadingState />;
+  if (agent.error) return <ErrorState error={agent.error} onRetry={agent.reload} />;
+  const a = agent.data;
 
-      try {
-        const sub = await ApiService.getSubmission(submissionId);
-        if (!sub) continue;
-
-        if (sub.status === 'ready') {
-          setAdmissionStage('ready');
-          setStatusMsg(t('agents:messages.submitSuccess', { version: sub.version || 'new' }));
-          setBundle(null);
-          setIsSubmitting(false);
-          loadSubmissions(agentId);
-          return;
-        }
-
-        if (sub.status === 'rejected' || sub.status === 'failed') {
-          setAdmissionStage('rejected');
-          setRejectionError(sub.error_detail || t('agents:messages.submitError'));
-          setErrorMsg(t('agents:messages.submitError'));
-          setIsSubmitting(false);
-          loadSubmissions(agentId);
-          return;
-        }
-      } catch {
-        // Continue polling until maxAttempts
-      }
-    }
-
-    // Timeout
-    setAdmissionStage('idle');
-    setErrorMsg(t('agents:messages.admissionTimeout'));
-    setIsSubmitting(false);
-    loadSubmissions(agentId);
-  };
-
-  const handleSubmitCode = async (e) => {
-    e.preventDefault();
-    if (!selectedAgent || !bundle || isSubmitting) return;
-
-    setStatusMsg('');
-    setErrorMsg('');
-    setRejectionError(null);
-    setIsSubmitting(true);
-    setAdmissionStage('uploading');
-
+  const upload = async (file) => {
+    setUploading(true);
     try {
-      const res = await ApiService.uploadBotBundle(selectedAgent.id, bundle);
-      const status = res.status || 'ready';
-
-      if (status === 'validating' || status === 'pending' || status === 'pending_validation') {
-        // Asynchronous admission pipeline: start polling
-        await pollSubmissionAdmission(res.id, selectedAgent.id);
-      } else if (status === 'ready') {
-        setAdmissionStage('ready');
-        setStatusMsg(t('agents:messages.submitSuccess', { version: res.version || 'new' }));
-        setBundle(null);
-        setIsSubmitting(false);
-        loadSubmissions(selectedAgent.id);
-      } else {
-        // Rejected or failed
-        setAdmissionStage('rejected');
-        setRejectionError(res.error_detail || t('agents:messages.submitError'));
-        setErrorMsg(t('agents:messages.submitError'));
-        setIsSubmitting(false);
-        loadSubmissions(selectedAgent.id);
-      }
+      const sub = await ApiService.uploadSubmission(a.id, file);
+      toast.info(t('uploaded', { version: sub.version }));
+      subs.reload();
     } catch (err) {
-      setAdmissionStage('rejected');
-      setRejectionError(err.message || t('agents:messages.submitError'));
-      setErrorMsg(t('agents:messages.submitError'));
-      setIsSubmitting(false);
+      toast.error(describe(err));
+    } finally {
+      setUploading(false);
     }
   };
-
-  const handleEnroll = async () => {
-    if (!selectedAgent || !selectedContestId) return;
-    setStatusMsg('');
-    setErrorMsg('');
-
+  const setStatus = async (status) => {
     try {
-      await ApiService.enrollAgent(selectedContestId, selectedAgent.id);
-      setStatusMsg(t('agents:messages.enrollSuccess', {
-        name: selectedAgent.name,
-        contest: selectedContestId,
-      }));
+      agent.setData(await ApiService.setAgentStatus(a.id, status));
+      onChanged();
     } catch (err) {
-      setErrorMsg(err.message || t('agents:messages.enrollError'));
+      toast.error(describe(err));
     }
   };
-
-  const toggleRejectionRow = (subId) => {
-    setExpandedRejectionIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(subId)) {
-        next.delete(subId);
-      } else {
-        next.add(subId);
-      }
-      return next;
-    });
-  };
-
-  if (!currentUser) {
-    return (
-      <div className="card" style={{ textAlign: 'center', margin: '40px auto', maxWidth: '400px' }}>
-        <h3>{t('agents:authRequired.title')}</h3>
-        <p style={{ color: 'var(--text-secondary)' }}>{t('agents:authRequired.description')}</p>
-      </div>
-    );
-  }
-
-  const renderStatusBadge = (status) => {
-    switch (status) {
-      case 'ready':
-        return <span className="badge badge-ready">{t('agents:submission.status.ready', { defaultValue: 'Admitido' })}</span>;
-      case 'validating':
-        return <span className="badge badge-validating">{t('agents:submission.status.validating', { defaultValue: 'Validando...' })}</span>;
-      case 'pending':
-        return <span className="badge badge-pending">{t('agents:submission.status.pending', { defaultValue: 'Pendiente' })}</span>;
-      case 'pending_validation':
-        return <span className="badge badge-pending">{t('agents:submission.status.pending_validation', { defaultValue: 'Pendiente de validación' })}</span>;
-      case 'rejected':
-      case 'failed':
-        return <span className="badge badge-rejected">{t('agents:submission.status.rejected', { defaultValue: 'Rechazado' })}</span>;
-      default:
-        return <span className="badge badge-pending">{status}</span>;
+  const disable = async (sub) => {
+    try {
+      await ApiService.disableSubmission(sub.id);
+      subs.reload();
+    } catch (err) {
+      toast.error(describe(err));
     }
   };
 
   return (
-    <div>
-      <h1>{t('agents:title')}</h1>
-      <p style={{ color: 'var(--text-secondary)' }}>
-        {t('agents:subtitle')}
-      </p>
-
-      {statusMsg && (
-        <div role="status" style={{ padding: '12px', background: 'var(--success-bg)', color: 'var(--success-text)', borderRadius: '6px', margin: '16px 0' }}>
-          {statusMsg}
-        </div>
-      )}
-      {errorMsg && !rejectionError && (
-        <div role="alert" style={{ padding: '12px', background: 'var(--danger-bg)', color: 'var(--danger-text)', borderRadius: '6px', margin: '16px 0' }}>
-          {errorMsg}
-        </div>
-      )}
-
-      <div className="agents-layout">
-        {/* Left Column: Create Bot & Bot List */}
-        <div>
-          <div className="card" style={{ marginBottom: '24px' }}>
-            <h3>{t('agents:register.title')}</h3>
-            <form onSubmit={handleCreateAgent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <input
-                type="text"
-                placeholder={t('agents:register.namePlaceholder')}
-                value={newAgentName}
-                onChange={(e) => setNewAgentName(e.target.value)}
-                style={{ padding: '8px 12px' }}
-                required
-              />
-              <textarea
-                placeholder={t('agents:register.descriptionPlaceholder')}
-                value={newAgentDesc}
-                onChange={(e) => setNewAgentDesc(e.target.value)}
-                rows={2}
-                style={{ padding: '8px 12px', resize: 'vertical' }}
-              />
-              <button type="submit" className="btn"><Bot size={17} /> {t('agents:register.submit')}</button>
-            </form>
-          </div>
-
-          <h3>{t('agents:list.titleWithCount', { count: formatNumber(agents.length, currentLang) })}</h3>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {agents.map((ag) => (
-              <div
-                key={ag.id}
-                className="card"
-                onClick={() => selectAgent(ag)}
-                style={{
-                  cursor: 'pointer',
-                  borderColor: selectedAgent?.id === ag.id ? 'var(--accent)' : 'var(--border)',
-                  padding: '14px',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <strong>{ag.name}</strong>
-                  <span className="badge badge-finished">{ag.game_id}</span>
-                </div>
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
-                  {t('agents:list.idLabel', { id: ag.id.substring(0, 8) })}
-                </div>
-              </div>
-            ))}
-            {agents.length === 0 && (
-              <p style={{ color: 'var(--text-secondary)' }}>{t('agents:list.empty')}</p>
-            )}
-          </div>
-        </div>
-
-        {/* Right Column: Code Submissions & Contest Enrollment */}
-        <div>
-          {selectedAgent ? (
-            <div>
-              <div className="card" style={{ marginBottom: '24px' }}>
-                <div className="agent-detail-header">
-                  <h2>{selectedAgent.name}</h2>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    <select
-                      value={selectedContestId}
-                      onChange={(e) => setSelectedContestId(e.target.value)}
-                      style={{ padding: '6px 10px' }}
-                    >
-                      {contests.map((c) => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
-                    <button className="btn" onClick={handleEnroll}><UserPlus size={17} /> {t('agents:details.enroll')}</button>
-                  </div>
-                </div>
-                <p style={{ color: 'var(--text-secondary)' }}>{selectedAgent.description || t('agents:details.noDescription')}</p>
-              </div>
-
-              {/* Starter Template Box */}
-              <StarterKitCard />
-
-              {/* Upload Dropzone Card */}
-              <div className="card" style={{ marginBottom: '24px' }}>
-                <h3 style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <UploadCloud size={20} /> {t('agents:submission.uploadTitle')}
-                </h3>
-
-                <form onSubmit={handleSubmitCode} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <BundleDropzone
-                    bundle={bundle}
-                    onFileSelect={setBundle}
-                    disabled={isSubmitting}
-                    validationError={validationError}
-                    setValidationError={setValidationError}
-                  />
-
-                  <div className="admission-note">
-                    <ShieldCheck size={18} />
-                    <span>{t('agents:submission.admissionCheck')}</span>
-                  </div>
-
-                  {/* Async admission stage & rejection feedback */}
-                  <AdmissionStatusBanner
-                    stage={admissionStage}
-                    errorDetail={rejectionError}
-                    onDismiss={() => {
-                      setAdmissionStage('idle');
-                      setRejectionError(null);
-                    }}
-                  />
-
-                  <button
-                    type="submit"
-                    className="btn"
-                    disabled={!bundle || isSubmitting || !!validationError}
-                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-                  >
-                    <UploadCloud size={17} />
-                    {isSubmitting
-                      ? (admissionStage === 'validating'
-                          ? t('agents:submission.validationStages.validating')
-                          : t('agents:submission.validationStages.uploading'))
-                      : t('agents:submission.publish')}
-                  </button>
-                </form>
-              </div>
-
-              {/* History Card */}
-              <div className="card">
-                <h3>{t('agents:submission.history')}</h3>
-                {submissions.length > 0 ? (
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>{t('agents:submission.table.version')}</th>
-                        <th>{t('agents:submission.table.language')}</th>
-                        <th>{t('agents:submission.table.status')}</th>
-                        <th>{t('agents:submission.table.active')}</th>
-                        <th>{t('agents:submission.table.id')}</th>
-                        <th>{t('agents:submission.table.created')}</th>
-                        <th>{t('agents:submission.table.actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {submissions.map((s, index) => {
-                        const isLatestReady = s.status === 'ready' && index === submissions.findIndex((item) => item.status === 'ready');
-                        const isExpanded = expandedRejectionIds.has(s.id);
-                        const isRejected = s.status === 'rejected' || s.status === 'failed';
-
-                        return (
-                          <React.Fragment key={s.id}>
-                            <tr>
-                              <td><strong>v{s.version}</strong></td>
-                              <td>{s.language}</td>
-                              <td>{renderStatusBadge(s.status)}</td>
-                              <td>
-                                {isLatestReady && s.active ? (
-                                  <span className="badge badge-active">{t('agents:submission.table.active')}</span>
-                                ) : (
-                                  <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>—</span>
-                                )}
-                              </td>
-                              <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>#{s.id ? s.id.slice(0, 8) : '—'}</td>
-                              <td style={{ fontSize: '0.8rem' }}>{formatDateTime(s.created_at, currentLang)}</td>
-                              <td>
-                                {isRejected && (
-                                  <button
-                                    type="button"
-                                    className="btn btn-compact"
-                                    style={{ padding: '2px 8px', fontSize: '0.78rem' }}
-                                    onClick={() => toggleRejectionRow(s.id)}
-                                  >
-                                    {isExpanded
-                                      ? t('agents:submission.table.hideReason')
-                                      : t('agents:submission.table.viewReason')}
-                                    {isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
-                                  </button>
-                                )}
-                              </td>
-                            </tr>
-                            {isRejected && isExpanded && (
-                              <tr>
-                                <td colSpan="7" style={{ background: '#fff1f2', padding: '10px 14px' }}>
-                                  <div style={{ color: '#9f1239', fontSize: '0.82rem' }}>
-                                    <strong>{t('agents:submission.rejection.title')}: </strong>
-                                    <span>{s.error_detail ? sanitizeAdmissionError(s.error_detail) : t('agents:submission.rejection.rule2')}</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            )}
-                          </React.Fragment>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p style={{ color: 'var(--text-secondary)' }}>{t('agents:submission.emptyHistory')}</p>
-                )}
-              </div>
-            </div>
-          ) : (
-            <div className="card">{t('agents:details.selectPrompt')}</div>
-          )}
-        </div>
+    <section className="card" aria-labelledby="agent-title">
+      <div className="card-row">
+        <h2 id="agent-title">{a.name} <StatusBadge state={a.status} /></h2>
+        <button type="button" className="btn btn-secondary" onClick={() => setStatus(a.status === 'active' ? 'disabled' : 'active')}>
+          <Power size={16} aria-hidden="true" /> {a.status === 'active' ? t('disable') : t('activate')}
+        </button>
       </div>
+      {a.description && <p className="muted">{a.description}</p>}
+      {a.status === 'active' && <BundleDropzone onUpload={upload} busy={uploading} />}
+      <h3>{t('versions')}</h3>
+      {subs.loading && !subs.data && <SkeletonRows />}
+      {subs.error && <ErrorState error={subs.error} onRetry={subs.reload} />}
+      {subs.data && subs.data.items.length === 0 && <p className="muted">{t('noVersions')}</p>}
+      {subs.data && subs.data.items.length > 0 && (
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>{t('version')}</th><th>{t('status')}</th><th>{t('digest')}</th><th>{t('uploadedAt')}</th><th><span className="visually-hidden">{t('actions')}</span></th></tr></thead>
+            <tbody>
+              {[...subs.data.items].reverse().map((s) => (
+                <tr key={s.id}>
+                  <td>v{s.version}</td>
+                  <td>
+                    <StatusBadge state={s.status} />
+                    {s.status === 'validating' && <span className="muted small"> {t('admissionRunning')}</span>}
+                    {s.admission_error && <details className="small"><summary>{t('whyRejected')}</summary><pre className="admission-error">{s.admission_error}</pre></details>}
+                  </td>
+                  <td className="small"><code title={s.artifact_sha256}>{s.artifact_sha256.slice(0, 12)}</code></td>
+                  <td className="small muted">{formatDateTime(s.created_at, i18n.language)}</td>
+                  <td>{s.status === 'ready' && <button type="button" className="btn btn-ghost" onClick={() => disable(s)}>{t('retire')}</button>}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+export default function AgentsPage({ agentId }) {
+  const { t } = useTranslation('agents');
+  const { can } = useSession();
+  const { navigate } = useRouter();
+  const agents = useResource((signal) => ApiService.listAgents({ signal }), []);
+  const games = useResource((signal) => ApiService.listGames({ signal }), []);
+  const [creating, setCreating] = useState(false);
+  const selected = agentId || agents.data?.items[0]?.id;
+
+  return (
+    <div className="page">
+      <div className="page-header">
+        <h1>{t('title')}</h1>
+        {can('agents:create') && games.data && (
+          <button type="button" className="btn" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /> {t('create')}</button>
+        )}
+      </div>
+      {agents.loading && <SkeletonRows />}
+      {agents.error && <ErrorState error={agents.error} onRetry={agents.reload} />}
+      {agents.data && agents.data.items.length === 0 && <EmptyState icon={Bot} title={t('empty')} description={t('emptyDescription')} />}
+      {agents.data && agents.data.items.length > 0 && (
+        <div className="split">
+          <nav className="card side-list" aria-label={t('title')}>
+            <ul className="list">
+              {agents.data.items.map((a) => (
+                <li key={a.id}>
+                  <Link to={`/agents/${a.id}`} className={`list-link ${a.id === selected ? 'active' : ''}`}>
+                    {a.name} <StatusBadge state={a.status} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+          {selected && <AgentDetail key={selected} agentId={selected} onChanged={agents.reload} />}
+        </div>
+      )}
+      {creating && (
+        <CreateAgentModal games={games.data.items} onClose={() => setCreating(false)}
+          onCreated={(a) => { setCreating(false); agents.reload(); navigate(`/agents/${a.id}`); }} />
+      )}
     </div>
   );
 }

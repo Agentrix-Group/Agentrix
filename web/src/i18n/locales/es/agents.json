@@ -1,80 +1,31 @@
 {
-  "title": "Mis agentes autónomos",
-  "subtitle": "Desarrolla y valida bots Python para competir en Starfighter.",
-  "authRequired": {
-    "title": "Autenticación requerida",
-    "description": "Inicia sesión para gestionar tus agentes y envíos de código."
-  },
-  "register": {
-    "title": "Registrar nuevo agente",
-    "namePlaceholder": "Nombre del agente (ej. CazadorAlfa)",
-    "descriptionPlaceholder": "Descripción / Notas de estrategia",
-    "submit": "Crear agente"
-  },
-  "list": {
-    "title": "Tus agentes",
-    "titleWithCount": "Tus agentes ({{count}})",
-    "empty": "Aún no tienes agentes registrados. ¡Crea uno arriba!",
-    "idLabel": "ID: {{id}}..."
-  },
-  "details": {
-    "selectPrompt": "Selecciona o crea un agente para ver sus detalles.",
-    "noDescription": "Sin descripción",
-    "enroll": "Inscribir en concurso"
-  },
-  "submission": {
-    "uploadTitle": "Admitir bot de Starfighter",
-    "language": "Lenguaje:",
-    "publish": "Validar y publicar ZIP",
-    "chooseZip": "Selecciona el paquete ZIP",
-    "zipHelp": "Debe contener agentrix.json y bot.py en la raíz. Máximo 2 MiB.",
-    "admissionCheck": "Agentrix comprobará sintaxis, inicialización y respuesta al tick 0.",
-    "starterTitle": "Plantilla de inicio para Starfighter",
-    "downloadStarter": "Descargar Starfighter Starter Kit (.zip)",
-    "starterHelp": "Paquete ZIP listo para admitir con agentrix.json y bot.py de referencia.",
-    "viewSpec": "Ver especificación del paquete",
-    "hideSpec": "Ocultar especificación",
-    "manifestDesc": "agentrix.json debe incluir name, entrypoint: 'bot.py' y protocol_version: '1.0'.",
-    "botDesc": "bot.py debe manejar el mensaje 'init' y responder con 'action' en el tick 0.",
-    "selectedFile": "Archivo seleccionado: {{name}} ({{size}})",
-    "clearFile": "Quitar archivo",
-    "validationStages": {
-      "uploading": "Subiendo paquete ZIP...",
-      "validating": "Validando en sandbox (sintaxis, inicialización y tick 0)...",
-      "ready": "Admisión completada con éxito",
-      "rejected": "Admisión rechazada"
-    },
-    "rejection": {
-      "title": "Fallo en la validación del bot",
-      "guidanceTitle": "Comprobaciones necesarias para resolver el fallo:",
-      "rule1": "El archivo agentrix.json debe existir en la raíz del ZIP con entrypoint='bot.py' y protocol_version='1.0'.",
-      "rule2": "bot.py debe tener sintaxis Python válida y responder al tick 0 en el tiempo estipulado.",
-      "rule3": "No debe utilizar librerías fuera de la estándar de Python ni realizar llamadas bloqueantes o de red.",
-      "downloadReference": "Descarga el Starter Kit para verificar la estructura requerida."
-    },
-    "history": "Historial de versiones",
-    "emptyHistory": "Aún no se han subido versiones de código.",
-    "table": {
-      "version": "Versión",
-      "language": "Lenguaje",
-      "status": "Estado",
-      "active": "Activo",
-      "id": "Identificador",
-      "created": "Fecha de creación",
-      "actions": "Acciones",
-      "viewReason": "Ver causa",
-      "hideReason": "Ocultar causa"
-    }
-  },
-  "messages": {
-    "createdSuccess": "¡Agente creado con éxito!",
-    "createError": "Error al crear el agente",
-    "submitSuccess": "Bot Python v{{version}} admitido correctamente.",
-    "submitError": "El bot no superó la admisión",
-    "enrollSuccess": "¡'{{name}}' inscrito en el concurso '{{contest}}'!",
-    "enrollError": "Error al inscribir el agente",
-    "invalidZipType": "Solo se permiten paquetes de extensión .zip.",
-    "fileTooLarge": "El archivo supera el límite máximo permitido de 2 MiB.",
-    "admissionTimeout": "La validación tardó más de lo esperado. Comprueba el historial."
+  "create": "Nuevo agente",
+  "game": "Juego",
+  "name": "Nombre",
+  "description": "Descripción",
+  "uploaded": "Versión v{{version}} subida; se está admitiendo en el sandbox.",
+  "disable": "Deshabilitar",
+  "activate": "Activar",
+  "versions": "Versiones",
+  "noVersions": "Todavía no subiste versiones.",
+  "version": "Versión",
+  "status": "Estado",
+  "digest": "SHA-256",
+  "uploadedAt": "Subida",
+  "actions": "Acciones",
+  "admissionRunning": "prueba de admisión en curso…",
+  "whyRejected": "Ver motivo",
+  "retire": "Retirar versión",
+  "title": "Mis agentes",
+  "empty": "Aún no tienes agentes.",
+  "emptyDescription": "Crea un agente y sube un ZIP con agentrix.json y bot.py.",
+  "bundle": {
+    "noFile": "Selecciona un archivo.",
+    "invalidZipType": "Solo se aceptan archivos .zip.",
+    "fileTooLarge": "El archivo supera 2 MiB.",
+    "emptyFile": "El archivo está vacío.",
+    "uploading": "Subiendo…",
+    "prompt": "Arrastra un ZIP o haz clic para elegirlo",
+    "hint": "Debe contener exactamente agentrix.json y bot.py (máx. 2 MiB)."
   }
 }

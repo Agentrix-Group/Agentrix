@@ -10,20 +10,20 @@ Agentrix está distribuido en dos repositorios:
 ```mermaid
 flowchart LR
     U[Usuario] --> W[React]
-    W -->|HTTP| A[API Go]
+    W -->|HTTP /api/v1| A[API Go]
     A --> P[(PostgreSQL)]
-    A --> O[Artefactos locales]
-    A --> Q[Cola de partidas]
-    Q --> X[Worker Go]
+    A --> O[Artefactos por digest]
+    P -->|match_jobs: lease + fencing| X[Worker Go]
     X --> B[Bots Python]
     X -->|agentrix-engine/1| E[Motor Rust]
     E -->|percepciones privadas| X
     E -->|snapshot público y resultado| X
-    X --> R[Replay NDJSON]
+    X -->|staging + outbox| R[Replay gzip NDJSON]
+    X -->|commit cercado| P
     W -->|HTTP| R
 ```
 
-**Parcial:** API y worker tienen fronteras de código, pero `main.go` los inicia dentro del mismo proceso. Los artefactos usan filesystem local. PostgreSQL es autoritativo cuando existe; en ausencia de conexión el proceso cae a una cola en memoria incluso sin una política explícita de entorno.
+**Implementado:** API (`cmd/api`) y worker (`cmd/worker`) son binarios y contenedores separados. PostgreSQL es obligatorio: no hay cola en memoria. Los artefactos se guardan en filesystem con claves direccionadas por contenido (`submissions/sha256/<hex>.py`, replays por run) y escritura atómica. La API nunca ejecuta bots.
 
 ## Responsabilidades vigentes
 
@@ -41,23 +41,23 @@ flowchart LR
 La decisión vigente mantiene un recorrido horizontal y reconocible:
 
 ```text
-open-api/contests.yaml
-  -> src/server/contests.go
-  -> src/service/contests.go
-  -> src/repository/contests.go
-  -> src/model/contest.go
+open-api/openapi.yaml            (un solo archivo, x-agentrix-policy por operación)
+  -> src/server/handlers_*.go    (tabla de rutas con Policy; authorize falla cerrado)
+  -> src/service/<feature>.go    (casos de uso, capacidades, transiciones)
+  -> src/repository/<feature>.go (SQL; clasifica errores de Postgres en errores de dominio)
+  -> src/model/                  (entidades, máquinas de estado, ExecutionSpec, ranking)
 ```
 
-`repository` se conserva porque contiene SQL y permite que `service` proteja reglas sin conocer persistencia. La interfaz global actual es deuda: debe reducirse mediante interfaces pequeñas definidas por el consumidor cuando un corte real lo requiera.
+`repository` se conserva porque contiene SQL y permite que `service` proteja reglas sin conocer persistencia. `openapi_contract_test.go` falla si una ruta, política o campo de DTO diverge del contrato.
 
-## Objetivo aprobado
+## Objetivo aprobado y estado
 
-- API y worker seleccionables y desplegables por separado.
-- PostgreSQL obligatorio fuera de desarrollo.
-- Runtime de bots rootless y fail-closed.
-- Leases renovables, fencing e idempotencia para trabajos y resultados.
-- Artefactos y replays inmutables identificados por digest.
-- Contratos versionados en toda frontera de proceso.
+- API y worker desplegables por separado. **Implementado.**
+- PostgreSQL obligatorio. **Implementado:** esquema canónico `00001_canonical.sql`; la API y el worker verifican la versión y los objetos críticos al arrancar.
+- Runtime de bots rootless y fail-closed. **Implementado:** Bubblewrap o Podman; `direct` solo en `dev`.
+- Leases renovables, fencing e idempotencia. **Implementado:** heartbeat, reaper, token desde una secuencia, `Idempotency-Key`.
+- Artefactos y replays inmutables identificados por digest. **Implementado.**
+- Contratos versionados en toda frontera de proceso: `agentrix-execution-spec/1`, `agentrix-engine/1`, `agentrix-replay/2`, OpenAPI.
 - Starfighter sigue siendo el único juego hasta cerrar y certificar el MVP.
 
 La ruta hacia más juegos está descrita en [game-extension.md](game-extension.md), no en el bucle actual del executor.

@@ -1,15 +1,23 @@
-# Build stage
-FROM golang:1.24-bookworm AS builder
-WORKDIR /app
+# syntax=docker/dockerfile:1
+# API image. Also carries the one-shot tools (migrate, bootstrap, smoke) so
+# Compose can run them as separate services from the same build.
+FROM docker.io/library/golang:1.26-bookworm AS build
+WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
-COPY . .
-RUN CGO_ENABLED=0 go build -mod=readonly -ldflags="-s -w" -o /agentrix-api ./cmd/api
+COPY cmd ./cmd
+COPY src ./src
+RUN mkdir -p /out/data/artifacts
+RUN for c in api migrate bootstrap smoke; do \
+      CGO_ENABLED=0 go build -mod=readonly -trimpath -ldflags="-s -w" -o /out/$c ./cmd/$c || exit 1; \
+    done
 
-# Final runtime stage
-FROM gcr.io/distroless/static-debian12
+FROM gcr.io/distroless/static-debian12:nonroot
 WORKDIR /app
-COPY --from=builder /agentrix-api /agentrix-api
+COPY --from=build /out/api /out/migrate /out/bootstrap /out/smoke /app/
+COPY --from=build --chown=65532:65532 /out/data /data
 COPY games ./games
+ENV GAMES_DIR=/app/games ARTIFACTS_DIR=/data/artifacts PORT=8080
 EXPOSE 8080
-ENTRYPOINT ["/agentrix-api"]
+HEALTHCHECK --interval=10s --timeout=3s --retries=6 CMD ["/app/api", "healthcheck"]
+ENTRYPOINT ["/app/api"]

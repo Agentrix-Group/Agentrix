@@ -54,12 +54,12 @@ func TestSubprocessLifecycle_Success(t *testing.T) {
 
 	// InitializeMatch
 	initRes, err := client.InitializeMatch(ctx, InitializeMatchRequest{
-		MatchID:         "m-test-1",
-		GameID:          "starfighter",
-		Seed:            42,
-		FixedTimestepMs: 50,
-		MaxTicks:        10,
-		Players:         []string{"bot-1", "bot-2"},
+		MatchID:  "m-test-1",
+		GameID:   "starfighter",
+		Seed:     42,
+		TickRate: TickRate{Numerator: 20, Denominator: 1},
+		MaxTicks: 10,
+		Players:  []string{"bot-1", "bot-2"},
 	})
 	r.NoError(err)
 	r.Equal("m-test-1", initRes.MatchID)
@@ -277,12 +277,12 @@ func TestDeterminism_FakeEngine(t *testing.T) {
 		defer client.Close(ctx)
 
 		_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
-			MatchID:         "m-det",
-			GameID:          "starfighter",
-			Seed:            seed,
-			FixedTimestepMs: 50,
-			MaxTicks:        int(len(actions)),
-			Players:         []string{"bot-1"},
+			MatchID:  "m-det",
+			GameID:   "starfighter",
+			Seed:     seed,
+			TickRate: TickRate{Numerator: 20, Denominator: 1},
+			MaxTicks: int(len(actions)),
+			Players:  []string{"bot-1"},
 		})
 		r.NoError(err)
 
@@ -366,23 +366,23 @@ func TestSubprocess_LifecycleTransitions(t *testing.T) {
 
 	// Initialize
 	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
-		MatchID:         "m-lifecycle",
-		GameID:          "starfighter",
-		Seed:            1,
-		FixedTimestepMs: 50,
-		MaxTicks:        10,
-		Players:         []string{"b1"},
+		MatchID:  "m-lifecycle",
+		GameID:   "starfighter",
+		Seed:     1,
+		TickRate: TickRate{Numerator: 20, Denominator: 1},
+		MaxTicks: 10,
+		Players:  []string{"b1"},
 	})
 	r.NoError(err)
 
 	// 4. Initialize again -> ErrMatchAlreadyStarted
 	_, err = client.InitializeMatch(ctx, InitializeMatchRequest{
-		MatchID:         "m-lifecycle",
-		GameID:          "starfighter",
-		Seed:            1,
-		FixedTimestepMs: 50,
-		MaxTicks:        10,
-		Players:         []string{"b1"},
+		MatchID:  "m-lifecycle",
+		GameID:   "starfighter",
+		Seed:     1,
+		TickRate: TickRate{Numerator: 20, Denominator: 1},
+		MaxTicks: 10,
+		Players:  []string{"b1"},
 	})
 	r.ErrorIs(err, ErrMatchAlreadyStarted)
 

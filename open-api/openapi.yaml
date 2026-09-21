@@ -34,6 +34,14 @@ paths:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1agents'
   /api/v1/contests/{id}/entries:
     $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1entries'
+  /api/v1/contests/{id}/rankings/recalculate:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1recalculate'
+  /api/v1/contests/{id}/rankings/publish:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1publish'
+  /api/v1/contests/{id}/rankings/snapshots:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1snapshots'
+  /api/v1/contests/{id}/rankings/snapshots/{version}:
+    $ref: './contests.yaml#/paths/~1api~1v1~1contests~1{id}~1rankings~1snapshots~1{version}'
 
   # Categories
   /api/v1/categories:
@@ -88,8 +96,11 @@ paths:
     $ref: './replays.yaml#/paths/~1api~1v1~1replays~1{id}~1stream'
 
   # Permissions
-  /api/v1/permissions:
-    $ref: './permissions.yaml#/paths/~1api~1v1~1permissions'
+  # Health & Observability
+  /health/live:
+    $ref: './health.yaml#/paths/~1health~1live'
+  /health/ready:
+    $ref: './health.yaml#/paths/~1health~1ready'
 
 components:
   securitySchemes:

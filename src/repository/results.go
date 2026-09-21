@@ -13,7 +13,7 @@ func (r *repository) ListResults(ctx context.Context) ([]model.Result, error) {
 		return nil, err
 	}
 
-	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results ORDER BY created_at DESC`
+	query := `SELECT id, match_id, match_run_id, slot_id, submission_id, score, "rank", status, COALESCE(details, ''), created_at FROM results ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -24,7 +24,7 @@ func (r *repository) ListResults(ctx context.Context) ([]model.Result, error) {
 	var results []model.Result
 	for rows.Next() {
 		var res model.Result
-		if err := rows.Scan(&res.Id, &res.MatchId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt); err != nil {
+		if err := rows.Scan(&res.Id, &res.MatchId, &res.MatchRunId, &res.SlotId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt); err != nil {
 			return nil, err
 		}
 		results = append(results, res)
@@ -39,7 +39,7 @@ func (r *repository) ListResultsByMatch(ctx context.Context, matchId string) ([]
 		return nil, err
 	}
 
-	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results WHERE match_id = $1 ORDER BY "rank" ASC`
+	query := `SELECT id, match_id, match_run_id, slot_id, submission_id, score, "rank", status, COALESCE(details, ''), created_at FROM results WHERE match_id = $1 ORDER BY "rank" ASC`
 
 	rows, err := db.QueryContext(ctx, query, matchId)
 	if err != nil {
@@ -50,7 +50,7 @@ func (r *repository) ListResultsByMatch(ctx context.Context, matchId string) ([]
 	var results []model.Result
 	for rows.Next() {
 		var res model.Result
-		if err := rows.Scan(&res.Id, &res.MatchId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt); err != nil {
+		if err := rows.Scan(&res.Id, &res.MatchId, &res.MatchRunId, &res.SlotId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt); err != nil {
 			return nil, err
 		}
 		results = append(results, res)
@@ -64,11 +64,11 @@ func (r *repository) GetResult(ctx context.Context, id string) (*model.Result, e
 		return nil, err
 	}
 
-	query := `SELECT id, match_id, submission_id, score, "rank", status, details, created_at FROM results WHERE id = $1`
+	query := `SELECT id, match_id, match_run_id, slot_id, submission_id, score, "rank", status, COALESCE(details, ''), created_at FROM results WHERE id = $1`
 
 	var res model.Result
 	err = db.QueryRowContext(ctx, query, id).Scan(
-		&res.Id, &res.MatchId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt,
+		&res.Id, &res.MatchId, &res.MatchRunId, &res.SlotId, &res.SubmissionId, &res.Score, &res.Rank, &res.Status, &res.Details, &res.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -86,14 +86,14 @@ func (r *repository) CreateResult(ctx context.Context, result *model.Result) err
 		return err
 	}
 
-	query := `INSERT INTO results (id, match_id, submission_id, score, "rank", status, details, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`
+	query := `INSERT INTO results (id, match_id, match_run_id, slot_id, submission_id, score, "rank", status, details, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 
 	_, err = db.ExecContext(ctx, query,
-		result.Id, result.MatchId, result.SubmissionId, result.Score,
+		result.Id, result.MatchId, result.MatchRunId, result.SlotId, result.SubmissionId, result.Score,
 		result.Rank, result.Status, result.Details, result.CreatedAt,
 	)
 	if err != nil {
-		return err
+		return ClassifyDBError(err)
 	}
 
 	return nil

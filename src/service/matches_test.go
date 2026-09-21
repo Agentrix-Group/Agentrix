@@ -40,7 +40,15 @@ func (m *mockMatchesRepo) GetMatch(ctx context.Context, id string) (*model.Match
 	if m.getMatchFn != nil {
 		return m.getMatchFn(ctx, id)
 	}
-	return &model.Match{Id: id, GameId: "starfighter", Status: common.MatchStatusPending}, nil
+	return &model.Match{
+		Id:     id,
+		GameId: "starfighter",
+		Status: common.MatchStatusPending,
+		Slots: []model.MatchSlot{
+			{SlotIndex: 0, SubmissionId: "sub-1"},
+			{SlotIndex: 1, SubmissionId: "sub-2"},
+		},
+	}, nil
 }
 
 func (m *mockMatchesRepo) CreateMatch(ctx context.Context, match *model.Match) error {
@@ -68,6 +76,39 @@ func (m *mockMatchesRepo) ListResultsByMatch(ctx context.Context, matchId string
 	if m.listResultsByMatchFn != nil {
 		return m.listResultsByMatchFn(ctx, matchId)
 	}
+	return nil, nil
+}
+
+func (m *mockMatchesRepo) GetContest(ctx context.Context, id string) (*model.Contest, error) {
+	return &model.Contest{Id: id, State: model.ContestStateRegistrationOpen, Active: true}, nil
+}
+
+func (m *mockMatchesRepo) GetContestEntryBySubmission(ctx context.Context, contestId, submissionId string) (*model.ContestEntry, error) {
+	return &model.ContestEntry{
+		Id:           "ce-1",
+		ContestId:    contestId,
+		SubmissionId: submissionId,
+		Status:       model.ContestEntryStatusEnrolled,
+	}, nil
+}
+
+func (m *mockMatchesRepo) GetSubmission(ctx context.Context, id string) (*model.Submission, error) {
+	return &model.Submission{Id: id, Active: true, Status: "ready"}, nil
+}
+
+func (m *mockMatchesRepo) UpdateMatchStatusCAS(ctx context.Context, matchId string, expectedStatus string, newStatus model.MatchStatus) (bool, error) {
+	return true, nil
+}
+
+func (m *mockMatchesRepo) CreateMatchRun(ctx context.Context, run *model.MatchRun) error {
+	return nil
+}
+
+func (m *mockMatchesRepo) ListMatchRunsByMatch(ctx context.Context, matchId string) ([]*model.MatchRun, error) {
+	return nil, nil
+}
+
+func (m *mockMatchesRepo) GetLatestMatchRunByMatch(ctx context.Context, matchId string) (*model.MatchRun, error) {
 	return nil, nil
 }
 
@@ -108,22 +149,31 @@ func TestMatchesService(t *testing.T) {
 	r.Equal("m1", match.Id)
 	r.Len(match.Results, 1)
 
-	// CreateMatch with submissions (should enqueue)
+	// CreateMatch with submissions (should schedule, not enqueue directly)
 	newMatch := &model.Match{GameId: "starfighter", ContestId: "c1"}
-	err = svc.CreateMatch(ctx, newMatch, []string{"sub-1", "sub-2"})
+	resp, err := svc.CreateMatch(ctx, newMatch, []string{"sub-1", "sub-2"})
 	r.NoError(err)
+	r.NotNil(resp)
 	r.NotEmpty(newMatch.Id)
+	r.Equal(newMatch.Id, resp.MatchId)
 	r.Equal(common.MatchStatusPending, newMatch.Status)
 	r.NotZero(newMatch.Seed)
-	r.Equal(1, queue.Len())
+	r.Len(resp.Slots, 2)
+	r.Equal(0, queue.Len(), "CreateMatch schedules but does not enqueue")
 
-	// RunMatch
-	err = svc.RunMatch(ctx, "m1")
+	// RunMatch enqueues the match
+	runResp, err := svc.RunMatch(ctx, newMatch.Id)
 	r.NoError(err)
-	r.Equal(2, queue.Len())
+	r.NotNil(runResp)
+	r.Equal(newMatch.Id, runResp.MatchId)
+	r.Equal("queued", runResp.Status)
+	r.NotEmpty(runResp.RunId)
+	r.NotEmpty(runResp.JobId)
+	r.Equal(1, queue.Len(), "RunMatch enqueued the job")
 
 	// UpdateMatch & ActivateMatch
 	r.NoError(svc.UpdateMatch(ctx, newMatch))
 	r.NoError(svc.ActivateMatch(ctx, newMatch.Id, false))
-	r.ErrorIs(svc.CreateMatch(ctx, &model.Match{GameId: "other-game"}, nil), ErrUnsupportedGame)
+	_, err = svc.CreateMatch(ctx, &model.Match{GameId: "other-game"}, nil)
+	r.ErrorIs(err, ErrUnsupportedGame)
 }

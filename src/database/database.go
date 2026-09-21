@@ -15,7 +15,7 @@ var MigrationsFS embed.FS
 
 const (
 	MigrationsDir       = "migrations"
-	TargetSchemaVersion = int64(1)
+	TargetSchemaVersion = int64(4)
 )
 
 var (
@@ -45,6 +45,16 @@ func Status(db *sql.DB) error {
 	return goose.Status(db, MigrationsDir)
 }
 
+// Rollback rolls back the most recently applied migration.
+func Rollback(db *sql.DB) error {
+	return goose.Down(db, MigrationsDir)
+}
+
+// Reset rolls back all applied migrations.
+func Reset(db *sql.DB) error {
+	return goose.Reset(db, MigrationsDir)
+}
+
 // CheckSchemaCompatible verifies that the database has all required migrations applied.
 func CheckSchemaCompatible(ctx context.Context, db *sql.DB) error {
 	if db == nil {
@@ -67,11 +77,13 @@ func CheckSchemaCompatible(ctx context.Context, db *sql.DB) error {
 			ErrPendingMigrations, currentVersion, TargetSchemaVersion)
 	}
 
-	// 3. Quick structural validation: ensure core tables exist
+	// 3. Structural validation: ensure core tables exist
 	requiredTables := []string{
-		"roles", "users", "games", "contests", "agents",
-		"submissions", "matches", "results", "rankings", "replays",
-		"match_jobs", "match_runs", "contest_entries",
+		"roles", "permissions", "role_permissions", "user_roles",
+		"users", "sessions", "games", "contests", "agents", "submissions",
+		"contest_entries", "rankings", "matches", "match_slots",
+		"results", "replays", "match_jobs", "match_runs",
+		"ranking_applied_runs", "contest_rankings_snapshots",
 	}
 
 	for _, table := range requiredTables {
@@ -85,6 +97,38 @@ func CheckSchemaCompatible(ctx context.Context, db *sql.DB) error {
 		}
 		if !exists {
 			return fmt.Errorf("%w: required table %q is missing (run 'make db-migrate')", ErrSchemaMissing, table)
+		}
+	}
+
+	// 4. Column validation: ensure critical schema columns exist
+	requiredColumns := []struct {
+		Table  string
+		Column string
+	}{
+		{"contest_entries", "submission_id"},
+		{"match_slots", "submission_id"},
+		{"match_slots", "slot_index"},
+		{"results", "match_run_id"},
+		{"results", "slot_id"},
+		{"replays", "match_run_id"},
+		{"matches", "committed_run_id"},
+		{"contests", "scoring_policy"},
+		{"rankings", "points"},
+		{"rankings", "disqualifications"},
+		{"rankings", "tiebreaker_score"},
+	}
+
+	for _, col := range requiredColumns {
+		var exists bool
+		query := `SELECT EXISTS (
+			SELECT FROM information_schema.columns
+			WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+		)`
+		if err := db.QueryRowContext(ctx, query, col.Table, col.Column).Scan(&exists); err != nil {
+			return fmt.Errorf("failed to check column %s.%s: %w", col.Table, col.Column, err)
+		}
+		if !exists {
+			return fmt.Errorf("%w: required column %q.%q is missing (run 'make db-migrate')", ErrSchemaMissing, col.Table, col.Column)
 		}
 	}
 

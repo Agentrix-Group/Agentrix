@@ -8,6 +8,7 @@ import (
 type Replay struct {
 	Id            string    `json:"id,omitempty" db:"id"`
 	MatchId       string    `json:"match_id,omitempty" db:"match_id"`
+	MatchRunId    *string   `json:"match_run_id,omitempty" db:"match_run_id"`
 	FilePath      string    `json:"file_path,omitempty" db:"file_path"`
 	DurationTicks int       `json:"duration_ticks,omitempty" db:"duration_ticks"`
 	Summary       string    `json:"summary,omitempty" db:"summary"`

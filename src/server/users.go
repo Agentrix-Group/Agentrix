@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/service"
@@ -44,15 +46,43 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := s.Auth.GenerateAuthToken(user.Id, user.RoleId)
+	// Resolve dynamic capabilities from database
+	var caps []string
+	if s.Service != nil {
+		func() {
+			defer func() { _ = recover() }()
+			caps, _ = s.Service.GetUserCapabilities(ctx, user.Id)
+		}()
+	}
+	if len(caps) > 0 {
+		user.Capabilities = caps
+	} else {
+		user.Capabilities = resolveCapabilities(user.RoleId)
+	}
+
+	var token *model.Token
+	if s.SessionManager != nil {
+		token, err = s.SessionManager.CreateSession(ctx, user, r.UserAgent(), extractIP(r))
+	} else {
+		token, err = s.Auth.GenerateAuthToken(user.Id, user.RoleId)
+	}
 	if err != nil {
 		tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.token.failed", "No se pudo crear la sesión", tracer.Err(err))
 		common.WriteErrorResponse(w, common.INTERNAL_ERROR)
 		return
 	}
 
+	// Set HttpOnly refresh cookie
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    token.RefreshToken,
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600,
+	})
+
 	user.Password = "" // Omit password hash in response
-	user.Capabilities = resolveCapabilities(user.RoleId)
 	common.WriteObjectResponse(w, http.StatusOK, LoginResponse{
 		Token: token,
 		User:  user,
@@ -106,30 +136,133 @@ func (s *Server) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) refreshToken(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
 	var req struct {
 		RefreshToken string `json:"refresh_token"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.RefreshToken == "" {
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	rawRefreshToken := req.RefreshToken
+	if rawRefreshToken == "" {
+		if cookie, err := r.Cookie("refresh_token"); err == nil && cookie.Value != "" {
+			rawRefreshToken = cookie.Value
+		}
+	}
+
+	if rawRefreshToken == "" {
 		common.WriteErrorResponse(w, common.INVALID_REQUEST_ERROR)
 		return
 	}
 
-	claims, err := s.Auth.ValidateRefreshToken(req.RefreshToken)
-	if err != nil {
-		common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
-		return
+	var token *model.Token
+	var err error
+
+	if s.SessionManager != nil {
+		token, err = s.SessionManager.RefreshSession(ctx, rawRefreshToken, r.UserAgent(), extractIP(r))
+		if err != nil {
+			if errors.Is(err, auth.ErrSessionReuseDetected) {
+				tracer.FailRequest(ctx, tracer.ScopeAuth, "auth.session.reuse_detected", "Reutilización de token detectada")
+				common.WriteErrorMessage(w, common.ACCESS_DENIED_ERROR, "Session revoked due to token reuse")
+				return
+			}
+			if errors.Is(err, auth.ErrAccountDisabled) {
+				common.WriteErrorMessage(w, common.ACCESS_DENIED_ERROR, "Account is inactive")
+				return
+			}
+			if errors.Is(err, auth.ErrSessionExpired) {
+				common.WriteErrorMessage(w, common.INVALID_CREDENTIALS_ERROR, "Session expired")
+				return
+			}
+			common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
+			return
+		}
+	} else {
+		claims, err := s.Auth.ValidateRefreshToken(rawRefreshToken)
+		if err != nil {
+			common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
+			return
+		}
+		token, err = s.Auth.GenerateAuthToken(claims.UserID, claims.RoleId)
+		if err != nil {
+			common.WriteErrorResponse(w, common.INTERNAL_ERROR)
+			return
+		}
 	}
 
-	userID := claims.UserID
-
-	token, err := s.Auth.GenerateAuthToken(userID, claims.RoleId)
-	if err != nil {
-		tracer.FailRequest(r.Context(), tracer.ScopeAuth, "auth.token.failed", "No se pudo renovar la sesión", tracer.Err(err))
-		common.WriteErrorResponse(w, common.INTERNAL_ERROR)
-		return
-	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    token.RefreshToken,
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600,
+	})
 
 	common.WriteObjectResponse(w, http.StatusOK, token)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var req struct {
+		RefreshToken string `json:"refresh_token"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&req)
+	rawRefreshToken := req.RefreshToken
+	if rawRefreshToken == "" {
+		if cookie, err := r.Cookie("refresh_token"); err == nil {
+			rawRefreshToken = cookie.Value
+		}
+	}
+
+	if s.SessionManager != nil && rawRefreshToken != "" {
+		_ = s.SessionManager.RevokeSession(ctx, rawRefreshToken)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	common.WriteSuccessResponse(w, http.StatusOK, "Logged out successfully")
+}
+
+func (s *Server) logoutAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if !ok || claims == nil {
+		authHeader := r.Header.Get("Authorization")
+		if strings.HasPrefix(authHeader, fmt.Sprintf("%s ", auth.TokenType)) {
+			tokenString := strings.TrimPrefix(authHeader, fmt.Sprintf("%s ", auth.TokenType))
+			var err error
+			claims, err = s.Auth.ValidateAccessToken(tokenString)
+			if err != nil {
+				common.WriteErrorResponse(w, common.INVALID_CREDENTIALS_ERROR)
+				return
+			}
+		}
+	}
+	if claims == nil {
+		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
+		return
+	}
+
+	if s.SessionManager != nil {
+		_ = s.SessionManager.RevokeAllUserSessions(ctx, claims.UserID)
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+
+	common.WriteSuccessResponse(w, http.StatusOK, "All sessions revoked successfully")
 }
 
 func (s *Server) checkSession(w http.ResponseWriter, r *http.Request) {
@@ -144,12 +277,27 @@ func (s *Server) checkSession(w http.ResponseWriter, r *http.Request) {
 
 	user, err := s.Service.GetUser(ctx, userID)
 	if err != nil {
-		common.WriteErrorResponse(w, common.NOT_FOUND_ERROR)
+		common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
+		return
+	}
+	if !user.Active {
+		common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, "User account is inactive")
 		return
 	}
 
 	user.Password = ""
-	user.Capabilities = resolveCapabilities(user.RoleId)
+	var caps []string
+	if s.Service != nil {
+		func() {
+			defer func() { _ = recover() }()
+			caps, _ = s.Service.GetUserCapabilities(ctx, userID)
+		}()
+	}
+	if len(caps) > 0 {
+		user.Capabilities = caps
+	} else {
+		user.Capabilities = resolveCapabilities(user.RoleId)
+	}
 	common.WriteObjectResponse(w, http.StatusOK, user)
 }
 
@@ -175,6 +323,18 @@ func (s *Server) getMyAgents(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if ok {
+		hasPerm, err := s.Service.HasPermission(ctx, claims.UserID, "users:read:any")
+		if err != nil || !hasPerm {
+			hasAdmin, _ := s.Service.HasPermission(ctx, claims.UserID, common.AdminPermission)
+			if !hasAdmin {
+				common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
+				return
+			}
+		}
+	}
+
 	users, err := s.Service.ListUsers(ctx)
 	if err != nil {
 		tracer.FailRequest(ctx, tracer.ScopeDatabase, "accounts.list.failed", "No se pudieron consultar las cuentas", tracer.Err(err))
@@ -191,6 +351,18 @@ func (s *Server) listUsers(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getUser(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
+
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if ok && claims.UserID != id {
+		hasPerm, err := s.Service.HasPermission(ctx, claims.UserID, "users:read:any")
+		if err != nil || !hasPerm {
+			hasAdmin, _ := s.Service.HasPermission(ctx, claims.UserID, common.AdminPermission)
+			if !hasAdmin {
+				common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
+				return
+			}
+		}
+	}
 
 	user, err := s.Service.GetUser(ctx, id)
 	if err != nil {
@@ -238,4 +410,19 @@ func (s *Server) activateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	common.WriteSuccessResponse(w, http.StatusOK, fmt.Sprintf("User %s status updated", id))
+}
+
+func (s *Server) adminOverview(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	claims, ok := ctx.Value(common.UserContextKey).(*model.Claims)
+	if !ok {
+		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
+		return
+	}
+	hasAdmin, _ := s.Service.HasPermission(ctx, claims.UserID, common.AdminPermission)
+	if !hasAdmin {
+		common.WriteErrorResponse(w, common.MISSING_PERMISSION_ERROR)
+		return
+	}
+	common.WriteSuccessResponse(w, http.StatusOK, "Admin access authorized")
 }

@@ -92,11 +92,11 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
       const res = await ApiService.scheduleMatch(payload);
 
       // If scheduled match returned an ID and runImmediately is checked:
-      if (runImmediately && res && res.message) {
-        const matchIdMatch = res.message.match(/Match\s+([a-zA-Z0-9_-]+)\s+scheduled/i);
-        if (matchIdMatch && matchIdMatch[1]) {
+      if (runImmediately && res) {
+        const matchId = res.match_id || res.match?.id || (res.message ? res.message.match(/Match\s+([a-zA-Z0-9_-]+)\s+scheduled/i)?.[1] : null);
+        if (matchId) {
           try {
-            await ApiService.runMatch(matchIdMatch[1]);
+            await ApiService.runMatch(matchId);
           } catch {
             // Queue may already process it
           }

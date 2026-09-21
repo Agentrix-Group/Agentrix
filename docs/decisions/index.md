@@ -13,6 +13,9 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | [0007](0007-separated-api-and-worker-roles-and-reproducible-containers.md) | accepted | Separación de roles de API y Worker y contenedores reproducibles |
 | [0008](0008-mvp-canonical-certification-and-baseline-closure.md) | accepted | Certificación canónica del MVP y cierre formal del baseline |
 | [0009](0009-frontend-qa-architecture-and-parallel-delivery.md) | accepted | Arquitectura de Frontend, Estrategia de QA y Entrega Paralela por Vertical Slices |
+| [0010](0010-execution-chain-and-frozen-contracts.md) | accepted | Cadena de ejecución inmutable, slots ordenados y contratos congelados post-Participant |
+| [0011](0011-rbac-capabilities-and-session-security.md) | accepted | Modelo de seguridad RBAC, sesiones persistentes y trazabilidad sin fuga |
+| [0012](0012-deterministic-rankings-and-recalculation-policy.md) | accepted | Clasificaciones deterministas, criterios de desempate en cascada y snapshots auditables |
 
 ## Decisiones vigentes resumidas
 

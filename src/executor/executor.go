@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"time"
@@ -43,9 +44,22 @@ func DefaultEngineClientFactory(ctx context.Context, job *connection.MatchJob) (
 		return nil, errors.New("Starfighter engine binary is not configured")
 	}
 
+	if !filepath.IsAbs(execPath) {
+		if _, err := os.Stat(execPath); err != nil {
+			for _, prefix := range []string{".", "..", "../..", "../../.."} {
+				candidate := filepath.Join(prefix, execPath)
+				if _, statErr := os.Stat(candidate); statErr == nil {
+					execPath = candidate
+					break
+				}
+			}
+		}
+	}
+
 	client := engine.NewSubprocessClient()
 	err := client.Start(ctx, engine.StartConfig{
 		BinaryPath:       execPath,
+		ExpectedDigest:   job.EngineDigest,
 		HandshakeTimeout: 5 * time.Second,
 	})
 	if err != nil {
@@ -133,6 +147,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 	match.Status = common.MatchStatusRunning
 	_ = e.svc.UpdateMatch(ctx, match)
+	if job.RunId != "" {
+		_ = e.svc.StartMatchRun(ctx, job.RunId, "worker", job.FencingToken)
+	}
 
 	// Ensure at least 2 player slots
 	submissions := make([]*model.Submission, 0)
@@ -179,6 +196,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		}
 		return err
 	}
 	defer func() {
@@ -210,14 +230,15 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	config["tick_hz"] = tickHz
 
 	initReq := engine.InitializeMatchRequest{
-		MatchID:         job.MatchId,
-		GameID:          job.GameId,
-		Seed:            job.Seed,
-		FixedTimestepMs: fixedTimestepMs,
-		TickHz:          tickHz,
-		MaxTicks:        maxTicks,
-		Players:         playerIDs,
-		Config:          config,
+		MatchID:               job.MatchId,
+		GameID:                job.GameId,
+		ExpectedEngineVersion: engineClient.EngineVersion(),
+		Seed:                  job.Seed,
+		FixedTimestepMs:       fixedTimestepMs,
+		TickHz:                tickHz,
+		MaxTicks:              maxTicks,
+		Players:               playerIDs,
+		Config:                config,
 	}
 
 	initRes, err := engineClient.InitializeMatch(ctx, initReq)
@@ -226,16 +247,25 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			tracer.Origin(tracer.OriginGame), tracer.Err(err))
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		}
 		return err
 	}
 	if initRes.InitialTick != 0 {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, fmt.Sprintf("engine initial tick mismatch: got %d, expected 0", initRes.InitialTick))
+		}
 		return fmt.Errorf("engine initial tick mismatch: got %d, expected 0", initRes.InitialTick)
 	}
 	if err := validatePerceptions(initRes.Perceptions, playerIDs, 0); err != nil {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		}
 		return err
 	}
 
@@ -244,10 +274,23 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	persistenceFailures := 0
 
 	replayID := uuid.New().String()
-	replayRecord := &model.Replay{Id: replayID, MatchId: job.MatchId}
+	replayRecord := &model.Replay{
+		Id:         replayID,
+		MatchId:    job.MatchId,
+		MatchRunId: &job.RunId,
+	}
 	replayWriter, err := e.svc.OpenReplay(ctx, replayRecord, model.ReplayMetadata{
-		ReplayID: replayID, MatchID: job.MatchId, GameID: job.GameId, Seed: job.Seed,
-		Participants: playerIDs, FixedTimestepMs: fixedTimestepMs, CreatedAt: time.Now().UTC(),
+		ReplayID:        replayID,
+		MatchID:         job.MatchId,
+		RunID:           job.RunId,
+		EngineDigest:    engineClient.EngineDigest(),
+		GameID:          job.GameId,
+		GameVersion:     job.GameVersion,
+		ConfigHash:      job.ConfigHash,
+		Seed:            job.Seed,
+		Participants:    playerIDs,
+		FixedTimestepMs: fixedTimestepMs,
+		CreatedAt:       time.Now().UTC(),
 	})
 	if err != nil {
 		match.Status = common.MatchStatusFailed
@@ -346,6 +389,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
 		_ = e.svc.DiscardReplay(ctx, replayID)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, executionErr.Error())
+		}
 		logAgentIssueSummaries(ctx, agentIssues)
 		return executionErr
 	}
@@ -363,31 +409,51 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	if err != nil {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		}
 		return fmt.Errorf("finish Starfighter match: %w", err)
 	}
 	if matchRes == nil {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, "engine returned no final match result")
+		}
 		return errors.New("engine returned no final match result")
 	}
 	if matchRes.FinalTick != currentTick {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		errMismatch := fmt.Sprintf("engine final tick mismatch: got %d, expected %d", matchRes.FinalTick, currentTick)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, errMismatch)
+		}
 		return fmt.Errorf("engine final tick mismatch: got %d, expected %d", matchRes.FinalTick, currentTick)
 	}
 	if matchRes.Reason != finishReason {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		errReason := fmt.Sprintf("engine final reason mismatch: got %q, expected %q", matchRes.Reason, finishReason)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, errReason)
+		}
 		return fmt.Errorf("engine final reason mismatch: got %q, expected %q", matchRes.Reason, finishReason)
 	}
 	if matchRes.FinalStateHash != lastStateHash {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, fmt.Sprintf("engine final state hash does not match state %d", currentTick))
+		}
 		return fmt.Errorf("engine final state hash does not match state %d", currentTick)
 	}
 	if matchRes.Scores == nil {
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, "engine returned no final scores")
+		}
 		return errors.New("engine returned no final scores")
 	}
 	scores := matchRes.Scores
@@ -440,6 +506,16 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		}
 	}
 
+	// Map slots to submissions for the match
+	slotIDMap := make(map[string]string)
+	if matchObj, err := e.svc.GetMatch(ctx, job.MatchId); err == nil && matchObj != nil {
+		for _, sl := range matchObj.Slots {
+			if sl.SubmissionId != "" {
+				slotIDMap[sl.SubmissionId] = sl.Id
+			}
+		}
+	}
+
 	now := time.Now().UTC()
 	resultsList := make([]model.Result, 0, len(rankings))
 	for _, item := range rankings {
@@ -447,9 +523,19 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		if item.Score <= 0 && len(rankings) > 1 {
 			status = "eliminated"
 		}
+		var slotID *string
+		if sid, ok := slotIDMap[item.PlayerID]; ok && sid != "" {
+			slotID = &sid
+		}
+		var runID *string
+		if job.RunId != "" {
+			runID = &job.RunId
+		}
 		resultsList = append(resultsList, model.Result{
 			Id:           uuid.New().String(),
 			MatchId:      job.MatchId,
+			MatchRunId:   runID,
+			SlotId:       slotID,
 			SubmissionId: item.PlayerID,
 			Score:        item.Score,
 			Rank:         item.Rank,
@@ -483,6 +569,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		_ = e.svc.DiscardReplay(ctx, replayID)
 		match.Status = common.MatchStatusFailed
 		_ = e.svc.UpdateMatch(ctx, match)
+		if job.RunId != "" {
+			_ = e.svc.FailMatchRun(ctx, job.RunId, err.Error())
+		}
 		return fmt.Errorf("commit match result: %w", err)
 	}
 

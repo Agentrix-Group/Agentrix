@@ -9,7 +9,6 @@ services:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./script/database/00_init_postgresql.sql:/docker-entrypoint-initdb.d/00_init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d agentrix"]
       interval: 5s
@@ -56,6 +55,15 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "3000:80"
+    depends_on:
+      - api
 
 volumes:
   pgdata:

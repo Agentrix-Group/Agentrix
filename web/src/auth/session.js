@@ -161,7 +161,7 @@ export function hasCapability(user, capability) {
     ].includes(capability);
   }
 
-  if (role === 'participant') {
+  if (role === 'participant' || role === 'pilot' || role === 'player') {
     return [
       'agents:create',
       'submissions:upload',

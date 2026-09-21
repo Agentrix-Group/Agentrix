@@ -119,9 +119,9 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 
 	userID := claims.UserID
 
-	entry, ranking, err := s.Service.EnrollAgent(ctx, userID, contestId, req.AgentId)
+	entry, ranking, err := s.Service.EnrollAgent(ctx, userID, contestId, req.AgentId, req.SubmissionId)
 	if err != nil {
-		if errors.Is(err, service.ErrContestNotFound) || errors.Is(err, service.ErrAgentNotFound) {
+		if errors.Is(err, service.ErrContestNotFound) || errors.Is(err, service.ErrAgentNotFound) || errors.Is(err, service.ErrSubmissionNotFound) {
 			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, err.Error())
 			return
 		}
@@ -129,7 +129,7 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 			common.WriteErrorMessage(w, common.MISSING_PERMISSION_ERROR, err.Error())
 			return
 		}
-		if errors.Is(err, service.ErrRegistrationClosed) || errors.Is(err, service.ErrGameMismatch) {
+		if errors.Is(err, service.ErrRegistrationClosed) || errors.Is(err, service.ErrGameMismatch) || errors.Is(err, service.ErrNoReadySubmission) || errors.Is(err, service.ErrSubmissionMismatch) {
 			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
 			return
 		}

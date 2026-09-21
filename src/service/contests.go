@@ -8,6 +8,7 @@ import (
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/google/uuid"
 )
 
@@ -21,6 +22,8 @@ var (
 	ErrGameMismatch         = errors.New("agent is not configured for the contest's game")
 	ErrAgentAlreadyEnrolled = errors.New("agent is already enrolled in this contest")
 	ErrUnsupportedGame      = errors.New("Agentrix MVP supports only starfighter")
+	ErrNoReadySubmission    = errors.New("agent has no ready submission for contest enrollment")
+	ErrSubmissionMismatch   = errors.New("specified submission does not belong to the enrolled agent")
 )
 
 // ContestService defines contest use-case operations for consumer segregation (ATD-015).
@@ -32,7 +35,7 @@ type ContestService interface {
 	CreateContest(ctx context.Context, contest *model.Contest) error
 	UpdateContest(ctx context.Context, contest *model.Contest) error
 	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error)
 	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
 
@@ -100,7 +103,7 @@ func (s *service) GetPublicContest(ctx context.Context, id string) (*model.Conte
 	return c, nil
 }
 
-func (s *service) EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+func (s *service) EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error) {
 	contest, err := s.repo.GetContest(ctx, contestId)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -144,6 +147,39 @@ func (s *service) EnrollAgent(ctx context.Context, userId string, contestId stri
 		return nil, nil, ErrGameMismatch
 	}
 
+	// Resolve and lock submission
+	var chosenSubmissionId string
+	if len(submissionId) > 0 && submissionId[0] != "" {
+		sub, err := s.repo.GetSubmission(ctx, submissionId[0])
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return nil, nil, ErrSubmissionNotFound
+			}
+			return nil, nil, err
+		}
+		if sub.AgentId != agentId {
+			return nil, nil, ErrSubmissionMismatch
+		}
+		if sub.Status != "ready" {
+			return nil, nil, ErrNoReadySubmission
+		}
+		chosenSubmissionId = sub.Id
+	} else {
+		subs, err := s.repo.ListSubmissionsByAgent(ctx, agentId)
+		if err != nil {
+			return nil, nil, err
+		}
+		for _, sub := range subs {
+			if sub.Status == "ready" && sub.Active {
+				chosenSubmissionId = sub.Id
+				break
+			}
+		}
+		if chosenSubmissionId == "" {
+			return nil, nil, ErrNoReadySubmission
+		}
+	}
+
 	// Verify agent not already enrolled in contest_entries or rankings
 	existingEntry, err := s.repo.GetContestEntry(ctx, contestId, agentId)
 	if err != nil && err != sql.ErrNoRows {
@@ -160,15 +196,16 @@ func (s *service) EnrollAgent(ctx context.Context, userId string, contestId stri
 		return nil, nil, ErrAgentAlreadyEnrolled
 	}
 
-	// 1. Create ContestEntry
+	// 1. Create ContestEntry locking chosenSubmissionId
 	entry := &model.ContestEntry{
-		Id:         uuid.New().String(),
-		ContestId:  contestId,
-		AgentId:    agentId,
-		UserId:     ownerID,
-		Status:     "enrolled",
-		EnrolledAt: time.Now().UTC(),
-		Agent:      agent,
+		Id:           uuid.New().String(),
+		ContestId:    contestId,
+		AgentId:      agentId,
+		UserId:       ownerID,
+		SubmissionId: chosenSubmissionId,
+		Status:       "enrolled",
+		EnrolledAt:   time.Now().UTC(),
+		Agent:        agent,
 	}
 	if err := s.repo.CreateContestEntry(ctx, entry); err != nil {
 		return nil, nil, err
@@ -258,4 +295,14 @@ func (s *service) UpdateCategory(ctx context.Context, category *model.Category) 
 
 func (s *service) ActivateCategory(ctx context.Context, id string, isActive bool) error {
 	return s.repo.ActivateCategory(ctx, id, isActive)
+}
+
+func (s *service) UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error) {
+	if err := expectedState.ValidateTransition(newState); err != nil {
+		return false, err
+	}
+	if casRepo, ok := s.repo.(repository.ContestCASRepository); ok {
+		return casRepo.UpdateContestStateCAS(ctx, contestId, expectedState, newState)
+	}
+	return false, errors.New("contest repository does not support CAS")
 }

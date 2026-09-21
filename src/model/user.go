@@ -24,6 +24,7 @@ type User struct {
 	Email        string    `json:"email,omitempty" db:"email"`
 	Password     string    `json:"-" db:"password"` // Never expose password in json
 	RoleId       string    `json:"role_id,omitempty" db:"role_id"`
+	Roles        []string  `json:"roles,omitempty"`
 	Active       bool      `json:"active,omitempty" db:"active"`
 	CreatedAt    time.Time `json:"created_at,omitempty" db:"created_at"`
 	Role         *Role     `json:"role,omitempty"`
@@ -31,8 +32,10 @@ type User struct {
 }
 
 type Claims struct {
-	UserID string `json:"user_id"`
-	RoleId string `json:"role_id"`
+	UserID       string   `json:"user_id"`
+	RoleId       string   `json:"role_id"`
+	Roles        []string `json:"roles,omitempty"`
+	Capabilities []string `json:"capabilities,omitempty"`
 	jwt.RegisteredClaims
 }
 

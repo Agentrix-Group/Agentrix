@@ -82,17 +82,30 @@ INSERT INTO users (id, username, email, password, role_id, active) VALUES
 ('usr-pilot-002', 'pilot_beta', 'pilot_beta@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE)
 ON CONFLICT (username) DO UPDATE SET role_id = EXCLUDED.role_id, password = EXCLUDED.password, active = EXCLUDED.active;
 
+-- Seed User Roles (RBAC mapping)
+INSERT INTO user_roles (user_id, role_id) VALUES
+('usr-admin-001', 'admin'),
+('usr-pilot-001', 'player'),
+('usr-pilot-002', 'player')
+ON CONFLICT (user_id, role_id) DO NOTHING;
+
 -- Seed Demo Agents
 INSERT INTO agents (id, owner_user_id, game_id, name, description, active) VALUES
 ('agent-star-hunter', 'usr-pilot-001', 'starfighter', 'StarHunter', 'Aggressive hunter bot targeting opponent starfighter', TRUE),
 ('agent-star-evasive', 'usr-pilot-002', 'starfighter', 'StarEvasive', 'Defensive evasive bot focused on survival maneuvers', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, active = EXCLUDED.active;
 
--- Seed Contest Entries
-INSERT INTO contest_entries (id, contest_id, agent_id, user_id, status, enrolled_at) VALUES
-('entry-hunter-001', 'starfighter-cup-2026', 'agent-star-hunter', 'usr-pilot-001', 'enrolled', NOW()),
-('entry-evasive-001', 'starfighter-cup-2026', 'agent-star-evasive', 'usr-pilot-002', 'enrolled', NOW())
-ON CONFLICT (contest_id, agent_id) DO UPDATE SET status = EXCLUDED.status;
+-- Seed Demo Submissions
+INSERT INTO submissions (id, agent_id, version, code_path, language, status, active) VALUES
+('sub-star-hunter-1', 'agent-star-hunter', 1, 'games/starfighter/examples/bot_random.py', 'python', 'ready', TRUE),
+('sub-star-evasive-1', 'agent-star-evasive', 1, 'games/starfighter/examples/bot_evasive.py', 'python', 'ready', TRUE)
+ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, active = EXCLUDED.active;
+
+-- Seed Contest Entries (locking specific submission_id)
+INSERT INTO contest_entries (id, contest_id, agent_id, user_id, submission_id, status, enrolled_at) VALUES
+('entry-hunter-001', 'starfighter-cup-2026', 'agent-star-hunter', 'usr-pilot-001', 'sub-star-hunter-1', 'enrolled', NOW()),
+('entry-evasive-001', 'starfighter-cup-2026', 'agent-star-evasive', 'usr-pilot-002', 'sub-star-evasive-1', 'enrolled', NOW())
+ON CONFLICT (contest_id, agent_id) DO UPDATE SET submission_id = EXCLUDED.submission_id, status = EXCLUDED.status;
 
 -- Seed Initial Leaderboard Rankings
 INSERT INTO rankings (id, contest_id, agent_id, user_id, score, matches_played, wins, losses, draws, "rank", updated_at) VALUES

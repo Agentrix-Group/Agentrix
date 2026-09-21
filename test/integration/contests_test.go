@@ -69,15 +69,34 @@ func TestIntegration_Contests_EntriesAndLeaderboardSeparation(t *testing.T) {
 	`)
 	r.NoError(err)
 
-	// Create agents
+	// Create agents and ready submissions
 	_, err = conn.Db.Exec(`
 		INSERT INTO agents (id, name, game_id, owner_user_id, active) VALUES 
 		('agent-alice-01', 'AliceFighter', 'starfighter', 'u-pilot-01', TRUE),
-		('agent-bob-01', 'BobFighter', 'starfighter', 'u-pilot-02', TRUE);
+		('agent-bob-01', 'BobFighter', 'starfighter', 'u-pilot-02', TRUE),
+		('agent-unready-01', 'UnreadyBot', 'starfighter', 'u-pilot-01', TRUE);
+
+		INSERT INTO submissions (id, agent_id, version, code_path, language, status, active) VALUES
+		('sub-alice-01', 'agent-alice-01', 1, 'games/starfighter/examples/bot_random.py', 'python', 'ready', TRUE),
+		('sub-bob-01', 'agent-bob-01', 1, 'games/starfighter/examples/bot_evasive.py', 'python', 'ready', TRUE);
 	`)
 	r.NoError(err)
 
-	// Test 1: Successful enrollment of Alice's agent into open contest
+	// Test 0: Attempting enrollment for agent without ready submission is rejected (400 Bad Request)
+	{
+		enrollBody, _ := json.Marshal(model.EnrollAgentRequest{
+			AgentId: "agent-unready-01",
+		})
+		req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/v1/contests/%s/agents", openContestId), bytes.NewReader(enrollBody))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+aliceTokens.AccessToken)
+		rec := httptest.NewRecorder()
+
+		srv.Handler.ServeHTTP(rec, req)
+		r.Equal(http.StatusBadRequest, rec.Code, "Expected 400 Bad Request for unready submission")
+	}
+
+	// Test 1: Successful enrollment of Alice's agent into open contest (locks sub-alice-01)
 	{
 		enrollBody, _ := json.Marshal(model.EnrollAgentRequest{
 			AgentId: "agent-alice-01",
@@ -96,18 +115,20 @@ func TestIntegration_Contests_EntriesAndLeaderboardSeparation(t *testing.T) {
 		r.NotNil(resp.Ranking, "EnrollAgentResponse must include initial Ranking")
 		r.Equal("agent-alice-01", resp.Entry.AgentId)
 		r.Equal("u-pilot-01", resp.Entry.UserId)
-		r.Equal("enrolled", resp.Entry.Status)
+		r.Equal("sub-alice-01", resp.Entry.SubmissionId, "ContestEntry must lock submission_id")
+		r.Equal(model.ContestEntryStatusEnrolled, resp.Entry.Status)
 		r.Equal("agent-alice-01", resp.Ranking.AgentId)
 
-		// Verify database persistence in contest_entries
-		var dbEntryId, dbAgentId, dbUserId, dbStatus string
+		// Verify database persistence in contest_entries including submission_id
+		var dbEntryId, dbAgentId, dbUserId, dbSubmissionId, dbStatus string
 		err = conn.Db.QueryRow(`
-			SELECT id, agent_id, user_id, status FROM contest_entries 
+			SELECT id, agent_id, user_id, submission_id, status FROM contest_entries
 			WHERE contest_id = $1 AND agent_id = $2
-		`, openContestId, "agent-alice-01").Scan(&dbEntryId, &dbAgentId, &dbUserId, &dbStatus)
+		`, openContestId, "agent-alice-01").Scan(&dbEntryId, &dbAgentId, &dbUserId, &dbSubmissionId, &dbStatus)
 		r.NoError(err)
 		r.Equal("agent-alice-01", dbAgentId)
 		r.Equal("u-pilot-01", dbUserId)
+		r.Equal("sub-alice-01", dbSubmissionId)
 		r.Equal("enrolled", dbStatus)
 
 		// Verify database persistence in rankings
@@ -137,7 +158,7 @@ func TestIntegration_Contests_EntriesAndLeaderboardSeparation(t *testing.T) {
 		r.Len(entries, 1)
 		r.Equal("agent-alice-01", entries[0].AgentId)
 		r.Equal("u-pilot-01", entries[0].UserId)
-		r.Equal("enrolled", entries[0].Status)
+		r.Equal(model.ContestEntryStatusEnrolled, entries[0].Status)
 	}
 
 	// Test 3: Duplicate enrollment attempt is rejected with 409 Conflict

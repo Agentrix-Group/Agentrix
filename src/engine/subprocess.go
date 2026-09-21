@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,8 +61,11 @@ type subprocessClient struct {
 	stderrBuf       *limitedBuffer
 	sendSeq         uint64
 	expectedRecvSeq uint64
-	matchID         string
-	lifecycle       ClientLifecycleState
+	matchID            string
+	lifecycle          ClientLifecycleState
+	engineVersion      string
+	engineDigest       string
+	engineReadyPayload *EngineReadyPayload
 }
 
 // NewSubprocessClient creates a new unstarted EngineClient.
@@ -84,6 +89,23 @@ func (c *subprocessClient) Start(ctx context.Context, cfg StartConfig) error {
 		if os.IsNotExist(err) {
 			return fmt.Errorf("%w: %s", ErrExecutableNotFound, cfg.BinaryPath)
 		}
+	}
+
+	// Compute binary digest and verify pinned digest if requested
+	binFile, err := os.Open(cfg.BinaryPath)
+	if err != nil {
+		return fmt.Errorf("%w: cannot open %s: %v", ErrExecutableNotFound, cfg.BinaryPath, err)
+	}
+	h := sha256.New()
+	if _, err := io.Copy(h, binFile); err != nil {
+		_ = binFile.Close()
+		return fmt.Errorf("failed to hash engine binary: %w", err)
+	}
+	_ = binFile.Close()
+	c.engineDigest = hex.EncodeToString(h.Sum(nil))
+
+	if cfg.ExpectedDigest != "" && c.engineDigest != cfg.ExpectedDigest {
+		return fmt.Errorf("%w: expected %s, got %s", ErrEngineDigestMismatch, cfg.ExpectedDigest, c.engineDigest)
 	}
 
 	if cfg.MaxLineBytes <= 0 {
@@ -157,6 +179,26 @@ func (c *subprocessClient) Start(ctx context.Context, cfg StartConfig) error {
 		return fmt.Errorf("%w: expected %s, got %s", ErrUnexpectedMessageType, TypeEngineReady, env.Type)
 	}
 
+	var readyPayload EngineReadyPayload
+	if err := fromMap(env.Payload, &readyPayload); err != nil {
+		c.forceKill()
+		return fmt.Errorf("failed to decode engine_ready payload: %w", err)
+	}
+
+	protocolSupported := false
+	for _, proto := range readyPayload.SupportedProtocols {
+		if proto == ProtocolVersion {
+			protocolSupported = true
+			break
+		}
+	}
+	if !protocolSupported {
+		c.forceKill()
+		return fmt.Errorf("%w: engine supported protocols %v do not include %s", ErrIncompatibleVersion, readyPayload.SupportedProtocols, ProtocolVersion)
+	}
+
+	c.engineVersion = readyPayload.EngineVersion
+	c.engineReadyPayload = &readyPayload
 	c.lifecycle = ClientStateStarted
 	return nil
 }
@@ -464,4 +506,16 @@ func fromMap(in map[string]interface{}, out interface{}) error {
 		return err
 	}
 	return json.Unmarshal(data, out)
+}
+
+func (c *subprocessClient) EngineVersion() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.engineVersion
+}
+
+func (c *subprocessClient) EngineDigest() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.engineDigest
 }

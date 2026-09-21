@@ -8,11 +8,14 @@ const (
 	ContestStateDraft            ContestState = "draft"
 	ContestStatePublished        ContestState = "published"
 	ContestStateRegistrationOpen ContestState = "registration_open"
+	ContestStateOpen             ContestState = "open"
 	ContestStatePreparation      ContestState = "preparation"
 	ContestStateInProgress       ContestState = "in_progress"
+	ContestStateLive             ContestState = "live"
 	ContestStateFinalSelection   ContestState = "final_selection"
 	ContestStateLiveFinal        ContestState = "live_final"
 	ContestStateFinished         ContestState = "finished"
+	ContestStateCompleted        ContestState = "completed"
 	ContestStateArchived         ContestState = "archived"
 	ContestStateSuspended        ContestState = "suspended"
 	ContestStateCancelled        ContestState = "cancelled"
@@ -23,11 +26,14 @@ func (s ContestState) IsValid() bool {
 	case ContestStateDraft,
 		ContestStatePublished,
 		ContestStateRegistrationOpen,
+		ContestStateOpen,
 		ContestStatePreparation,
 		ContestStateInProgress,
+		ContestStateLive,
 		ContestStateFinalSelection,
 		ContestStateLiveFinal,
 		ContestStateFinished,
+		ContestStateCompleted,
 		ContestStateArchived,
 		ContestStateSuspended,
 		ContestStateCancelled:
@@ -51,10 +57,11 @@ type Contest struct {
 	StartsAt    *time.Time   `json:"starts_at,omitempty" db:"starts_at"`
 	EndsAt      *time.Time   `json:"ends_at,omitempty" db:"ends_at"`
 	Status      string       `json:"status,omitempty" db:"status"`
-	State       ContestState `json:"state,omitempty" db:"state"`
-	Active      bool         `json:"active,omitempty" db:"active"`
-	CreatedAt   time.Time    `json:"created_at,omitempty" db:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at,omitempty" db:"updated_at"`
+	State         ContestState   `json:"state,omitempty" db:"state"`
+	Active        bool           `json:"active,omitempty" db:"active"`
+	ScoringPolicy *ScoringPolicy `json:"scoring_policy,omitempty" db:"scoring_policy"`
+	CreatedAt     time.Time      `json:"created_at,omitempty" db:"created_at"`
+	UpdatedAt     time.Time      `json:"updated_at,omitempty" db:"updated_at"`
 }
 
 type PublicContestSummary struct {
@@ -71,25 +78,31 @@ type PublicContestsFilter struct {
 	IncludeArchived bool
 }
 
+type ContestEntryStatus string
+
 const (
-	ContestEntryStatusEnrolled     = "enrolled"
-	ContestEntryStatusDisqualified = "disqualified"
-	ContestEntryStatusWithdrawn    = "withdrawn"
+	ContestEntryStatusEnrolled     ContestEntryStatus = "enrolled"
+	ContestEntryStatusActive       ContestEntryStatus = "active"
+	ContestEntryStatusDisqualified ContestEntryStatus = "disqualified"
+	ContestEntryStatusWithdrawn    ContestEntryStatus = "withdrawn"
 )
 
 type ContestEntry struct {
-	Id         string    `json:"id" db:"id"`
-	ContestId  string    `json:"contest_id" db:"contest_id"`
-	AgentId    string    `json:"agent_id" db:"agent_id"`
-	UserId     string    `json:"user_id" db:"user_id"`
-	Status     string    `json:"status" db:"status"`
-	EnrolledAt time.Time `json:"enrolled_at" db:"enrolled_at"`
-	Agent      *Agent    `json:"agent,omitempty"`
-	User       *User     `json:"user,omitempty"`
+	Id           string             `json:"id" db:"id"`
+	ContestId    string             `json:"contest_id" db:"contest_id"`
+	AgentId      string             `json:"agent_id" db:"agent_id"`
+	UserId       string             `json:"user_id" db:"user_id"`
+	SubmissionId string             `json:"submission_id" db:"submission_id"`
+	Status       ContestEntryStatus `json:"status" db:"status"`
+	EnrolledAt   time.Time          `json:"enrolled_at" db:"enrolled_at"`
+	Agent        *Agent      `json:"agent,omitempty"`
+	User         *User       `json:"user,omitempty"`
+	Submission   *Submission `json:"submission,omitempty"`
 }
 
 type EnrollAgentRequest struct {
-	AgentId string `json:"agent_id"`
+	AgentId      string `json:"agent_id"`
+	SubmissionId string `json:"submission_id,omitempty"`
 }
 
 type EnrollAgentResponse struct {

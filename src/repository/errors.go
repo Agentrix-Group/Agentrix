@@ -12,6 +12,7 @@ var (
 	ErrMatchAlreadyCommitted = errors.New("match run already committed")
 	ErrJobNotFound           = errors.New("match job not found")
 	ErrMatchNotFound         = errors.New("match not found")
+	ErrMatchRunNotFound      = errors.New("match run not found")
 
 	ErrGameNotFound        = errors.New("game not found")
 	ErrUserNotFound        = errors.New("user not found")

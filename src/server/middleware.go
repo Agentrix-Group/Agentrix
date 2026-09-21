@@ -17,41 +17,47 @@ import (
 
 var RoutePermissions = map[string]map[string]string{
 	"/api/v1/me/agents": {
-		http.MethodGet: common.ReadPermission,
+		http.MethodGet: "agents:read:own",
 	},
 	"/api/v1/users": {
-		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.AdminPermission,
+		http.MethodGet:  "users:read:any",
+		http.MethodPost: "users:update:any",
 	},
 	"/api/v1/users/{id}": {
-		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodGet:   "users:read:own",
+		http.MethodPut:   "users:update:any",
+		http.MethodPatch: "users:update:any",
 	},
 	"/api/v1/contests": {
-		http.MethodPost: common.AdminPermission,
+		http.MethodPost: "contests:manage",
 	},
 	"/api/v1/contests/{id}": {
 		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodPut:   "contests:manage",
+		http.MethodPatch: "contests:manage",
 	},
 	"/api/v1/contests/{id}/agents": {
 		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.SubmitAgentPermission,
+		http.MethodPost: "entries:create:own",
 	},
 	"/api/v1/contests/{id}/entries": {
 		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.SubmitAgentPermission,
+		http.MethodPost: "entries:create:own",
+	},
+	"/api/v1/contests/{id}/rankings/recalculate": {
+		http.MethodPost: "contests:manage",
+	},
+	"/api/v1/contests/{id}/rankings/publish": {
+		http.MethodPost: "rankings:publish",
 	},
 	"/api/v1/categories": {
 		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.AdminPermission,
+		http.MethodPost: "admin",
 	},
 	"/api/v1/categories/{id}": {
 		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodPut:   "admin",
+		http.MethodPatch: "admin",
 	},
 	"/api/v1/games": {
 		http.MethodGet: common.ReadPermission,
@@ -61,33 +67,33 @@ var RoutePermissions = map[string]map[string]string{
 	},
 	"/api/v1/agents": {
 		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.SubmitAgentPermission,
+		http.MethodPost: "agents:create",
 	},
 	"/api/v1/agents/{id}": {
 		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.SubmitAgentPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodPut:   "agents:create",
+		http.MethodPatch: "admin",
 	},
 	"/api/v1/submissions": {
 		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/submissions/upload": {
-		http.MethodPost: common.SubmitAgentPermission,
+		http.MethodPost: "submissions:create:own",
 	},
 	"/api/v1/submissions/{id}": {
 		http.MethodGet: common.ReadPermission,
 	},
 	"/api/v1/matches": {
 		http.MethodGet:  common.ReadPermission,
-		http.MethodPost: common.ExecuteMatchPermission,
+		http.MethodPost: "matches:create",
 	},
 	"/api/v1/matches/{id}": {
 		http.MethodGet:   common.ReadPermission,
-		http.MethodPut:   common.AdminPermission,
-		http.MethodPatch: common.AdminPermission,
+		http.MethodPut:   "admin",
+		http.MethodPatch: "admin",
 	},
 	"/api/v1/matches/{id}/run": {
-		http.MethodPost: common.ExecuteMatchPermission,
+		http.MethodPost: "matches:run",
 	},
 	"/api/v1/results": {
 		http.MethodGet: common.ReadPermission,
@@ -106,13 +112,28 @@ var RoutePermissions = map[string]map[string]string{
 func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		origin := r.Header.Get("Origin")
+		isAllowed := false
+
 		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		} else {
-			w.Header().Set("Access-Control-Allow-Origin", "*")
+			for _, allowed := range s.AllowedOrigins {
+				if origin == allowed || allowed == "*" {
+					isAllowed = true
+					break
+				}
+			}
 		}
 
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		if isAllowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+		} else if origin != "" {
+			// Fail-closed on disallowed origins: block preflight
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+		}
+
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "X-Requested-With, Content-Type, Authorization, X-Request-Id")
 

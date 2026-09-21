@@ -54,6 +54,26 @@ func (a *Auth) GenerateAuthToken(userId, roleId string) (*model.Token, error) {
 	}, nil
 }
 
+func (a *Auth) GenerateAccessToken(userId, roleId string, roles, capabilities []string) (string, error) {
+	expiry := time.Now().Add(AccessTokenDuration)
+	claims := model.Claims{
+		UserID:       userId,
+		RoleId:       roleId,
+		Roles:        roles,
+		Capabilities: capabilities,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    Issuer,
+			Subject:   userId,
+			ExpiresAt: jwt.NewNumericDate(expiry),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			NotBefore: jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(a.accessSecret)
+}
+
 func (a *Auth) generateToken(userId, roleId string, expiry time.Time, secret []byte) (string, error) {
 	claims := model.Claims{
 		UserID: userId,

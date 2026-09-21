@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/Agentrix-Group/Agentrix/src/service"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ type mockUserServerService struct {
 	getUserFn           func(ctx context.Context, id string) (*model.User, error)
 	hasPermissionFn     func(ctx context.Context, userId, permission string) (bool, error)
 	getPublicContestFn  func(ctx context.Context, id string) (*model.Contest, error)
-	enrollAgentFn       func(ctx context.Context, userId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	enrollAgentFn       func(ctx context.Context, userId, contestId, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error)
 	listContestAgentsFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
 }
 
@@ -52,6 +53,14 @@ func (m *mockUserServerService) HasPermission(ctx context.Context, userId, permi
 	return true, nil
 }
 
+func (m *mockUserServerService) GetUserCapabilities(ctx context.Context, userId string) ([]string, error) {
+	return nil, nil
+}
+
+func (m *mockUserServerService) GetRepository() repository.Repository {
+	return nil
+}
+
 func (m *mockUserServerService) GetPublicContest(ctx context.Context, id string) (*model.Contest, error) {
 	if m.getPublicContestFn != nil {
 		return m.getPublicContestFn(ctx, id)
@@ -59,9 +68,9 @@ func (m *mockUserServerService) GetPublicContest(ctx context.Context, id string)
 	return nil, service.ErrContestNotFound
 }
 
-func (m *mockUserServerService) EnrollAgent(ctx context.Context, userId, contestId, agentId string) (*model.ContestEntry, *model.Ranking, error) {
+func (m *mockUserServerService) EnrollAgent(ctx context.Context, userId, contestId, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error) {
 	if m.enrollAgentFn != nil {
-		return m.enrollAgentFn(ctx, userId, contestId, agentId)
+		return m.enrollAgentFn(ctx, userId, contestId, agentId, submissionId...)
 	}
 	return nil, nil, nil
 }

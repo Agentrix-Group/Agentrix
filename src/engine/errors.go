@@ -20,6 +20,7 @@ var (
 	ErrMatchAlreadyStarted        = errors.New("match has already been initialized")
 	ErrMatchNotInitialized        = errors.New("match has not been initialized")
 	ErrMatchIDMismatch            = errors.New("engine match ID mismatch")
+	ErrEngineDigestMismatch       = errors.New("engine binary digest mismatch")
 	ErrInvalidLifecycleTransition = errors.New("invalid engine lifecycle transition")
 )
 

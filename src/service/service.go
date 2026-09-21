@@ -29,7 +29,7 @@ type Service interface {
 	CreateContest(ctx context.Context, contest *model.Contest) error
 	UpdateContest(ctx context.Context, contest *model.Contest) error
 	ActivateContest(ctx context.Context, id string, isActive bool) error
-	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string) (*model.ContestEntry, *model.Ranking, error)
+	EnrollAgent(ctx context.Context, userId string, contestId string, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error)
 	ListContestEntries(ctx context.Context, contestId string) ([]model.ContestEntry, error)
 	ListContestAgents(ctx context.Context, contestId string) ([]model.Ranking, error)
 	ListCategories(ctx context.Context) ([]model.Category, error)
@@ -60,8 +60,8 @@ type Service interface {
 	ListMatches(ctx context.Context) ([]model.Match, error)
 	ListMatchesByContest(ctx context.Context, contestId string) ([]model.Match, error)
 	GetMatch(ctx context.Context, id string) (*model.Match, error)
-	CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) error
-	RunMatch(ctx context.Context, matchId string) error
+	CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error)
+	RunMatch(ctx context.Context, matchId string, idempotencyKey ...string) (*model.RunMatchResponse, error)
 	UpdateMatch(ctx context.Context, match *model.Match) error
 	ActivateMatch(ctx context.Context, id string, isActive bool) error
 
@@ -76,11 +76,22 @@ type Service interface {
 	ListRankingsByContest(ctx context.Context, contestId string) ([]model.Ranking, error)
 	GetRanking(ctx context.Context, id string) (*model.Ranking, error)
 	CalculateRankings(ctx context.Context, contestId string) ([]model.Ranking, error)
+	ApplyMatchResultIncremental(ctx context.Context, matchId string) error
+	RecalculateContestRankings(ctx context.Context, contestId string) ([]model.Ranking, error)
+	PublishRankingSnapshot(ctx context.Context, contestId, publisherUserId string) (*model.RankingSnapshot, error)
+	ListRankingSnapshots(ctx context.Context, contestId string) ([]model.RankingSnapshot, error)
+	GetPublishedRankings(ctx context.Context, contestId string, version ...int) (*model.RankingSnapshot, error)
 
 	// Match execution runs & atomic commits
 	CommitMatchResult(ctx context.Context, commit model.MatchResultCommit) error
 	CreateMatchRun(ctx context.Context, run *model.MatchRun) error
 	GetMatchRun(ctx context.Context, id string) (*model.MatchRun, error)
+	GetLatestMatchRunByMatch(ctx context.Context, matchId string) (*model.MatchRun, error)
+	ListMatchRunsByMatch(ctx context.Context, matchId string) ([]*model.MatchRun, error)
+	StartMatchRun(ctx context.Context, runId, workerId string, fencingToken int64) error
+	FailMatchRun(ctx context.Context, runId string, lastError string) error
+	UpdateMatchRunStatusCAS(ctx context.Context, runId string, expectedStatus, newStatus model.MatchRunStatus) (bool, error)
+	UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error)
 
 	// Replays
 	GetReplay(ctx context.Context, id string) (*model.Replay, error)
@@ -89,8 +100,10 @@ type Service interface {
 	PublishReplay(ctx context.Context, replayID string) (*model.Replay, error)
 	DiscardReplay(ctx context.Context, replayID string) error
 
-	// Readiness
+	// Readiness & Repository Access
 	CheckReadiness(ctx context.Context) (map[string]any, error)
+	GetUserCapabilities(ctx context.Context, userId string) ([]string, error)
+	GetRepository() repository.Repository
 }
 
 type service struct {
@@ -159,4 +172,8 @@ func (s *service) CheckReadiness(ctx context.Context) (map[string]any, error) {
 	checks["starfighter"] = "UP"
 
 	return checks, nil
+}
+
+func (s *service) GetRepository() repository.Repository {
+	return s.repo
 }

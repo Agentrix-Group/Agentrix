@@ -20,8 +20,8 @@ type mockMatchesService struct {
 	listMatchesFn          func(ctx context.Context) ([]model.Match, error)
 	listMatchesByContestFn func(ctx context.Context, contestId string) ([]model.Match, error)
 	getMatchFn             func(ctx context.Context, id string) (*model.Match, error)
-	createMatchFn          func(ctx context.Context, match *model.Match, submissionIds []string) error
-	runMatchFn             func(ctx context.Context, matchId string) error
+	createMatchFn          func(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error)
+	runMatchFn             func(ctx context.Context, matchId string, idempotencyKey ...string) (*model.RunMatchResponse, error)
 	updateMatchFn          func(ctx context.Context, match *model.Match) error
 	activateMatchFn        func(ctx context.Context, id string, isActive bool) error
 }
@@ -47,18 +47,29 @@ func (m *mockMatchesService) GetMatch(ctx context.Context, id string) (*model.Ma
 	return &model.Match{Id: id, GameId: "starfighter"}, nil
 }
 
-func (m *mockMatchesService) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) error {
+func (m *mockMatchesService) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error) {
 	if m.createMatchFn != nil {
 		return m.createMatchFn(ctx, match, submissionIds)
 	}
-	return nil
+	return &model.MatchResponse{
+		HttpStatusCode: http.StatusCreated,
+		Message:        "Match scheduled successfully",
+		MatchId:        match.Id,
+		Match:          match,
+	}, nil
 }
 
-func (m *mockMatchesService) RunMatch(ctx context.Context, matchId string) error {
+func (m *mockMatchesService) RunMatch(ctx context.Context, matchId string, idempotencyKey ...string) (*model.RunMatchResponse, error) {
 	if m.runMatchFn != nil {
-		return m.runMatchFn(ctx, matchId)
+		return m.runMatchFn(ctx, matchId, idempotencyKey...)
 	}
-	return nil
+	return &model.RunMatchResponse{
+		HttpStatusCode: http.StatusAccepted,
+		MatchId:        matchId,
+		RunId:          matchId + "-run-1",
+		JobId:          "job-1",
+		Status:         "queued",
+	}, nil
 }
 
 func (m *mockMatchesService) UpdateMatch(ctx context.Context, match *model.Match) error {
@@ -73,6 +84,14 @@ func (m *mockMatchesService) ActivateMatch(ctx context.Context, id string, isAct
 		return m.activateMatchFn(ctx, id, isActive)
 	}
 	return nil
+}
+
+func (m *mockMatchesService) UpdateMatchRunStatusCAS(ctx context.Context, runId string, expectedStatus, newStatus model.MatchRunStatus) (bool, error) {
+	return true, nil
+}
+
+func (m *mockMatchesService) UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error) {
+	return true, nil
 }
 
 func TestServerMatchesHandlers(t *testing.T) {
@@ -137,10 +156,17 @@ func TestServerMatchesHandlers(t *testing.T) {
 
 	// 7. runMatch
 	req = httptest.NewRequest(http.MethodPost, "/matches/m1/run", nil)
+	req.Header.Set("Idempotency-Key", "test-key-123")
 	req = mux.SetURLVars(req, map[string]string{"id": "m1"})
 	rec = httptest.NewRecorder()
 	server.runMatch(rec, req)
 	r.Equal(http.StatusAccepted, rec.Code)
+	var runResp model.RunMatchResponse
+	r.NoError(json.Unmarshal(rec.Body.Bytes(), &runResp))
+	r.Equal("m1", runResp.MatchId)
+	r.Equal("m1-run-1", runResp.RunId)
+	r.Equal("job-1", runResp.JobId)
+	r.Equal("queued", runResp.Status)
 
 	// 8. updateMatch
 	body, _ = json.Marshal(model.Match{GameId: "starfighter"})

@@ -24,6 +24,24 @@ type mockContestRepo struct {
 	createContestEntryFn    func(ctx context.Context, entry *model.ContestEntry) error
 	listContestEntriesFn    func(ctx context.Context, contestId string) ([]model.ContestEntry, error)
 	getContestEntryFn       func(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error)
+	listSubmissionsByAgentFn func(ctx context.Context, agentId string) ([]model.Submission, error)
+	getSubmissionFn          func(ctx context.Context, id string) (*model.Submission, error)
+}
+
+func (m *mockContestRepo) ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error) {
+	if m.listSubmissionsByAgentFn != nil {
+		return m.listSubmissionsByAgentFn(ctx, agentId)
+	}
+	return []model.Submission{
+		{Id: "sub-default-1", AgentId: agentId, Version: 1, Status: "ready", Active: true},
+	}, nil
+}
+
+func (m *mockContestRepo) GetSubmission(ctx context.Context, id string) (*model.Submission, error) {
+	if m.getSubmissionFn != nil {
+		return m.getSubmissionFn(ctx, id)
+	}
+	return &model.Submission{Id: id, Version: 1, Status: "ready", Active: true}, nil
 }
 
 func (m *mockContestRepo) ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error) {

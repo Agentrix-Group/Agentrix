@@ -5,22 +5,38 @@ import "time"
 type MatchRunStatus string
 
 const (
-	MatchRunStatusRunning    MatchRunStatus = "running"
-	MatchRunStatusCommitted  MatchRunStatus = "committed"
-	MatchRunStatusAborted    MatchRunStatus = "aborted"
-	MatchRunStatusSuperseded MatchRunStatus = "superseded"
+	MatchRunStatusCreated     MatchRunStatus = "created"
+	MatchRunStatusDispatching MatchRunStatus = "dispatching"
+	MatchRunStatusRunning     MatchRunStatus = "running"
+	MatchRunStatusCompleted   MatchRunStatus = "completed"
+	MatchRunStatusCommitted   MatchRunStatus = "committed"
+	MatchRunStatusFailed      MatchRunStatus = "failed"
+	MatchRunStatusAborted     MatchRunStatus = "aborted"
+	MatchRunStatusTimedOut    MatchRunStatus = "timed_out"
+	MatchRunStatusSuperseded  MatchRunStatus = "superseded"
 )
 
 type MatchRun struct {
-	Id           string         `json:"id" db:"id"`
-	MatchId      string         `json:"match_id" db:"match_id"`
-	WorkerId     string         `json:"worker_id" db:"worker_id"`
-	FencingToken int64          `json:"fencing_token" db:"fencing_token"`
-	Status       MatchRunStatus `json:"status" db:"status"`
-	StartedAt    time.Time      `json:"started_at" db:"started_at"`
-	FinishedAt   *time.Time     `json:"finished_at,omitempty" db:"finished_at"`
-	HeartbeatAt  *time.Time     `json:"heartbeat_at,omitempty" db:"heartbeat_at"`
-	LastError    string         `json:"last_error,omitempty" db:"last_error"`
+	Id            string         `json:"id" db:"id"`
+	MatchId       string         `json:"match_id" db:"match_id"`
+	Attempt       int            `json:"attempt" db:"attempt"`
+	WorkerId      string         `json:"worker_id" db:"worker_id"`
+	FencingToken  int64          `json:"fencing_token" db:"fencing_token"`
+	Status        MatchRunStatus `json:"status" db:"status"`
+	ExecutionSpec string         `json:"execution_spec,omitempty" db:"execution_spec"`
+	StartedAt     time.Time      `json:"started_at" db:"started_at"`
+	FinishedAt    *time.Time     `json:"finished_at,omitempty" db:"finished_at"`
+	HeartbeatAt   *time.Time     `json:"heartbeat_at,omitempty" db:"heartbeat_at"`
+	LastError     string         `json:"last_error,omitempty" db:"last_error"`
+}
+
+type IdempotencyRecord struct {
+	Key          string    `json:"key" db:"key"`
+	ResourceType string    `json:"resource_type" db:"resource_type"`
+	ResourceId   string    `json:"resource_id" db:"resource_id"`
+	ResponseBody string    `json:"response_body" db:"response_body"`
+	StatusCode   int       `json:"status_code" db:"status_code"`
+	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 
 type MatchResultCommit struct {

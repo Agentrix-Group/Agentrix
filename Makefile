@@ -16,11 +16,17 @@ DB_NAME ?= agentrix
 .DEFAULT_GOAL := help
 .PHONY: help setup setup-all agentrix-setup db-setup db-migrate db-status db-reset db-seed db-bootstrap \
         build build-all build-engine build-engines lint test test-race test-integration coverage run clean \
-        web-install web-build web-dev
+        web-install web-build web-dev demo-up demo-down demo-reset demo-smoke
 
 # Show available targets
 help:
 	@echo "Agentrix Platform - Available Targets:"
+	@echo ""
+	@echo "  Demo & Observability:"
+	@echo "    make demo-up        - Start full stack with Docker Compose"
+	@echo "    make demo-down      - Stop Docker Compose stack"
+	@echo "    make demo-reset     - Reset migrations and run authentic bootstrap"
+	@echo "    make demo-smoke     - Run 13-point end-to-end smoke verification"
 	@echo ""
 	@echo "  Setup & Initialization:"
 	@echo "    make setup          - Setup backend dependencies and PostgreSQL database"
@@ -183,3 +189,21 @@ web-build:
 web-dev:
 	@echo "Starting frontend dev server..."
 	cd web && npm run dev
+
+# Demo & Observability targets (Fase 7)
+demo-up:
+	@echo "Starting full Agentrix demo stack with Docker Compose..."
+	docker compose up --build -d
+
+demo-down:
+	@echo "Stopping Agentrix demo stack..."
+	docker compose down
+
+demo-reset:
+	@echo "Resetting database and running authentic bootstrap..."
+	@go run ./cmd/migrate up
+	@go run ./cmd/bootstrap
+
+demo-smoke:
+	@echo "Running end-to-end smoke verification..."
+	@go run ./cmd/smoke/main.go

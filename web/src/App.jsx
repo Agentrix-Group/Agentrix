@@ -7,6 +7,8 @@ import { RankingsPage } from './pages/RankingsPage.jsx';
 import { AgentsPage } from './pages/AgentsPage.jsx';
 import { AuthPage } from './pages/AuthPage.jsx';
 import { ReplayViewer } from './viewer/ReplayViewer.jsx';
+import { ContestsPage } from './pages/ContestsPage.jsx';
+import { AdminPage } from './pages/AdminPage.jsx';
 import { Router, useRouter } from './router/Router.jsx';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import { SessionProvider, useSession } from './auth/SessionContext.jsx';
@@ -50,6 +52,12 @@ export function AppContent() {
       case 'matches':
         navigate('/matches');
         break;
+      case 'contests':
+        navigate('/contests');
+        break;
+      case 'admin':
+        navigate('/admin');
+        break;
       case 'rankings':
         navigate('/rankings');
         break;
@@ -87,6 +95,19 @@ export function AppContent() {
               currentUser={currentUser}
               onSelectContestRankings={() => navigate('/rankings')}
             />
+          )}
+          {route === 'contests' && (
+            <ContestsPage
+              contestId={params?.id}
+              currentUser={currentUser}
+              onSelectContest={(id) => navigate(id ? `/contests/${encodeURIComponent(id)}` : '/contests')}
+              onWatchReplay={handleWatchReplay}
+            />
+          )}
+          {route === 'admin' && (
+            <ProtectedRoute requiredCapability="admin:access">
+              <AdminPage currentUser={currentUser} />
+            </ProtectedRoute>
           )}
           {route === 'agents' && (
             <ProtectedRoute>

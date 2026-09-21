@@ -51,6 +51,14 @@ func (m *mockEngineClient) Close(ctx context.Context) error {
 	return nil
 }
 
+func (m *mockEngineClient) EngineVersion() string {
+	return "0.3.0"
+}
+
+func (m *mockEngineClient) EngineDigest() string {
+	return "mock-engine-digest"
+}
+
 func TestEngineClientInterface(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()

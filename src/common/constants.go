@@ -5,10 +5,12 @@ const (
 	ContentTypeJSON = "application/json"
 
 	// Match statuses
-	MatchStatusPending  = "pending"
-	MatchStatusRunning  = "running"
-	MatchStatusFinished = "finished"
-	MatchStatusFailed   = "failed"
+	MatchStatusScheduled = "scheduled"
+	MatchStatusPending   = "pending"
+	MatchStatusQueued    = "queued"
+	MatchStatusRunning   = "running"
+	MatchStatusFinished  = "finished"
+	MatchStatusFailed    = "failed"
 
 	// Submission statuses
 	SubmissionStatusPending = "pending"

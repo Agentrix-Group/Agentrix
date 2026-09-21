@@ -91,6 +91,16 @@ export function Router({ children }) {
     if (currentPath === '/matches') {
       return { route: 'matches', params: {} };
     }
+    const contestDetail = matchPattern(currentPath, '/contests/:id');
+    if (contestDetail.match) {
+      return { route: 'contests', params: contestDetail.params };
+    }
+    if (currentPath === '/contests') {
+      return { route: 'contests', params: {} };
+    }
+    if (currentPath === '/admin') {
+      return { route: 'admin', params: {} };
+    }
     if (currentPath === '/rankings') {
       return { route: 'rankings', params: {} };
     }

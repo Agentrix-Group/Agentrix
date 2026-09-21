@@ -25,18 +25,32 @@ export const ApiService = {
   // Contests
   listContests: () => api.get('/contests'),
   getContest: (id) => api.get(`/contests/${encodeURIComponent(id)}`),
+  createContest: (data) => api.post('/contests', data),
+  updateContest: (id, data) => api.put(`/contests/${encodeURIComponent(id)}`, data),
+  activateContest: (id) => api.patch(`/contests/${encodeURIComponent(id)}`),
   listContestAgents: (contestId) => api.get(`/contests/${encodeURIComponent(contestId)}/agents`),
   listContestEntries: (contestId) => api.get(`/contests/${encodeURIComponent(contestId)}/entries`),
   enrollAgent: (contestId, agentId) =>
     api.post(`/contests/${encodeURIComponent(contestId)}/agents`, { agent_id: agentId }),
+  recalculateRankings: (contestId) =>
+    api.post(`/contests/${encodeURIComponent(contestId)}/rankings/recalculate`),
+  publishRankingSnapshot: (contestId) =>
+    api.post(`/contests/${encodeURIComponent(contestId)}/rankings/publish`),
+  listRankingSnapshots: (contestId) =>
+    api.get(`/contests/${encodeURIComponent(contestId)}/rankings/snapshots`),
+  getRankingSnapshot: (contestId, version) =>
+    api.get(`/contests/${encodeURIComponent(contestId)}/rankings/snapshots/${encodeURIComponent(version)}`),
 
   // Games
   listGames: () => api.get('/games'),
   getGame: (id) => api.get(`/games/${encodeURIComponent(id)}`),
 
-  // Users
+  // Users & Admin
   listUsers: () => api.get('/users'),
   getUser: (id) => api.get(`/users/${encodeURIComponent(id)}`),
+  updateUser: (id, data) => api.put(`/users/${encodeURIComponent(id)}`, data),
+  activateUser: (id) => api.patch(`/users/${encodeURIComponent(id)}`),
+  getHealth: () => api.get('/health/ready'),
 
   // Agents
   listAgents: (ownerUserId) =>

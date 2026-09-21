@@ -104,5 +104,8 @@ func setupTestServer(conn *connection.Connection) (*server.Server, *auth.Auth) {
 	srv := server.NewServer(svc)
 	authModule := auth.NewAuth("test-access-secret", "test-refresh-secret")
 	srv.Auth = authModule
+	if srv.SessionManager != nil {
+		srv.SessionManager = auth.NewSessionManager(repo, authModule)
+	}
 	return srv, authModule
 }

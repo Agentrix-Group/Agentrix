@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, House, Languages, LogIn, LogOut, Menu, Orbit, Trophy, Swords, UserRound, X, Play } from 'lucide-react';
+import { Bot, House, Languages, LogIn, LogOut, Menu, Orbit, Trophy, Swords, UserRound, X, Play, CalendarDays, Shield } from 'lucide-react';
 
 export function Navbar({ activeTab, onSelectTab, currentUser, onLogout, hasReplay = false }) {
   const { t, i18n } = useTranslation('navigation');
@@ -12,11 +12,19 @@ export function Navbar({ activeTab, onSelectTab, currentUser, onLogout, hasRepla
     setMenuOpen(false);
   };
 
+  const isAdmin = currentUser && (
+    currentUser.role_id === 'admin' ||
+    currentUser.role === 'admin' ||
+    (Array.isArray(currentUser.capabilities) && currentUser.capabilities.includes('admin:access'))
+  );
+
   const links = [
     { tab: 'home', label: t('home'), Icon: House },
+    { tab: 'contests', label: t('contests'), Icon: CalendarDays },
     { tab: 'matches', label: t('matches'), Icon: Swords },
     { tab: 'rankings', label: t('rankings'), Icon: Trophy },
     ...(currentUser ? [{ tab: 'agents', label: t('agents'), Icon: Bot }] : []),
+    ...(isAdmin ? [{ tab: 'admin', label: t('admin'), Icon: Shield }] : []),
     ...(hasReplay ? [{ tab: 'viewer', label: t('viewer'), Icon: Play }] : []),
   ];
 

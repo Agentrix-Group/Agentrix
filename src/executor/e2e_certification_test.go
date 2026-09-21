@@ -14,6 +14,7 @@ import (
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/Agentrix-Group/Agentrix/src/service"
 	"github.com/stretchr/testify/require"
 )
@@ -106,6 +107,58 @@ func (m *memoryAuditRepo) GetMatchRun(ctx context.Context, id string) (*model.Ma
 func (m *memoryAuditRepo) UpdateMatchRunHeartbeat(ctx context.Context, runID string, t time.Time) error {
 	if r := m.matchRuns[runID]; r != nil {
 		r.HeartbeatAt = &t
+	}
+	return nil
+}
+
+func (m *memoryAuditRepo) GetLatestMatchRunByMatch(ctx context.Context, matchId string) (*model.MatchRun, error) {
+	var latest *model.MatchRun
+	for _, r := range m.matchRuns {
+		if r.MatchId == matchId {
+			if latest == nil || r.StartedAt.After(latest.StartedAt) {
+				latest = r
+			}
+		}
+	}
+	if latest == nil {
+		return nil, repository.ErrMatchRunNotFound
+	}
+	return latest, nil
+}
+
+func (m *memoryAuditRepo) ListMatchRunsByMatch(ctx context.Context, matchId string) ([]*model.MatchRun, error) {
+	var list []*model.MatchRun
+	for _, r := range m.matchRuns {
+		if r.MatchId == matchId {
+			list = append(list, r)
+		}
+	}
+	return list, nil
+}
+
+func (m *memoryAuditRepo) UpdateMatchRunStatusCAS(ctx context.Context, runId string, expectedStatus, newStatus model.MatchRunStatus) (bool, error) {
+	if r := m.matchRuns[runId]; r != nil {
+		if r.Status == expectedStatus {
+			r.Status = newStatus
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (m *memoryAuditRepo) StartMatchRun(ctx context.Context, runId, workerId string, fencingToken int64) error {
+	if r := m.matchRuns[runId]; r != nil {
+		r.Status = model.MatchRunStatusRunning
+		r.WorkerId = workerId
+		r.FencingToken = fencingToken
+	}
+	return nil
+}
+
+func (m *memoryAuditRepo) FailMatchRun(ctx context.Context, runId string, lastError string) error {
+	if r := m.matchRuns[runId]; r != nil {
+		r.Status = model.MatchRunStatusFailed
+		r.LastError = lastError
 	}
 	return nil
 }

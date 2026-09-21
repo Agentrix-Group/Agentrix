@@ -36,9 +36,21 @@ type Repository interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	CreateUser(ctx context.Context, user *model.User) error
 	UpdateUser(ctx context.Context, user *model.User) error
+	UpdateUserPassword(ctx context.Context, id, passwordHash string) error
 	ActivateUser(ctx context.Context, id string, isActive bool) error
 	HasPermission(ctx context.Context, userId string, permission string) (bool, error)
 	GetRolePermissions(ctx context.Context, roleId string) ([]string, error)
+	GetUserEffectivePermissions(ctx context.Context, userId string) ([]string, error)
+	GetUserRoles(ctx context.Context, userId string) ([]string, error)
+
+	// Sessions
+	CreateSession(ctx context.Context, session *model.Session) error
+	GetSessionByHash(ctx context.Context, tokenHash string) (*model.Session, error)
+	RevokeSession(ctx context.Context, sessionID string) error
+	RevokeSessionFamily(ctx context.Context, familyID string) error
+	RevokeAllUserSessions(ctx context.Context, userID string) error
+	PruneOldestUserSessions(ctx context.Context, userID string, keepCount int) error
+	UpdateSessionLastUsed(ctx context.Context, sessionID string) error
 
 	// Games
 	GetGame(ctx context.Context, id string) (*model.Game, error)
@@ -77,6 +89,14 @@ type Repository interface {
 	GetRanking(ctx context.Context, id string) (*model.Ranking, error)
 	GetRankingByContestAndAgent(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
 	UpsertRanking(ctx context.Context, ranking *model.Ranking) error
+	ResetContestRankings(ctx context.Context, contestId string) error
+	IsRunAppliedToRanking(ctx context.Context, contestId, runId string) (bool, error)
+	RecordAppliedRun(ctx context.Context, contestId, runId, matchId string) error
+	ClearAppliedRuns(ctx context.Context, contestId string) error
+	CreateRankingSnapshot(ctx context.Context, snapshot *model.RankingSnapshot) error
+	ListRankingSnapshots(ctx context.Context, contestId string) ([]model.RankingSnapshot, error)
+	GetLatestRankingSnapshot(ctx context.Context, contestId string) (*model.RankingSnapshot, error)
+	GetRankingSnapshotByVersion(ctx context.Context, contestId string, version int) (*model.RankingSnapshot, error)
 
 	// Health & Schema
 	Ping(ctx context.Context) error
@@ -91,12 +111,15 @@ type UserReader interface {
 	GetUserByEmail(ctx context.Context, email string) (*model.User, error)
 	HasPermission(ctx context.Context, userId string, permission string) (bool, error)
 	GetRolePermissions(ctx context.Context, roleId string) ([]string, error)
+	GetUserEffectivePermissions(ctx context.Context, userId string) ([]string, error)
+	GetUserRoles(ctx context.Context, userId string) ([]string, error)
 }
 
 // UserWriter defines write-only operations for users.
 type UserWriter interface {
 	CreateUser(ctx context.Context, user *model.User) error
 	UpdateUser(ctx context.Context, user *model.User) error
+	UpdateUserPassword(ctx context.Context, id, passwordHash string) error
 	ActivateUser(ctx context.Context, id string, isActive bool) error
 }
 
@@ -169,7 +192,7 @@ func (r *repository) GetUser(ctx context.Context, id string) (*model.User, error
 		return nil, err
 	}
 
-	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE id = $1 AND active = TRUE`
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE id = $1`
 
 	var u model.User
 	err = db.QueryRowContext(ctx, query, id).Scan(
@@ -182,6 +205,7 @@ func (r *repository) GetUser(ctx context.Context, id string) (*model.User, error
 		return nil, err
 	}
 
+	r.populateUserRoles(ctx, &u)
 	return &u, nil
 }
 
@@ -191,7 +215,7 @@ func (r *repository) GetUserByUsername(ctx context.Context, username string) (*m
 		return nil, err
 	}
 
-	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE username = $1 AND active = TRUE`
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE username = $1`
 
 	var u model.User
 	err = db.QueryRowContext(ctx, query, username).Scan(
@@ -204,6 +228,7 @@ func (r *repository) GetUserByUsername(ctx context.Context, username string) (*m
 		return nil, err
 	}
 
+	r.populateUserRoles(ctx, &u)
 	return &u, nil
 }
 
@@ -213,7 +238,7 @@ func (r *repository) GetUserByEmail(ctx context.Context, email string) (*model.U
 		return nil, err
 	}
 
-	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE email = $1 AND active = TRUE`
+	query := `SELECT id, username, email, password, role_id, active, created_at FROM users WHERE email = $1`
 
 	var u model.User
 	err = db.QueryRowContext(ctx, query, email).Scan(
@@ -226,7 +251,39 @@ func (r *repository) GetUserByEmail(ctx context.Context, email string) (*model.U
 		return nil, err
 	}
 
+	r.populateUserRoles(ctx, &u)
 	return &u, nil
+}
+
+func (r *repository) populateUserRoles(ctx context.Context, u *model.User) {
+	db, err := r.getDb()
+	if err != nil {
+		return
+	}
+	rows, err := db.QueryContext(ctx, `SELECT role_id FROM user_roles WHERE user_id = $1`, u.Id)
+	if err != nil {
+		if u.RoleId != "" {
+			u.Roles = []string{u.RoleId}
+		}
+		return
+	}
+	defer rows.Close()
+
+	u.Roles = make([]string, 0)
+	for rows.Next() {
+		var roleID string
+		if err := rows.Scan(&roleID); err == nil {
+			u.Roles = append(u.Roles, roleID)
+		}
+	}
+	if len(u.Roles) == 0 && u.RoleId != "" {
+		u.Roles = []string{u.RoleId}
+	}
+
+	// Also populate dynamic effective capabilities
+	if caps, err := r.GetUserEffectivePermissions(ctx, u.Id); err == nil {
+		u.Capabilities = caps
+	}
 }
 
 func (r *repository) CreateUser(ctx context.Context, user *model.User) error {
@@ -245,6 +302,17 @@ func (r *repository) CreateUser(ctx context.Context, user *model.User) error {
 		return ClassifyDBError(err)
 	}
 
+	// Insert into user_roles
+	rolesToInsert := user.Roles
+	if len(rolesToInsert) == 0 && user.RoleId != "" {
+		rolesToInsert = []string{user.RoleId}
+	}
+	for _, roleID := range rolesToInsert {
+		if roleID != "" {
+			_, _ = db.ExecContext(ctx, `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, user.Id, roleID)
+		}
+	}
+
 	return nil
 }
 
@@ -261,6 +329,24 @@ func (r *repository) UpdateUser(ctx context.Context, user *model.User) error {
 		return ClassifyDBError(err)
 	}
 
+	if user.RoleId != "" {
+		_, _ = db.ExecContext(ctx, `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, user.Id, user.RoleId)
+	}
+
+	return nil
+}
+
+func (r *repository) UpdateUserPassword(ctx context.Context, id, passwordHash string) error {
+	db, err := r.getDb()
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE users SET password = $1 WHERE id = $2`
+	_, err = db.ExecContext(ctx, query, passwordHash, id)
+	if err != nil {
+		return ClassifyDBError(err)
+	}
 	return nil
 }
 
@@ -286,8 +372,14 @@ func (r *repository) HasPermission(ctx context.Context, userId string, permissio
 		SELECT COUNT(*)
 		FROM permissions p
 		JOIN role_permissions rp ON p.id = rp.permission_id
-		JOIN users u ON u.role_id = rp.role_id
-		WHERE u.id = $1 AND p.id = $2 AND p.active = TRUE AND rp.active = TRUE AND u.active = TRUE`
+		JOIN users u ON u.id = $1 AND u.active = TRUE
+		JOIN (
+			SELECT role_id FROM user_roles WHERE user_id = $1
+			UNION
+			SELECT role_id FROM users WHERE id = $1 AND role_id IS NOT NULL AND role_id != ''
+		) ur ON ur.role_id = rp.role_id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE p.id = $2 AND p.active = TRUE AND rp.active = TRUE AND r.active = TRUE`
 
 	var count int
 	err = db.QueryRowContext(ctx, query, userId, permission).Scan(&count)
@@ -326,5 +418,74 @@ func (r *repository) GetRolePermissions(ctx context.Context, roleId string) ([]s
 		perms = append(perms, p)
 	}
 	return perms, nil
+}
+
+func (r *repository) GetUserEffectivePermissions(ctx context.Context, userId string) ([]string, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT DISTINCT p.id
+		FROM permissions p
+		JOIN role_permissions rp ON p.id = rp.permission_id
+		JOIN (
+			SELECT role_id FROM user_roles WHERE user_id = $1
+			UNION
+			SELECT role_id FROM users WHERE id = $1 AND role_id IS NOT NULL AND role_id != ''
+		) ur ON ur.role_id = rp.role_id
+		JOIN roles r ON r.id = ur.role_id
+		WHERE p.active = TRUE AND rp.active = TRUE AND r.active = TRUE
+		ORDER BY p.id ASC`
+
+	rows, err := db.QueryContext(ctx, query, userId)
+	if err != nil {
+		return nil, ClassifyDBError(err)
+	}
+	defer rows.Close()
+
+	perms := make([]string, 0)
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			return nil, ClassifyDBError(err)
+		}
+		perms = append(perms, p)
+	}
+	return perms, nil
+}
+
+func (r *repository) GetUserRoles(ctx context.Context, userId string) ([]string, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT DISTINCT sub.role_id FROM (
+			SELECT role_id FROM user_roles WHERE user_id = $1
+			UNION
+			SELECT role_id FROM users WHERE id = $1 AND role_id IS NOT NULL AND role_id != ''
+		) sub
+		JOIN roles r ON r.id = sub.role_id
+		WHERE r.active = TRUE
+		ORDER BY sub.role_id ASC`
+
+	rows, err := db.QueryContext(ctx, query, userId)
+	if err != nil {
+		return nil, ClassifyDBError(err)
+	}
+	defer rows.Close()
+
+	roles := make([]string, 0)
+	for rows.Next() {
+		var role string
+		if err := rows.Scan(&role); err != nil {
+			return nil, ClassifyDBError(err)
+		}
+		roles = append(roles, role)
+	}
+	return roles, nil
 }
 

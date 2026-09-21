@@ -2,6 +2,16 @@ package model
 
 import "time"
 
+type SubmissionStatus string
+
+const (
+	SubmissionStatusPending    SubmissionStatus = "pending"
+	SubmissionStatusValidating SubmissionStatus = "validating"
+	SubmissionStatusReady      SubmissionStatus = "ready"
+	SubmissionStatusFailed     SubmissionStatus = "failed"
+	SubmissionStatusRetired    SubmissionStatus = "retired"
+)
+
 type Submission struct {
 	Id        string    `json:"id,omitempty" db:"id"`
 	AgentId   string    `json:"agent_id,omitempty" db:"agent_id"`

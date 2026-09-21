@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/stretchr/testify/require"
@@ -39,6 +40,14 @@ func (m *mockUserRepo) CreateUser(ctx context.Context, u *model.User) error {
 		return m.createFn(ctx, u)
 	}
 	return nil
+}
+
+func (m *mockUserRepo) UpdateUserPassword(ctx context.Context, id, passwordHash string) error {
+	return nil
+}
+
+func (m *mockUserRepo) GetUserEffectivePermissions(ctx context.Context, userId string) ([]string, error) {
+	return nil, nil
 }
 
 func TestUserService_Login(t *testing.T) {
@@ -171,8 +180,9 @@ func TestUserService_Register(t *testing.T) {
 		r.Equal("participant", created.RoleId)
 		// Password should be hashed, not plaintext
 		r.NotEqual("securePassword123", created.Password)
-		expectedHash := fmt.Sprintf("%x", sha512.Sum512([]byte("securePassword123")))
-		r.Equal(expectedHash, created.Password)
+		match, _, vErr := auth.VerifyPassword("securePassword123", created.Password)
+		r.NoError(vErr)
+		r.True(match)
 	})
 
 	t.Run("Supplied role_id is ignored and forced to participant", func(t *testing.T) {

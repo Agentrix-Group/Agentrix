@@ -56,6 +56,31 @@ make build-engine
 make build
 ```
 
+## Arranque rápido y verificación de demo (Fase 7 / Fase 9)
+
+El stack completo de Agentrix incluye plano de control en Go, base de datos PostgreSQL con migraciones versionadas (Goose v4), motor de simulación Starfighter en Rust, bots de ejemplo en Python y frontend web en React + Vite.
+
+1. **Levantar el stack completo:**
+   ```bash
+   make demo-up
+   # o alternativamente: docker compose up --build -d
+   ```
+2. **Inicializar y poblar con datos y ejecuciones auténticas:**
+   ```bash
+   make demo-reset
+   # ejecuta migraciones automáticas y cmd/bootstrap con simulación real del motor
+   ```
+3. **Ejecutar verificación de humo integral (13 pasos):**
+   ```bash
+   make demo-smoke
+   # verifica: liveness, readiness, login admin/pilot, RBAC (403), submissions,
+   # slots, simulación con motor y bots reales, timeout, resultados, replay zstd y ranking
+   ```
+4. **Detener el stack:**
+   ```bash
+   make demo-down
+   ```
+
 `make build` ejecuta formateo con escritura, pruebas y compilación. Revise primero el worktree. Los targets de base de datos modifican PostgreSQL y no deben ejecutarse como comprobación rutinaria.
 
 ## Documentación

@@ -2,8 +2,11 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -139,6 +142,42 @@ func TestSubprocess_IncompatibleVersion(t *testing.T) {
 	})
 	r.Error(err)
 	r.ErrorIs(err, ErrIncompatibleVersion)
+}
+
+func TestSubprocess_DigestVerification(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// 1. Mismatched expected digest must fail immediately
+	client := NewSubprocessClient()
+	err := client.Start(ctx, StartConfig{
+		BinaryPath:     fakeEngineBinary,
+		ExpectedDigest: "0000000000000000000000000000000000000000000000000000000000000000",
+	})
+	r.Error(err)
+	r.ErrorIs(err, ErrEngineDigestMismatch)
+
+	// 2. Correct expected digest must succeed
+	clientOk := NewSubprocessClient()
+	// First compute digest
+	f, err := os.Open(fakeEngineBinary)
+	r.NoError(err)
+	defer f.Close()
+	h := sha256.New()
+	_, err = io.Copy(h, f)
+	r.NoError(err)
+	validDigest := hex.EncodeToString(h.Sum(nil))
+
+	err = clientOk.Start(ctx, StartConfig{
+		BinaryPath:       fakeEngineBinary,
+		ExpectedDigest:   validDigest,
+		HandshakeTimeout: 3 * time.Second,
+	})
+	r.NoError(err)
+	r.Equal(validDigest, clientOk.EngineDigest())
+	r.NotEmpty(clientOk.EngineVersion())
+	_ = clientOk.Close(ctx)
 }
 
 func TestSubprocess_CrashOnStart(t *testing.T) {

@@ -3,6 +3,8 @@ package server
 import (
 	"net/http"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/gorilla/sessions"
@@ -12,10 +14,13 @@ import (
 )
 
 type Server struct {
-	Handler      http.Handler
-	Service      service.Service
-	SessionStore *sessions.CookieStore
-	Auth         *auth.Auth
+	Handler        http.Handler
+	Service        service.Service
+	SessionStore   *sessions.CookieStore
+	Auth           *auth.Auth
+	SessionManager *auth.SessionManager
+	RateLimiter    *RateLimiter
+	AllowedOrigins []string
 }
 
 func NewServer(svc service.Service) *Server {
@@ -34,10 +39,44 @@ func NewServer(svc service.Service) *Server {
 		refreshSecret = "agentrix-refresh-secret-key-change-in-prod"
 	}
 
+	authMod := auth.NewAuth(accessSecret, refreshSecret)
+
+	var sessionMgr *auth.SessionManager
+	if svc != nil {
+		func() {
+			defer func() { _ = recover() }()
+			if repo := svc.GetRepository(); repo != nil {
+				sessionMgr = auth.NewSessionManager(repo, authMod)
+			}
+		}()
+	}
+
+	allowedOriginsStr := os.Getenv("CORS_ALLOWED_ORIGINS")
+	var allowedOrigins []string
+	if allowedOriginsStr != "" {
+		for _, o := range strings.Split(allowedOriginsStr, ",") {
+			o = strings.TrimSpace(o)
+			if o != "" {
+				allowedOrigins = append(allowedOrigins, o)
+			}
+		}
+	}
+	if len(allowedOrigins) == 0 {
+		allowedOrigins = []string{
+			"http://localhost:3000",
+			"http://localhost:5173",
+			"http://127.0.0.1:3000",
+			"http://127.0.0.1:5173",
+		}
+	}
+
 	s := &Server{
-		Service:      svc,
-		SessionStore: sessions.NewCookieStore([]byte(sessionSecret)),
-		Auth:         auth.NewAuth(accessSecret, refreshSecret),
+		Service:        svc,
+		SessionStore:   sessions.NewCookieStore([]byte(sessionSecret)),
+		Auth:           authMod,
+		SessionManager: sessionMgr,
+		RateLimiter:    NewRateLimiter(60, time.Minute),
+		AllowedOrigins: allowedOrigins,
 	}
 	s.Handler = s.buildHandler()
 	return s
@@ -56,17 +95,37 @@ func (s *Server) buildHandler() http.Handler {
 
 	api := router.PathPrefix("/api/v1").Subrouter()
 
-	// Public endpoints
-	api.HandleFunc("/login", s.login).Methods(http.MethodPost, http.MethodOptions)
-	api.HandleFunc("/register", s.register).Methods(http.MethodPost, http.MethodOptions)
-	api.HandleFunc("/refresh", s.refreshToken).Methods(http.MethodPost, http.MethodOptions)
-	api.HandleFunc("/auth/login", s.login).Methods(http.MethodPost, http.MethodOptions)
-	api.HandleFunc("/auth/register", s.register).Methods(http.MethodPost, http.MethodOptions)
-	api.HandleFunc("/auth/refresh", s.refreshToken).Methods(http.MethodPost, http.MethodOptions)
+	api.HandleFunc("/health/live", s.livenessProbe).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/health/ready", s.readinessProbe).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/health", s.livenessProbe).Methods(http.MethodGet, http.MethodOptions)
+
+	// Public auth endpoints protected with rate limiting
+	authLimiter := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if s.RateLimiter != nil {
+				s.RateLimiter.Middleware(next).ServeHTTP(w, r)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	api.Handle("/login", authLimiter(http.HandlerFunc(s.login))).Methods(http.MethodPost, http.MethodOptions)
+	api.Handle("/register", authLimiter(http.HandlerFunc(s.register))).Methods(http.MethodPost, http.MethodOptions)
+	api.Handle("/refresh", authLimiter(http.HandlerFunc(s.refreshToken))).Methods(http.MethodPost, http.MethodOptions)
+	api.Handle("/auth/login", authLimiter(http.HandlerFunc(s.login))).Methods(http.MethodPost, http.MethodOptions)
+	api.Handle("/auth/register", authLimiter(http.HandlerFunc(s.register))).Methods(http.MethodPost, http.MethodOptions)
+	api.Handle("/auth/refresh", authLimiter(http.HandlerFunc(s.refreshToken))).Methods(http.MethodPost, http.MethodOptions)
+	api.HandleFunc("/auth/logout", s.logout).Methods(http.MethodPost, http.MethodOptions)
+	api.HandleFunc("/auth/logout-all", s.logoutAll).Methods(http.MethodPost, http.MethodOptions)
+	api.HandleFunc("/logout", s.logout).Methods(http.MethodPost, http.MethodOptions)
+
 	api.HandleFunc("/contests", s.listPublicContests).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/contests/{id}", s.getPublicContest).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/contests/{id}/agents", s.listContestAgents).Methods(http.MethodGet, http.MethodOptions)
 	api.HandleFunc("/contests/{id}/entries", s.listContestEntries).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}/rankings", s.listContestRankings).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}/rankings/snapshots", s.listRankingSnapshots).Methods(http.MethodGet, http.MethodOptions)
+	api.HandleFunc("/contests/{id}/rankings/snapshots/{version}", s.getRankingSnapshot).Methods(http.MethodGet, http.MethodOptions)
 
 	// Public spectator routes (Blueprint Section 4: matches, rankings, replays)
 	api.HandleFunc("/matches", s.listMatches).Methods(http.MethodGet, http.MethodOptions)
@@ -85,6 +144,9 @@ func (s *Server) buildHandler() http.Handler {
 	protected.HandleFunc("/me", s.checkSession).Methods(http.MethodGet, http.MethodOptions)
 	protected.HandleFunc("/me/agents", s.getMyAgents).Methods(http.MethodGet, http.MethodOptions)
 
+	// Admin panel
+	protected.PathPrefix("/admin").HandlerFunc(s.adminOverview).Methods(http.MethodGet, http.MethodPost, http.MethodPut, http.MethodOptions)
+
 	// Users (Canonical Identity)
 	protected.HandleFunc("/users", s.listUsers).Methods(http.MethodGet)
 	protected.HandleFunc("/users/{id}", s.getUser).Methods(http.MethodGet)
@@ -97,6 +159,8 @@ func (s *Server) buildHandler() http.Handler {
 	protected.HandleFunc("/contests/{id}", s.activateContest).Methods(http.MethodPatch)
 	protected.HandleFunc("/contests/{id}/agents", s.enrollAgent).Methods(http.MethodPost)
 	protected.HandleFunc("/contests/{id}/entries", s.enrollAgent).Methods(http.MethodPost)
+	protected.HandleFunc("/contests/{id}/rankings/recalculate", s.recalculateRankings).Methods(http.MethodPost)
+	protected.HandleFunc("/contests/{id}/rankings/publish", s.publishRankingSnapshot).Methods(http.MethodPost)
 
 	// Categories
 	protected.HandleFunc("/categories", s.listCategories).Methods(http.MethodGet)

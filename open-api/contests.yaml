@@ -213,3 +213,104 @@ paths:
         '404':
           $ref: './components/errors.yaml#/NotFound'
 
+  /api/v1/contests/{id}/rankings/recalculate:
+    post:
+      summary: Recalculate contest rankings deterministically from committed match runs
+      tags:
+        - Rankings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Recalculated leaderboard
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/Ranking'
+        '403':
+          $ref: './components/errors.yaml#/Forbidden'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+
+  /api/v1/contests/{id}/rankings/publish:
+    post:
+      summary: Publish an immutable snapshot of current contest rankings
+      tags:
+        - Rankings
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '201':
+          description: Published ranking snapshot
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/RankingSnapshot'
+        '403':
+          $ref: './components/errors.yaml#/Forbidden'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+
+  /api/v1/contests/{id}/rankings/snapshots:
+    get:
+      summary: List published ranking snapshots for a contest
+      tags:
+        - Rankings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: List of published ranking snapshots
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: './components/models.yaml#/RankingSnapshot'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+
+  /api/v1/contests/{id}/rankings/snapshots/{version}:
+    get:
+      summary: Get specific published ranking snapshot version
+      tags:
+        - Rankings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: version
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Published ranking snapshot
+          content:
+            application/json:
+              schema:
+                $ref: './components/models.yaml#/RankingSnapshot'
+        '404':
+          $ref: './components/errors.yaml#/NotFound'
+

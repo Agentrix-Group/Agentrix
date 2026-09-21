@@ -12,6 +12,7 @@ type ContestReader interface {
 	ListPublicContests(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
 	ListContests(ctx context.Context) ([]model.Contest, error)
 	GetContest(ctx context.Context, id string) (*model.Contest, error)
+	GetContestEntryBySubmission(ctx context.Context, contestId, submissionId string) (*model.ContestEntry, error)
 }
 
 // ContestWriter defines write operations for contests.
@@ -21,10 +22,16 @@ type ContestWriter interface {
 	ActivateContest(ctx context.Context, id string, isActive bool) error
 }
 
+// ContestCASRepository defines optimistic concurrency operations for contests.
+type ContestCASRepository interface {
+	UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error)
+}
+
 // ContestRepository aggregates contest operations under ATD-015.
 type ContestRepository interface {
 	ContestReader
 	ContestWriter
+	ContestCASRepository
 }
 
 // ListPublicContests queries PostgreSQL for public contests adhering to blueprint visibility rules:
@@ -90,7 +97,7 @@ func (r *repository) ListContests(ctx context.Context) ([]model.Contest, error) 
 		return nil, err
 	}
 
-	query := `SELECT id, name, description, game_id, category_id, starts_at, ends_at, state, active, created_at FROM contests ORDER BY created_at DESC`
+	query := `SELECT id, name, description, game_id, category_id, starts_at, ends_at, state, active, scoring_policy, created_at FROM contests ORDER BY created_at DESC`
 
 	rows, err := db.QueryContext(ctx, query)
 	if err != nil {
@@ -104,14 +111,16 @@ func (r *repository) ListContests(ctx context.Context) ([]model.Contest, error) 
 		var stateStr string
 		var gameId, categoryId sql.NullString
 		var startsAt, endsAt sql.NullTime
+		var scoringPolicy model.ScoringPolicy
 
-		if err := rows.Scan(&c.Id, &c.Name, &c.Description, &gameId, &categoryId, &startsAt, &endsAt, &stateStr, &c.Active, &c.CreatedAt); err != nil {
+		if err := rows.Scan(&c.Id, &c.Name, &c.Description, &gameId, &categoryId, &startsAt, &endsAt, &stateStr, &c.Active, &scoringPolicy, &c.CreatedAt); err != nil {
 			return nil, err
 		}
 
 		c.State = model.ContestState(stateStr)
 		c.GameId = gameId.String
 		c.CategoryId = categoryId.String
+		c.ScoringPolicy = &scoringPolicy
 		if startsAt.Valid {
 			c.StartsAt = &startsAt.Time
 			c.StartDate = startsAt.Time
@@ -136,15 +145,16 @@ func (r *repository) GetContest(ctx context.Context, id string) (*model.Contest,
 		return nil, err
 	}
 
-	query := `SELECT id, name, description, game_id, category_id, starts_at, ends_at, state, active, created_at FROM contests WHERE id = $1`
+	query := `SELECT id, name, description, game_id, category_id, starts_at, ends_at, state, active, scoring_policy, created_at FROM contests WHERE id = $1`
 
 	var c model.Contest
 	var stateStr string
 	var gameId, categoryId sql.NullString
 	var startsAt, endsAt sql.NullTime
+	var scoringPolicy model.ScoringPolicy
 
 	err = db.QueryRowContext(ctx, query, id).Scan(
-		&c.Id, &c.Name, &c.Description, &gameId, &categoryId, &startsAt, &endsAt, &stateStr, &c.Active, &c.CreatedAt,
+		&c.Id, &c.Name, &c.Description, &gameId, &categoryId, &startsAt, &endsAt, &stateStr, &c.Active, &scoringPolicy, &c.CreatedAt,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -156,6 +166,7 @@ func (r *repository) GetContest(ctx context.Context, id string) (*model.Contest,
 	c.State = model.ContestState(stateStr)
 	c.GameId = gameId.String
 	c.CategoryId = categoryId.String
+	c.ScoringPolicy = &scoringPolicy
 	if startsAt.Valid {
 		c.StartsAt = &startsAt.Time
 		c.StartDate = startsAt.Time
@@ -184,12 +195,18 @@ func (r *repository) CreateContest(ctx context.Context, contest *model.Contest) 
 		categoryID = nil
 	}
 
-	query := `INSERT INTO contests (id, name, description, game_id, category_id, state, active, starts_at, ends_at, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`
+	if contest.ScoringPolicy == nil {
+		def := model.DefaultScoringPolicy()
+		contest.ScoringPolicy = &def
+	}
+	policyVal, _ := contest.ScoringPolicy.Value()
+
+	query := `INSERT INTO contests (id, name, description, game_id, category_id, state, active, starts_at, ends_at, scoring_policy, created_at, updated_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
 
 	_, err = db.ExecContext(ctx, query,
 		contest.Id, contest.Name, contest.Description, contest.GameId,
 		categoryID, string(state), contest.Active, contest.StartsAt,
-		contest.EndsAt, contest.CreatedAt, contest.CreatedAt,
+		contest.EndsAt, policyVal, contest.CreatedAt, contest.CreatedAt,
 	)
 	if err != nil {
 		return err
@@ -214,11 +231,17 @@ func (r *repository) UpdateContest(ctx context.Context, contest *model.Contest) 
 		categoryID = nil
 	}
 
-	query := `UPDATE contests SET name = $1, description = $2, game_id = $3, category_id = $4, state = $5, active = $6, starts_at = $7, ends_at = $8, updated_at = CURRENT_TIMESTAMP WHERE id = $9`
+	if contest.ScoringPolicy == nil {
+		def := model.DefaultScoringPolicy()
+		contest.ScoringPolicy = &def
+	}
+	policyVal, _ := contest.ScoringPolicy.Value()
+
+	query := `UPDATE contests SET name = $1, description = $2, game_id = $3, category_id = $4, state = $5, active = $6, starts_at = $7, ends_at = $8, scoring_policy = $9, updated_at = CURRENT_TIMESTAMP WHERE id = $10`
 
 	_, err = db.ExecContext(ctx, query,
 		contest.Name, contest.Description, contest.GameId, categoryID,
-		string(state), contest.Active, contest.StartsAt, contest.EndsAt, contest.Id,
+		string(state), contest.Active, contest.StartsAt, contest.EndsAt, policyVal, contest.Id,
 	)
 	if err != nil {
 		return err
@@ -335,11 +358,11 @@ func (r *repository) CreateContestEntry(ctx context.Context, entry *model.Contes
 	}
 
 	query := `
-		INSERT INTO contest_entries (id, contest_id, agent_id, user_id, status, enrolled_at)
-		VALUES ($1, $2, $3, $4, $5, $6)`
+		INSERT INTO contest_entries (id, contest_id, agent_id, user_id, submission_id, status, enrolled_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`
 
 	_, err = db.ExecContext(ctx, query,
-		entry.Id, entry.ContestId, entry.AgentId, entry.UserId, entry.Status, entry.EnrolledAt,
+		entry.Id, entry.ContestId, entry.AgentId, entry.UserId, entry.SubmissionId, entry.Status, entry.EnrolledAt,
 	)
 	if err != nil {
 		return ClassifyDBError(err)
@@ -354,7 +377,7 @@ func (r *repository) ListContestEntries(ctx context.Context, contestId string) (
 	}
 
 	query := `
-		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.status, ce.enrolled_at,
+		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.submission_id, ce.status, ce.enrolled_at,
 		       a.name, a.game_id, u.username
 		FROM contest_entries ce
 		JOIN agents a ON ce.agent_id = a.id
@@ -373,7 +396,7 @@ func (r *repository) ListContestEntries(ctx context.Context, contestId string) (
 		var entry model.ContestEntry
 		var agentName, gameId, username string
 		if err := rows.Scan(
-			&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.Status, &entry.EnrolledAt,
+			&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.SubmissionId, &entry.Status, &entry.EnrolledAt,
 			&agentName, &gameId, &username,
 		); err != nil {
 			return nil, err
@@ -401,7 +424,7 @@ func (r *repository) GetContestEntry(ctx context.Context, contestId, agentId str
 	}
 
 	query := `
-		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.status, ce.enrolled_at,
+		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.submission_id, ce.status, ce.enrolled_at,
 		       a.name, a.game_id, u.username
 		FROM contest_entries ce
 		JOIN agents a ON ce.agent_id = a.id
@@ -411,7 +434,7 @@ func (r *repository) GetContestEntry(ctx context.Context, contestId, agentId str
 	var entry model.ContestEntry
 	var agentName, gameId, username string
 	err = db.QueryRowContext(ctx, query, contestId, agentId).Scan(
-		&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.Status, &entry.EnrolledAt,
+		&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.SubmissionId, &entry.Status, &entry.EnrolledAt,
 		&agentName, &gameId, &username,
 	)
 	if err != nil {
@@ -433,4 +456,63 @@ func (r *repository) GetContestEntry(ctx context.Context, contestId, agentId str
 	}
 
 	return &entry, nil
+}
+
+func (r *repository) GetContestEntryBySubmission(ctx context.Context, contestId, submissionId string) (*model.ContestEntry, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return nil, err
+	}
+
+	query := `
+		SELECT ce.id, ce.contest_id, ce.agent_id, ce.user_id, ce.submission_id, ce.status, ce.enrolled_at,
+		       a.name, a.game_id, u.username
+		FROM contest_entries ce
+		JOIN agents a ON ce.agent_id = a.id
+		JOIN users u ON ce.user_id = u.id
+		WHERE ce.contest_id = $1 AND ce.submission_id = $2`
+
+	var entry model.ContestEntry
+	var agentName, gameId, username string
+	err = db.QueryRowContext(ctx, query, contestId, submissionId).Scan(
+		&entry.Id, &entry.ContestId, &entry.AgentId, &entry.UserId, &entry.SubmissionId, &entry.Status, &entry.EnrolledAt,
+		&agentName, &gameId, &username,
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, err
+		}
+		return nil, err
+	}
+
+	entry.Agent = &model.Agent{
+		Id:          entry.AgentId,
+		Name:        agentName,
+		GameId:      gameId,
+		OwnerUserId: entry.UserId,
+	}
+	entry.User = &model.User{
+		Id:       entry.UserId,
+		Username: username,
+	}
+
+	return &entry, nil
+}
+
+func (r *repository) UpdateContestStateCAS(ctx context.Context, contestId string, expectedState, newState model.ContestState) (bool, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return false, err
+	}
+
+	query := `UPDATE contests SET state = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND state = $3`
+	res, err := db.ExecContext(ctx, query, string(newState), contestId, string(expectedState))
+	if err != nil {
+		return false, ClassifyDBError(err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
 }

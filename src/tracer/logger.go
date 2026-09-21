@@ -105,6 +105,7 @@ const (
 	actorIDKey      contextKey = "actor_id"
 	jobIDKey        contextKey = "job_id"
 	matchIDKey      contextKey = "match_id"
+	runIDKey        contextKey = "run_id"
 	attemptKey      contextKey = "attempt"
 	requestTraceKey contextKey = "request_trace"
 )
@@ -199,6 +200,17 @@ func WithJobID(ctx context.Context, id string) context.Context {
 
 func WithMatchID(ctx context.Context, id string) context.Context {
 	return context.WithValue(nonNilContext(ctx), matchIDKey, id)
+}
+
+func WithRunID(ctx context.Context, id string) context.Context {
+	return context.WithValue(nonNilContext(ctx), runIDKey, id)
+}
+
+func RunID(ctx context.Context) string {
+	if val, ok := nonNilContext(ctx).Value(runIDKey).(string); ok {
+		return val
+	}
+	return ""
 }
 
 func WithAttempt(ctx context.Context, attempt int) context.Context {
@@ -450,6 +462,7 @@ func contextFields(ctx context.Context) []Field {
 	appendString(actorIDKey)
 	appendString(jobIDKey)
 	appendString(matchIDKey)
+	appendString(runIDKey)
 	if value, ok := ctx.Value(attemptKey).(int); ok && value > 0 {
 		fields = append(fields, Int(string(attemptKey), value))
 	}
@@ -480,7 +493,7 @@ func fieldPriority(key string) int {
 		return 30
 	case "elapsed":
 		return 40
-	case "actor_id", "job_id", "match_id", "attempt":
+	case "actor_id", "job_id", "match_id", "run_id", "attempt":
 		return 80
 	case "request_id":
 		return 90

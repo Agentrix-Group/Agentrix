@@ -203,6 +203,8 @@ Contest:
       type: string
     active:
       type: boolean
+    scoring_policy:
+      $ref: '#/ScoringPolicy'
     created_at:
       type: string
       format: date-time
@@ -305,6 +307,8 @@ Ranking:
       type: string
     score:
       type: integer
+    points:
+      type: integer
     matches_played:
       type: integer
     wins:
@@ -313,9 +317,54 @@ Ranking:
       type: integer
     draws:
       type: integer
+    disqualifications:
+      type: integer
+    tiebreaker_score:
+      type: number
+      format: double
     rank:
       type: integer
     updated_at:
+      type: string
+      format: date-time
+
+ScoringPolicy:
+  type: object
+  properties:
+    win_points:
+      type: integer
+      default: 3
+    draw_points:
+      type: integer
+      default: 1
+    loss_points:
+      type: integer
+      default: 0
+    disqualification_penalty:
+      type: integer
+      default: 0
+    tiebreakers:
+      type: array
+      items:
+        type: string
+        enum: [score_diff, head_to_head, wins, rival_survival]
+
+RankingSnapshot:
+  type: object
+  properties:
+    id:
+      type: string
+    contest_id:
+      type: string
+    version:
+      type: integer
+    snapshot_data:
+      type: array
+      items:
+        $ref: '#/Ranking'
+    published_by:
+      type: string
+    published_at:
       type: string
       format: date-time
 

@@ -40,6 +40,7 @@ type JobQueue interface {
 	Retry(ctx context.Context, job *MatchJob, cause error) error
 	Close() error
 	Len() int
+	GetJobByMatch(ctx context.Context, matchId string) (*MatchJob, error)
 }
 
 type inMemoryJobState struct {
@@ -51,6 +52,7 @@ type inMemoryJobQueue struct {
 	mu           sync.Mutex
 	ch           chan *MatchJob
 	activeJobs   map[string]*inMemoryJobState
+	jobsByMatch  map[string]*MatchJob
 	closed       bool
 	tokenCounter int64
 }
@@ -60,8 +62,9 @@ func NewJobQueue(bufferSize int) JobQueue {
 		bufferSize = 100
 	}
 	return &inMemoryJobQueue{
-		ch:         make(chan *MatchJob, bufferSize),
-		activeJobs: make(map[string]*inMemoryJobState),
+		ch:          make(chan *MatchJob, bufferSize),
+		activeJobs:  make(map[string]*inMemoryJobState),
+		jobsByMatch: make(map[string]*MatchJob),
 	}
 }
 
@@ -74,6 +77,7 @@ func (q *inMemoryJobQueue) Enqueue(ctx context.Context, job *MatchJob) error {
 	if job.RunId == "" {
 		job.RunId = uuid.New().String()
 	}
+	q.jobsByMatch[job.MatchId] = job
 	q.mu.Unlock()
 	select {
 	case <-ctx.Done():
@@ -81,6 +85,17 @@ func (q *inMemoryJobQueue) Enqueue(ctx context.Context, job *MatchJob) error {
 	case q.ch <- job:
 		return nil
 	}
+}
+
+func (q *inMemoryJobQueue) GetJobByMatch(ctx context.Context, matchId string) (*MatchJob, error) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	job, ok := q.jobsByMatch[matchId]
+	if !ok {
+		return nil, ErrQueueEmpty
+	}
+	jobCopy := *job
+	return &jobCopy, nil
 }
 
 func (q *inMemoryJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
@@ -188,9 +203,56 @@ func (q *postgresJobQueue) Enqueue(ctx context.Context, job *MatchJob) error {
 			id, match_id, run_id, contest_id, game_id, submission_ids, seed,
 			status, attempt, max_attempts, fencing_token, lease_until, available_at, created_at, updated_at
 		) VALUES ($1, $2, $3, NULLIF($4, ''), $5, $6::jsonb, $7, 'pending', 0, 3, 0, NOW() + INTERVAL '2 minutes', NOW(), NOW(), NOW())
-		ON CONFLICT (id) DO NOTHING
+		ON CONFLICT (match_id) DO UPDATE
+		SET id = EXCLUDED.id,
+			run_id = EXCLUDED.run_id,
+			status = 'pending',
+			attempt = 0,
+			available_at = NOW(),
+			lease_until = NOW() + INTERVAL '2 minutes',
+			reserved_at = NULL,
+			reserved_by = NULL,
+			last_error = NULL,
+			updated_at = NOW()
+		WHERE match_jobs.status IN ('completed', 'failed')
 	`, job.JobId, job.MatchId, job.RunId, job.ContestId, job.GameId, string(submissions), job.Seed)
 	return err
+}
+
+func (q *postgresJobQueue) GetJobByMatch(ctx context.Context, matchId string) (*MatchJob, error) {
+	if q.closed.Load() {
+		return nil, errors.New("queue is closed")
+	}
+	var job MatchJob
+	var submissions []byte
+	var runID sql.NullString
+	var leaseUntil sql.NullTime
+	var status string
+	err := q.db.QueryRowContext(ctx, `
+		SELECT id, match_id, COALESCE(contest_id, ''), game_id, submission_ids, seed, attempt, run_id, fencing_token, lease_until, status
+		FROM match_jobs
+		WHERE match_id = $1
+	`, matchId).Scan(
+		&job.JobId, &job.MatchId, &job.ContestId, &job.GameId,
+		&submissions, &job.Seed, &job.Attempt, &runID, &job.FencingToken, &leaseUntil, &status,
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrQueueEmpty
+	}
+	if err != nil {
+		return nil, err
+	}
+	if runID.Valid && runID.String != "" {
+		job.RunId = runID.String
+	}
+	if leaseUntil.Valid {
+		job.LeaseUntil = leaseUntil.Time
+	}
+	if len(submissions) > 0 {
+		_ = json.Unmarshal(submissions, &job.SubmissionIds)
+	}
+	q.enrichJobFromRun(ctx, &job)
+	return &job, nil
 }
 
 func (q *postgresJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
@@ -245,7 +307,34 @@ func (q *postgresJobQueue) Dequeue(ctx context.Context) (*MatchJob, error) {
 	if err := json.Unmarshal(submissions, &job.SubmissionIds); err != nil {
 		return nil, err
 	}
+	q.enrichJobFromRun(ctx, &job)
 	return &job, nil
+}
+
+func (q *postgresJobQueue) enrichJobFromRun(ctx context.Context, job *MatchJob) {
+	if job == nil || job.RunId == "" {
+		return
+	}
+	var rawSpec sql.NullString
+	_ = q.db.QueryRowContext(ctx, `SELECT COALESCE(execution_spec::text, '') FROM match_runs WHERE id = $1`, job.RunId).Scan(&rawSpec)
+	if rawSpec.Valid && rawSpec.String != "" {
+		var spec struct {
+			GameVersion  string `json:"game_version"`
+			EngineDigest string `json:"engine_digest"`
+			ConfigHash   string `json:"config_hash"`
+		}
+		if err := json.Unmarshal([]byte(rawSpec.String), &spec); err == nil {
+			if job.GameVersion == "" {
+				job.GameVersion = spec.GameVersion
+			}
+			if job.EngineDigest == "" {
+				job.EngineDigest = spec.EngineDigest
+			}
+			if job.ConfigHash == "" {
+				job.ConfigHash = spec.ConfigHash
+			}
+		}
+	}
 }
 
 func (q *postgresJobQueue) RenewLease(ctx context.Context, job *MatchJob) error {
@@ -266,6 +355,9 @@ func (q *postgresJobQueue) RenewLease(ctx context.Context, job *MatchJob) error 
 		return errors.New("match job lease lost or fencing token expired")
 	}
 	job.LeaseUntil = time.Now().Add(2 * time.Minute)
+	if job.RunId != "" {
+		_, _ = q.db.ExecContext(ctx, `UPDATE match_runs SET heartbeat_at = NOW() WHERE id = $1`, job.RunId)
+	}
 	tracer.RecordLeaseRenewal()
 	return nil
 }

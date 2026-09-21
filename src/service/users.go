@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"crypto/sha512"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/Agentrix-Group/Agentrix/src/auth"
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
@@ -36,6 +35,7 @@ type UserService interface {
 	UpdateUser(ctx context.Context, user *model.User) error
 	ActivateUser(ctx context.Context, id string, isActive bool) error
 	HasPermission(ctx context.Context, userId, permission string) (bool, error)
+	GetUserCapabilities(ctx context.Context, userId string) ([]string, error)
 }
 
 func isValidUsername(u string) bool {
@@ -76,9 +76,18 @@ func (s *service) Login(ctx context.Context, username, password string) (*model.
 		return nil, ErrAccountInactive
 	}
 
-	hashedPassword := hashPassword(password)
-	if u.Password != hashedPassword {
+	match, needsRehash, err := auth.VerifyPassword(password, u.Password)
+	if err != nil || !match {
 		return nil, ErrInvalidCredentials
+	}
+
+	// Lazy rehash: upgrade legacy SHA-512 or old-params to target Argon2id
+	if needsRehash {
+		newHash, err := auth.HashPassword(password)
+		if err == nil {
+			_ = s.repo.UpdateUserPassword(ctx, u.Id, newHash)
+			u.Password = newHash
+		}
 	}
 
 	return u, nil
@@ -121,7 +130,11 @@ func (s *service) Register(ctx context.Context, user *model.User) error {
 	// Force default participant role on self-registration to prevent privilege escalation
 	user.RoleId = common.RoleParticipant
 
-	user.Password = hashPassword(user.Password)
+	hashedPassword, err := auth.HashPassword(user.Password)
+	if err != nil {
+		return ErrInvalidPassword
+	}
+	user.Password = hashedPassword
 	user.Active = true
 	user.CreatedAt = time.Now().UTC()
 
@@ -203,24 +216,35 @@ func (s *service) HasPermission(ctx context.Context, userId, permission string) 
 		return false, nil
 	}
 
-	perms, ok := globalPermCache.get(user.RoleId)
-	if !ok {
-		permList, err := s.repo.GetRolePermissions(ctx, user.RoleId)
-		if err != nil {
-			// Fallback directly to repo check
-			return s.repo.HasPermission(ctx, userId, permission)
-		}
-		perms = make(map[string]bool, len(permList))
-		for _, p := range permList {
-			perms[p] = true
-		}
-		globalPermCache.set(user.RoleId, perms)
+	roles := user.Roles
+	if len(roles) == 0 && user.RoleId != "" {
+		roles = []string{user.RoleId}
 	}
 
-	return perms[permission] || perms[common.AdminPermission], nil
+	for _, roleId := range roles {
+		perms, ok := globalPermCache.get(roleId)
+		if !ok {
+			permList, err := s.repo.GetRolePermissions(ctx, roleId)
+			if err != nil {
+				// Fallback directly to repo check
+				return s.repo.HasPermission(ctx, userId, permission)
+			}
+			perms = make(map[string]bool, len(permList))
+			for _, p := range permList {
+				perms[p] = true
+			}
+			globalPermCache.set(roleId, perms)
+		}
+
+		if perms[permission] || perms[common.AdminPermission] {
+			return true, nil
+		}
+	}
+
+	return s.repo.HasPermission(ctx, userId, permission)
 }
 
-func hashPassword(password string) string {
-	return fmt.Sprintf("%x", sha512.Sum512([]byte(password)))
+func (s *service) GetUserCapabilities(ctx context.Context, userId string) ([]string, error) {
+	return s.repo.GetUserEffectivePermissions(ctx, userId)
 }
 

@@ -3,12 +3,14 @@ package server
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/service"
 	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/gorilla/mux"
 )
@@ -76,26 +78,45 @@ func (s *Server) createMatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := s.Service.CreateMatch(ctx, &match, req.SubmissionIds); err != nil {
+	resp, err := s.Service.CreateMatch(ctx, &match, req.SubmissionIds)
+	if err != nil {
 		tracer.FailRequest(ctx, tracer.ScopeDatabase, "match.create.failed", "No se pudo crear la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
 
-	common.WriteSuccessResponse(w, http.StatusCreated, fmt.Sprintf("Match %s scheduled successfully", match.Id))
+	common.WriteObjectResponse(w, http.StatusCreated, resp)
 }
 
 func (s *Server) runMatch(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := mux.Vars(r)["id"]
+	idempotencyKey := r.Header.Get("Idempotency-Key")
 
-	if err := s.Service.RunMatch(ctx, id); err != nil {
+	resp, err := s.Service.RunMatch(ctx, id, idempotencyKey)
+	if err != nil {
+		if errors.Is(err, service.ErrMatchNotFound) {
+			common.WriteErrorMessage(w, common.NOT_FOUND_ERROR, "Match not found")
+			return
+		}
+		if errors.Is(err, service.ErrInvalidMatchState) || errors.Is(err, service.ErrActiveMatchCannotRerun) {
+			common.WriteErrorMessage(w, common.ALREADY_EXISTS_ERROR, err.Error())
+			return
+		}
+		if errors.Is(err, service.ErrInvalidSubmissions) {
+			common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+			return
+		}
 		tracer.FailRequest(ctx, tracer.ScopeQueue, "match.enqueue.failed", "No se pudo encolar la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)
 		return
 	}
 
-	common.WriteSuccessResponse(w, http.StatusAccepted, fmt.Sprintf("Match %s queued for execution", id))
+	statusCode := http.StatusAccepted
+	if resp.HttpStatusCode != 0 {
+		statusCode = resp.HttpStatusCode
+	}
+	common.WriteObjectResponse(w, statusCode, resp)
 }
 
 func (s *Server) updateMatch(w http.ResponseWriter, r *http.Request) {

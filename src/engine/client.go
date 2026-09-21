@@ -15,6 +15,7 @@ type StartConfig struct {
 	StderrLimitBytes int           // Default: 65536 (64 KB)
 	HandshakeTimeout time.Duration // Default: 5 seconds
 	ShutdownTimeout  time.Duration // Default: 3 seconds
+	ExpectedDigest   string        // If non-empty, binary SHA256 must match
 }
 
 // EngineClient provides a lifecycle-oriented interface for communicating with external game engines.
@@ -33,4 +34,10 @@ type EngineClient interface {
 
 	// Close requests a graceful shutdown (sending 'shutdown') and cleans up OS process resources.
 	Close(ctx context.Context) error
+
+	// EngineVersion returns the version reported by the engine during handshake.
+	EngineVersion() string
+
+	// EngineDigest returns the SHA256 hex digest of the engine executable binary.
+	EngineDigest() string
 }

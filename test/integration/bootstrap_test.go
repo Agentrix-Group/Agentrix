@@ -128,11 +128,11 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 		for _, e := range entries {
 			if e.AgentId == "agent-star-hunter" {
 				foundHunter = true
-				r.Equal("enrolled", e.Status)
+				r.Equal(model.ContestEntryStatusEnrolled, e.Status)
 			}
 			if e.AgentId == "agent-star-evasive" {
 				foundEvasive = true
-				r.Equal("enrolled", e.Status)
+				r.Equal(model.ContestEntryStatusEnrolled, e.Status)
 			}
 		}
 		r.True(foundHunter && foundEvasive, "Both StarHunter and StarEvasive must be enrolled")

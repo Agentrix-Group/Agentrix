@@ -382,6 +382,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	currentTick := 0
 	lastStateHash := initRes.StateHash
 	terminationReason := ""
+	// Motivo de fin que informa el motor en el frame terminal
+	// ("eliminated" o "tick_limit").
+	engineTerminalReason := ""
 	// Slots descalificados durante la partida: el motor elimina su nave en el
 	// tick de la descalificación (ADR-0013) y su resultado se registra como
 	// "disqualified".
@@ -442,6 +445,11 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		isOver = tickRes.IsOver
 		if tickRes.Winner != "" {
 			winner = tickRes.Winner
+		} else if w, ok := tickRes.Result["winner"].(string); ok && w != "" {
+			winner = w
+		}
+		if reason, ok := tickRes.Result["terminalReason"].(string); ok && tickRes.IsOver {
+			engineTerminalReason = reason
 		}
 
 		// El motor resuelve la descalificación: elimina la nave y decide si
@@ -467,10 +475,19 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		return executionErr
 	}
 
+	// Una partida que el motor terminó por eliminación es "eliminated" aunque
+	// no haya ganador único (p. ej. los dos últimos caen en el mismo tick).
+	// Antes solo se miraba un ganador que el motor nunca envía en ese campo,
+	// y toda eliminación quedaba registrada como "score_limit".
+	// El motivo del motor manda: al agotar los ticks también informa un
+	// ganador (el de más salud) y eso no es una eliminación.
 	finishReason := "score_limit"
-	if terminationReason != "" {
+	switch {
+	case terminationReason != "":
 		finishReason = terminationReason
-	} else if winner != "" {
+	case engineTerminalReason == "eliminated":
+		finishReason = "eliminated"
+	case engineTerminalReason == "" && winner != "":
 		finishReason = "eliminated"
 	}
 

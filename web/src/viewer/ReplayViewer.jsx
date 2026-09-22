@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
 import { formatNumber } from '../i18n/formatters.js';
-import { drawStarfighterArena, PLAYER_COLORS } from '../renderers/starfighter/canvasRenderer.js';
+import { drawStarfighterArena, fighterSlot, slotColor } from '../renderers/starfighter/canvasRenderer.js';
 import { parseReplayNDJSON, parseReplayAsync, computeSha256 } from './replayParser.js';
 
 export { parseReplayNDJSON, parseReplayAsync, computeSha256 };
@@ -321,10 +321,13 @@ export function ReplayViewer({ replayId, onBrowseMatches, expectedSha256 = null 
             <h3><Swords size={18} /> {t('viewer:agentsTitle')}</h3>
             <div className="fighter-list">
               {fighters.map((fighter, index) => (
-                <article className="fighter-card" key={fighter.playerId || index}>
-                  <span className="fighter-dot" style={{ background: PLAYER_COLORS[index % PLAYER_COLORS.length] }} />
+                <article className="fighter-card" key={fighterSlot(fighter) || index}>
+                  <span
+                    className="fighter-dot"
+                    style={{ background: slotColor(fighterSlot(fighter), replay?.metadata?.participants, index) }}
+                  />
                   <div>
-                    <strong>{fighter.playerId}</strong>
+                    <strong>{fighterSlot(fighter)}</strong>
                     <span>{t('viewer:health', { value: Math.round(fighter.health) })}</span>
                   </div>
                   {fighter.shieldActive && <Shield size={18} aria-label={t('viewer:shieldActive')} />}

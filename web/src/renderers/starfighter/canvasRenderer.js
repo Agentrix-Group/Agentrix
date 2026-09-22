@@ -1,4 +1,30 @@
-export const PLAYER_COLORS = ['#2f8aa6', '#e07a67'];
+// Un color fijo por slot, en el orden de `metadata.participants` (2 a 5
+// jugadores, ADR-0013). Los dos primeros son los del duelo original.
+export const PLAYER_COLORS = ['#2f8aa6', '#e07a67', '#9c7ad8', '#e0b347', '#5bb37a'];
+
+/** Identificador de slot de una nave del snapshot público. */
+export function fighterSlot(fighter = {}) {
+  return fighter.slot ?? fighter.playerId ?? fighter.id;
+}
+
+/**
+ * Color de un slot según su posición en los participantes del replay. No
+ * depende del orden de las naves vivas, así que no cambia cuando una muere.
+ */
+export function slotColor(slot, participants = [], fallbackIndex = 0) {
+  const position = participants.indexOf(slot);
+  const index = position >= 0 ? position : fallbackIndex;
+  return PLAYER_COLORS[index % PLAYER_COLORS.length];
+}
+
+/**
+ * Ángulo de canvas para el casco, que se dibuja con la nariz en +X local.
+ * El motor usa rotación θ con la nariz en (−sin θ, cos θ), es decir a θ + π/2
+ * del eje +X del mundo; el canvas invierte Y, así que el ángulo se niega.
+ */
+export function canvasHeading(rotation) {
+  return -(Number(rotation) + Math.PI / 2);
+}
 export const WORLD_WIDTH = 2000;
 export const WORLD_HEIGHT = 1000;
 
@@ -67,10 +93,12 @@ export function drawStarfighterArena(canvas, frame, arenaConfig = {}) {
 
   // Ships / fighters
   const fighters = snapshot.fighters || snapshot.entities || [];
+  const participants = arenaConfig.participants || [];
   fighters.forEach((fighter, index) => {
     const point = project(fighter.position || fighter);
     const rotation = Number(fighter.rotation ?? fighter.rot ?? 0);
-    const color = PLAYER_COLORS[index % PLAYER_COLORS.length];
+    const slot = fighterSlot(fighter);
+    const color = slotColor(slot, participants, index);
     const isShieldActive = Boolean(fighter.shieldActive ?? fighter.shield);
 
     // Energy Shield effect
@@ -87,7 +115,7 @@ export function drawStarfighterArena(canvas, frame, arenaConfig = {}) {
     // Ship hull
     ctx.save();
     ctx.translate(point.x, point.y);
-    ctx.rotate(rotation);
+    ctx.rotate(canvasHeading(rotation));
     ctx.fillStyle = color;
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
@@ -112,7 +140,7 @@ export function drawStarfighterArena(canvas, frame, arenaConfig = {}) {
     ctx.fillStyle = '#e6f7ff';
     ctx.font = '600 11px Inter, system-ui, sans-serif';
     ctx.textAlign = 'center';
-    const label = String(fighter.playerId || fighter.id || `P${index + 1}`).slice(0, 12);
+    const label = String(slot || `P${index + 1}`).slice(0, 12);
     ctx.fillText(label, point.x, point.y - 35);
   });
 }

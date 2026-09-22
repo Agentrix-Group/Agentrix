@@ -29,6 +29,188 @@ web React ──HTTP──> API Go ──> PostgreSQL / artifacts
 
 Go conserva las acciones y percepciones específicas del juego como JSON opaco. Rust valida esas acciones, ejecuta las reglas, produce percepciones privadas y emite el snapshot público y el resultado autoritativos.
 
+## Modelo relacional de base de datos
+
+El esquema relacional en PostgreSQL modela el ciclo de vida completo de la plataforma: control de accesos (RBAC), torneos, bots y versiones, cola de orquestación autoritativa, resultados y clasificaciones deterministas:
+
+```mermaid
+erDiagram
+    ROLES {
+        string id PK
+        string description
+        boolean active
+    }
+    PERMISSIONS {
+        string id PK
+        string description
+        boolean active
+    }
+    ROLE_PERMISSIONS {
+        string role_id FK
+        string permission_id FK
+        boolean active
+    }
+    USERS {
+        string id PK
+        string username UK
+        string email UK
+        string password
+        string role_id FK
+        boolean active
+    }
+    USER_ROLES {
+        string user_id FK
+        string role_id FK
+    }
+    SESSIONS {
+        string id PK
+        string user_id FK
+        string token_hash UK
+        boolean is_revoked
+    }
+    GAMES {
+        string id PK
+        string name
+        string manifest_path
+        int min_players
+        int max_players
+    }
+    CATEGORIES {
+        string id PK
+        string description
+        boolean active
+    }
+    CONTESTS {
+        string id PK
+        string game_id FK
+        string category_id FK
+        string state
+        string status
+    }
+    AGENTS {
+        string id PK
+        string owner_user_id FK
+        string game_id FK
+        string name
+    }
+    SUBMISSIONS {
+        string id PK
+        string agent_id FK
+        int version
+        string code_path
+        string status
+    }
+    CONTEST_ENTRIES {
+        string id PK
+        string contest_id FK
+        string agent_id FK
+        string user_id FK
+        string submission_id FK
+        string status
+    }
+    MATCHES {
+        string id PK
+        string contest_id FK
+        string game_id FK
+        string committed_run_id FK
+        string status
+        bigint seed
+    }
+    MATCH_SLOTS {
+        string id PK
+        string match_id FK
+        int slot_index
+        string contest_entry_id FK
+        string submission_id FK
+    }
+    MATCH_JOBS {
+        string id PK
+        string match_id FK
+        string status
+        bigint fencing_token
+    }
+    MATCH_RUNS {
+        string id PK
+        string match_id FK
+        string worker_id
+        string status
+        int attempt
+    }
+    RESULTS {
+        string id PK
+        string match_id FK
+        string match_run_id FK
+        string submission_id FK
+        int score
+        int rank
+    }
+    REPLAYS {
+        string id PK
+        string match_id FK
+        string match_run_id FK
+        string file_path
+        int duration_ticks
+    }
+    RANKINGS {
+        string id PK
+        string contest_id FK
+        string agent_id FK
+        string user_id FK
+        int score
+        int points
+        int rank
+    }
+    CONTEST_RANKINGS_SNAPSHOTS {
+        string id PK
+        string contest_id FK
+        int version
+        string published_by FK
+    }
+
+    ROLES ||--o{ ROLE_PERMISSIONS : "asigna"
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "contiene"
+    ROLES ||--o{ USERS : "rol_principal"
+    USERS ||--o{ USER_ROLES : "tiene"
+    ROLES ||--o{ USER_ROLES : "asigna"
+    USERS ||--o{ SESSIONS : "inicia"
+
+    GAMES ||--o{ CONTESTS : "define_juego"
+    CATEGORIES ||--o{ CONTESTS : "clasifica"
+
+    USERS ||--o{ AGENTS : "es_propietario"
+    GAMES ||--o{ AGENTS : "valido_para"
+    AGENTS ||--o{ SUBMISSIONS : "versiona"
+
+    CONTESTS ||--o{ CONTEST_ENTRIES : "inscribe"
+    AGENTS ||--o{ CONTEST_ENTRIES : "participa"
+    USERS ||--o{ CONTEST_ENTRIES : "autoriza"
+    SUBMISSIONS ||--o{ CONTEST_ENTRIES : "bloquea_version"
+
+    CONTESTS ||--o{ MATCHES : "programa"
+    GAMES ||--o{ MATCHES : "reglas_motor"
+
+    MATCHES ||--o{ MATCH_SLOTS : "asigna_slots"
+    SUBMISSIONS ||--o{ MATCH_SLOTS : "ejecuta_codigo"
+    CONTEST_ENTRIES ||--o{ MATCH_SLOTS : "origen_inscripcion"
+
+    MATCHES ||--o{ MATCH_JOBS : "encola_trabajo"
+    MATCHES ||--o{ MATCH_RUNS : "ejecuta_intento"
+
+    MATCHES ||--o{ RESULTS : "produce"
+    MATCH_RUNS ||--o{ RESULTS : "certifica"
+    SUBMISSIONS ||--o{ RESULTS : "puntua"
+
+    MATCHES ||--o{ REPLAYS : "graba_evento"
+    MATCH_RUNS ||--o{ REPLAYS : "asocia_traza"
+
+    CONTESTS ||--o{ RANKINGS : "computa_posicion"
+    AGENTS ||--o{ RANKINGS : "posiciona_bot"
+    USERS ||--o{ RANKINGS : "atribuye_usuario"
+    CONTESTS ||--o{ CONTEST_RANKINGS_SNAPSHOTS : "publica_version"
+```
+
+Los scripts modulares de definición se encuentran organizados en [`db/database/`](db/database/) y las semillas canónicas en [`db/data/`](db/data/).
+
 ## Requisitos de desarrollo
 
 - Go según `go.mod` (actualmente 1.25).

@@ -1,6 +1,6 @@
 # Bots de referencia de Starfighter
 
-Esta carpeta contiene tres estrategias de referencia escritas como scripts de
+Esta carpeta contiene cuatro estrategias de referencia escritas como scripts de
 Python 3. Hablan el protocolo JSON Lines `init` / `perception` / `action` /
 `end` por `stdin/stdout` y solo usan la biblioteca estándar.
 
@@ -10,6 +10,14 @@ Python 3. Hablan el protocolo JSON Lines `init` / `perception` / `action` /
   cuando lo detecta en el radar.
 - `bot_evasive.py`: se aleja y activa el escudo ante peligro; en otro caso
   conserva inercia y recupera energía.
+- `bot_ace.py`: pensado para partidas de 2 a 5 naves todos contra todos
+  (ADR-0013). Esquiva las balas enemigas que van a pasarle cerca, levanta el
+  escudo solo ante un impacto inminente y, si no hay amenaza, ataca: elige el
+  blanco más cercano (prefiriendo naves dañadas), apunta al punto de
+  intercepción y mantiene una distancia preferida. Cada copia varía levemente
+  su estilo según el id de su slot. No ve asteroides: la percepción no los
+  incluye. `make db-bootstrap` ejecuta con cinco copias la partida de demo
+  `match-star-ffa-demo-001`.
 
 El manifiesto actual de Starfighter usa `bot_hunter.py` o `bot_evasive.py`
 como participantes de respaldo cuando una partida programada no tiene una de

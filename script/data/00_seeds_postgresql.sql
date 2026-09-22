@@ -75,11 +75,15 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, state = EXCLUDED.state, act
 -- Seed default users (with SHA-512 hashed passwords)
 -- admin: admin123 (7fcf4ba391c48784edde599889d6e3f1e47a27db36ecc050cc92f259bfac38afad2c68a1ae804d77075e8fb722503f3eca2b2c1006ee6f6c7b7628cb45fffd1d)
 -- pilot_alpha: pilot123 (5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27)
+-- pilot_gamma, pilot_delta, pilot_epsilon: pilot123 (dueños de los bots Ace, ADR-0013)
 -- pilot_beta: pilot123 (5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27)
 INSERT INTO users (id, username, email, password, role_id, active) VALUES
 ('usr-admin-001', 'admin', 'admin@agentrix.local', '7fcf4ba391c48784edde599889d6e3f1e47a27db36ecc050cc92f259bfac38afad2c68a1ae804d77075e8fb722503f3eca2b2c1006ee6f6c7b7628cb45fffd1d', 'admin', TRUE),
 ('usr-pilot-001', 'pilot_alpha', 'pilot_alpha@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE),
-('usr-pilot-002', 'pilot_beta', 'pilot_beta@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE)
+('usr-pilot-002', 'pilot_beta', 'pilot_beta@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE),
+('usr-pilot-003', 'pilot_gamma', 'pilot_gamma@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE),
+('usr-pilot-004', 'pilot_delta', 'pilot_delta@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE),
+('usr-pilot-005', 'pilot_epsilon', 'pilot_epsilon@agentrix.local', '5047300a58f3abe4458de0b0eb4316a1dcad86db8683ebcfb3ccbd096a28dd71c1324759698b3126c16e4b993fc5d84de58ecd937edc37c6bb8ab0cfefb57e27', 'player', TRUE)
 ON CONFLICT (username) DO UPDATE SET role_id = EXCLUDED.role_id, password = EXCLUDED.password, active = EXCLUDED.active;
 
 -- Seed User Roles (RBAC mapping)
@@ -89,18 +93,31 @@ UNION ALL
 SELECT id, 'player' FROM users WHERE username = 'pilot_alpha'
 UNION ALL
 SELECT id, 'player' FROM users WHERE username = 'pilot_beta'
+UNION ALL
+SELECT id, 'player' FROM users WHERE username IN ('pilot_gamma', 'pilot_delta', 'pilot_epsilon')
 ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- Seed Demo Agents
 INSERT INTO agents (id, owner_user_id, game_id, name, description, active) VALUES
 ('agent-star-hunter', 'usr-pilot-001', 'starfighter', 'StarHunter', 'Aggressive hunter bot targeting opponent starfighter', TRUE),
-('agent-star-evasive', 'usr-pilot-002', 'starfighter', 'StarEvasive', 'Defensive evasive bot focused on survival maneuvers', TRUE)
+('agent-star-evasive', 'usr-pilot-002', 'starfighter', 'StarEvasive', 'Defensive evasive bot focused on survival maneuvers', TRUE),
+-- Bots Ace: atacan y evaden (bot_ace.py) para la demo todos contra todos.
+('agent-star-ace-1', 'usr-pilot-001', 'starfighter', 'Ace Alpha', 'Free-for-all bot: leads its shots and dodges incoming bullets', TRUE),
+('agent-star-ace-2', 'usr-pilot-002', 'starfighter', 'Ace Beta', 'Free-for-all bot: leads its shots and dodges incoming bullets', TRUE),
+('agent-star-ace-3', 'usr-pilot-003', 'starfighter', 'Ace Gamma', 'Free-for-all bot: leads its shots and dodges incoming bullets', TRUE),
+('agent-star-ace-4', 'usr-pilot-004', 'starfighter', 'Ace Delta', 'Free-for-all bot: leads its shots and dodges incoming bullets', TRUE),
+('agent-star-ace-5', 'usr-pilot-005', 'starfighter', 'Ace Epsilon', 'Free-for-all bot: leads its shots and dodges incoming bullets', TRUE)
 ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, description = EXCLUDED.description, active = EXCLUDED.active;
 
 -- Seed Demo Submissions
 INSERT INTO submissions (id, agent_id, version, code_path, language, status, active) VALUES
 ('sub-star-hunter-1', 'agent-star-hunter', 1, 'games/starfighter/examples/bot_random.py', 'python', 'ready', TRUE),
-('sub-star-evasive-1', 'agent-star-evasive', 1, 'games/starfighter/examples/bot_evasive.py', 'python', 'ready', TRUE)
+('sub-star-evasive-1', 'agent-star-evasive', 1, 'games/starfighter/examples/bot_evasive.py', 'python', 'ready', TRUE),
+('sub-star-ace-1', 'agent-star-ace-1', 1, 'games/starfighter/examples/bot_ace.py', 'python', 'ready', TRUE),
+('sub-star-ace-2', 'agent-star-ace-2', 1, 'games/starfighter/examples/bot_ace.py', 'python', 'ready', TRUE),
+('sub-star-ace-3', 'agent-star-ace-3', 1, 'games/starfighter/examples/bot_ace.py', 'python', 'ready', TRUE),
+('sub-star-ace-4', 'agent-star-ace-4', 1, 'games/starfighter/examples/bot_ace.py', 'python', 'ready', TRUE),
+('sub-star-ace-5', 'agent-star-ace-5', 1, 'games/starfighter/examples/bot_ace.py', 'python', 'ready', TRUE)
 ON CONFLICT (id) DO UPDATE SET status = EXCLUDED.status, active = EXCLUDED.active;
 
 -- Seed Contest Entries (locking specific submission_id)

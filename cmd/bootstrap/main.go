@@ -108,6 +108,23 @@ func main() {
 			ManifestName: "StarEvasive",
 		},
 	}
+	// Cinco bots Ace (atacan y evaden) para la demo todos contra todos
+	// de ADR-0013.
+	for i, name := range aceNames {
+		bots = append(bots, struct {
+			AgentID      string
+			SubmissionID string
+			BotFile      string
+			FallbackSrc  string
+			ManifestName string
+		}{
+			AgentID:      fmt.Sprintf("agent-star-ace-%d", i+1),
+			SubmissionID: fmt.Sprintf("sub-star-ace-%d", i+1),
+			BotFile:      "./games/starfighter/examples/bot_ace.py",
+			FallbackSrc:  `import sys, json` + "\n" + `def act(state): return {"thrust": 1.0, "steer": 0.0, "fire": True}` + "\n",
+			ManifestName: name,
+		})
+	}
 
 	for _, b := range bots {
 		botCode, err := os.ReadFile(b.BotFile)
@@ -280,6 +297,13 @@ func main() {
 		}
 	}
 
+	// 5b. Free-for-all demo match: five Ace bots, everyone against everyone.
+	fmt.Println("🌌 Step 5b: Executing 5-ship free-for-all demo match (Ace bots)...")
+	if err := runFreeForAllDemo(ctx, conn, artifacts); err != nil {
+		fmt.Fprintf(os.Stderr, "❌ Free-for-all demo match failed: %v\n", err)
+		os.Exit(1)
+	}
+
 	// 6. Optionally queue a live match in PostgreSQL queue for worker
 	if queueMatch {
 		fmt.Println("⚡ Step 6: Queuing live match in authoritative PostgreSQL queue...")
@@ -313,7 +337,91 @@ func main() {
 	fmt.Println("  👑 Admin:     admin / admin123")
 	fmt.Println("  🚀 Pilot 1:   pilot_alpha / pilot123 (Bot: StarHunter)")
 	fmt.Println("  🚀 Pilot 2:   pilot_beta / pilot123  (Bot: StarEvasive)")
+	fmt.Println("  🚀 Pilots 3-5: pilot_gamma, pilot_delta, pilot_epsilon / pilot123")
+	fmt.Printf("  🌌 FFA demo:  %s (5 Ace bots, everyone against everyone)\n", ffaDemoMatchID)
 	fmt.Println("  🏆 Contest:   starfighter-cup-2026")
 	fmt.Println("  🎮 Game:      starfighter")
 	fmt.Println("==================================================")
+}
+
+// aceNames son los agentes Ace sembrados en 00_seeds_postgresql.sql.
+var aceNames = []string{"Ace Alpha", "Ace Beta", "Ace Gamma", "Ace Delta", "Ace Epsilon"}
+
+const ffaDemoMatchID = "match-star-ffa-demo-001"
+
+// runFreeForAllDemo ejecuta con el motor real una partida amistosa de los
+// cinco bots Ace (ADR-0013). Con estos slots y la semilla 1 termina por
+// eliminación a los 663 ticks (~11 s); la personalidad de cada Ace depende
+// del id de su slot, así que no es la misma partida del test
+// TestReferenceBots_FiveAcesFightToElimination. Es idempotente: una partida
+// ya terminada no se vuelve a ejecutar.
+func runFreeForAllDemo(ctx context.Context, conn *connection.Connection, artifacts connection.ArtifactStore) error {
+	const (
+		runID  = "run-star-ffa-demo-001"
+		jobID  = "job-star-ffa-demo-001"
+		gameID = "starfighter"
+		seed   = 1
+	)
+	var status string
+	var committed sql.NullString
+	err := conn.Db.QueryRowContext(ctx, "SELECT status, committed_run_id FROM matches WHERE id = $1", ffaDemoMatchID).Scan(&status, &committed)
+	if err == nil && status == "finished" && committed.Valid {
+		fmt.Printf("   FFA demo match %s already finished (run %s). Idempotent skip.\n", ffaDemoMatchID, committed.String)
+		return nil
+	}
+
+	gamesDir := "./games"
+	if _, err := os.Stat(gamesDir); err != nil {
+		gamesDir = "../../games"
+	}
+	_ = game.GetRegistry().LoadGamesFromDir(gamesDir)
+	if manifest := game.GetRegistry().GetManifest(gameID); manifest != nil && manifest.BinaryPath == "" {
+		manifest.BinaryPath = "bin/starfighter-engine"
+	}
+
+	if _, err := conn.Db.ExecContext(ctx, `
+		INSERT INTO matches (id, contest_id, game_id, status, seed, active, created_at)
+		VALUES ($1, NULL, $2, 'scheduled', $3, TRUE, NOW())
+		ON CONFLICT (id) DO UPDATE SET status = 'scheduled', active = TRUE;
+	`, ffaDemoMatchID, gameID, seed); err != nil {
+		return fmt.Errorf("create FFA demo match: %w", err)
+	}
+	submissionIDs := make([]string, len(aceNames))
+	for i, name := range aceNames {
+		submissionIDs[i] = fmt.Sprintf("sub-star-ace-%d", i+1)
+		if _, err := conn.Db.ExecContext(ctx, `
+			INSERT INTO match_slots (id, match_id, slot_index, submission_id, agent_name, username, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, NOW())
+			ON CONFLICT (id) DO NOTHING;
+		`, fmt.Sprintf("slot-ffa-demo-%d", i+1), ffaDemoMatchID, i, submissionIDs[i], name,
+			[]string{"pilot_alpha", "pilot_beta", "pilot_gamma", "pilot_delta", "pilot_epsilon"}[i]); err != nil {
+			return fmt.Errorf("create FFA demo slot %d: %w", i+1, err)
+		}
+	}
+	if _, err := conn.Db.ExecContext(ctx, `
+		INSERT INTO match_jobs (id, match_id, contest_id, game_id, status, fencing_token, available_at)
+		VALUES ($1, $2, NULL, $3, 'reserved', 1, NOW())
+		ON CONFLICT (id) DO UPDATE SET status = 'reserved', fencing_token = 1;
+	`, jobID, ffaDemoMatchID, gameID); err != nil {
+		return fmt.Errorf("reserve FFA demo job: %w", err)
+	}
+
+	repo := repository.NewRepository(conn)
+	queue := connection.NewJobQueue(10)
+	sandbox := executor.NewSandbox(0)
+	svc := service.NewService(repo, artifacts, queue, sandbox)
+	exec := executor.NewMatchExecutor(svc, sandbox)
+	if err := exec.Execute(ctx, &connection.MatchJob{
+		JobId:         jobID,
+		RunId:         runID,
+		MatchId:       ffaDemoMatchID,
+		GameId:        gameID,
+		SubmissionIds: submissionIDs,
+		Seed:          seed,
+		FencingToken:  1,
+	}); err != nil {
+		return err
+	}
+	fmt.Printf("   FFA demo match %s executed: open it in the replay viewer.\n", ffaDemoMatchID)
+	return nil
 }

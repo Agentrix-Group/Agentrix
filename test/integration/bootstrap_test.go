@@ -231,7 +231,8 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 	r.NoError(conn.Db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount))
 	r.NoError(conn.Db.QueryRow("SELECT COUNT(*) FROM agents").Scan(&agentCount))
 	r.NoError(conn.Db.QueryRow("SELECT COUNT(*) FROM contest_entries").Scan(&entryCount))
-	r.Equal(3, userCount, "User count must remain exactly 3")
-	r.Equal(2, agentCount, "Agent count must remain exactly 2")
+	// admin + 5 pilots; hunter, evasive and five Ace bots (ADR-0013 demo).
+	r.Equal(6, userCount, "User count must remain exactly 6")
+	r.Equal(7, agentCount, "Agent count must remain exactly 7")
 	r.Equal(2, entryCount, "Contest entry count must remain exactly 2")
 }

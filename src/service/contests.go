@@ -24,6 +24,9 @@ var (
 	ErrUnsupportedGame      = errors.New("Agentrix MVP supports only starfighter")
 	ErrNoReadySubmission    = errors.New("agent has no ready submission for contest enrollment")
 	ErrSubmissionMismatch   = errors.New("specified submission does not belong to the enrolled agent")
+	// ErrInvalidParticipants: una partida de Starfighter necesita entre 2 y 5
+	// submissions distintas y no vacías (ADR-0013).
+	ErrInvalidParticipants = errors.New("starfighter matches need between 2 and 5 distinct submissions")
 )
 
 // ContestService defines contest use-case operations for consumer segregation (ATD-015).

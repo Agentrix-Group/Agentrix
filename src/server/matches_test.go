@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -141,7 +142,7 @@ func TestServerMatchesHandlers(t *testing.T) {
 	r.Equal(http.StatusNotFound, rec.Code)
 
 	// 5. createMatch (valid)
-	body, _ := json.Marshal(CreateMatchRequest{ContestId: "c1", GameId: "starfighter", SubmissionIds: []string{"sub-1"}})
+	body, _ := json.Marshal(CreateMatchRequest{ContestId: "c1", GameId: "starfighter", SubmissionIds: []string{"sub-1", "sub-2"}})
 	req = httptest.NewRequest(http.MethodPost, "/matches", bytes.NewReader(body))
 	rec = httptest.NewRecorder()
 	server.createMatch(rec, req)
@@ -200,4 +201,21 @@ func TestMatchReadRoutesArePublic(t *testing.T) {
 		server.Handler.ServeHTTP(response, request)
 		require.Equal(t, http.StatusOK, response.Code, path)
 	}
+}
+
+// ADR-0013: una cantidad inválida de participantes es un error del cliente
+// (400 con el motivo), no un fallo de base de datos.
+func TestServerCreateMatchRejectsInvalidParticipants(t *testing.T) {
+	r := require.New(t)
+	server := &Server{Service: &mockMatchesService{
+		createMatchFn: func(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error) {
+			return nil, fmt.Errorf("%w: got %d", service.ErrInvalidParticipants, len(submissionIds))
+		},
+	}}
+	body, _ := json.Marshal(CreateMatchRequest{GameId: "starfighter", SubmissionIds: []string{"a", "b", "c", "d", "e", "f"}})
+	req := httptest.NewRequest(http.MethodPost, "/matches", bytes.NewReader(body))
+	rec := httptest.NewRecorder()
+	server.createMatch(rec, req)
+	r.Equal(http.StatusBadRequest, rec.Code)
+	r.Contains(rec.Body.String(), "between 2 and 5 distinct submissions")
 }

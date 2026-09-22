@@ -1,7 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Play, Shuffle, AlertCircle, Loader2, Swords } from 'lucide-react';
+import { X, Play, Shuffle, AlertCircle, Loader2, Swords, Plus, Trash2 } from 'lucide-react';
 import { ApiService } from '../service/apiService.js';
+
+// Starfighter 0.4.0 admite de 2 a 5 jugadores todos contra todos (ADR-0013).
+export const MIN_PLAYERS = 2;
+export const MAX_PLAYERS = 5;
+
+/**
+ * Devuelve los ids limpios si forman una partida válida (entre MIN_PLAYERS y
+ * MAX_PLAYERS submissions distintas y no vacías), o null si no.
+ */
+export function validParticipants(ids) {
+  const cleaned = ids.map((id) => id.trim());
+  if (cleaned.length < MIN_PLAYERS || cleaned.length > MAX_PLAYERS) return null;
+  if (cleaned.some((id) => !id)) return null;
+  if (new Set(cleaned).size !== cleaned.length) return null;
+  return cleaned;
+}
 
 export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser }) {
   const { t } = useTranslation(['matches', 'common']);
@@ -9,10 +25,9 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
   const [contests, setContests] = useState([]);
   const [submissions, setSubmissions] = useState([]);
   const [selectedContestId, setSelectedContestId] = useState('');
-  const [sub1, setSub1] = useState('');
-  const [sub2, setSub2] = useState('');
-  const [manualSub1, setManualSub1] = useState('');
-  const [manualSub2, setManualSub2] = useState('');
+  // Un valor por slot; ambas listas tienen siempre la misma longitud.
+  const [selected, setSelected] = useState(['', '']);
+  const [manualIds, setManualIds] = useState(['', '']);
   const [useManual, setUseManual] = useState(false);
   const [seed, setSeed] = useState(() => Math.floor(Math.random() * 900000) + 100000);
   const [runImmediately, setRunImmediately] = useState(true);
@@ -35,12 +50,11 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
       .then((data) => {
         const list = data || [];
         setSubmissions(list);
-        if (list.length >= 2) {
-          setSub1(list[0].id);
-          setSub2(list[1].id);
-        } else if (list.length === 1) {
-          setSub1(list[0].id);
-          setSub2(list[0].id); // mirror match
+        // Una misma submission no puede ocupar dos slots: con una sola
+        // disponible, el segundo slot queda vacío para completarlo a mano.
+        if (list.length >= 1) {
+          setSelected([list[0].id, list[1]?.id || '']);
+          setManualIds(['', '']);
         } else {
           setUseManual(true);
         }
@@ -65,17 +79,33 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
     setSeed(Math.floor(Math.random() * 900000) + 100000);
   };
 
+  const slotCount = selected.length;
+  const slotValues = useManual ? manualIds : selected;
+
+  const updateSlot = (index, value) => {
+    const setter = useManual ? setManualIds : setSelected;
+    setter((prev) => prev.map((current, i) => (i === index ? value : current)));
+  };
+
+  const addSlot = () => {
+    if (slotCount >= MAX_PLAYERS) return;
+    setSelected((prev) => [...prev, '']);
+    setManualIds((prev) => [...prev, '']);
+  };
+
+  const removeSlot = (index) => {
+    if (slotCount <= MIN_PLAYERS) return;
+    setSelected((prev) => prev.filter((_, i) => i !== index));
+    setManualIds((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
-    const player1 = useManual ? manualSub1.trim() : sub1;
-    const player2 = useManual ? manualSub2.trim() : sub2;
-
-    if (!player1 || !player2) {
-      setErrorMsg(t('matches:wizard.validationError', {
-        defaultValue: 'Debes especificar las dos submissions competidoras para Starfighter (1v1).',
-      }));
+    const participants = validParticipants(slotValues);
+    if (!participants) {
+      setErrorMsg(t('matches:wizard.validationError', { min: MIN_PLAYERS, max: MAX_PLAYERS }));
       return;
     }
 
@@ -85,7 +115,7 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
       const payload = {
         contest_id: selectedContestId || undefined,
         game_id: 'starfighter',
-        submission_ids: [player1, player2],
+        submission_ids: participants,
         seed: Number(seed) || 42,
       };
 
@@ -191,7 +221,9 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
 
           {/* Submissions selection mode toggle */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Participantes (1v1)</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>
+              {t('matches:wizard.participantsLabel', { count: slotCount, min: MIN_PLAYERS, max: MAX_PLAYERS })}
+            </span>
             <button
               type="button"
               className="btn btn-secondary btn-compact"
@@ -202,72 +234,67 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
             </button>
           </div>
 
-          {!useManual && submissions.length > 0 ? (
-            <>
-              {/* Slot 1: Bot 1 */}
-              <div className="modal-form-group">
-                <label htmlFor="player-1-select">{t('matches:wizard.player1Label')}</label>
-                <select
-                  id="player-1-select"
-                  value={sub1}
-                  onChange={(e) => setSub1(e.target.value)}
-                  required
-                >
-                  <option value="">{t('matches:wizard.selectSubmissionPlaceholder')}</option>
-                  {submissions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      v{s.version} — {s.language} (#{s.id ? s.id.slice(0, 8) : '—'})
-                    </option>
-                  ))}
-                </select>
+          {slotValues.map((value, index) => {
+            const number = index + 1;
+            const fieldId = useManual || submissions.length === 0
+              ? `player-${number}-input`
+              : `player-${number}-select`;
+            return (
+              <div className="modal-form-group" key={index}>
+                <label htmlFor={fieldId}>{t('matches:wizard.playerLabel', { number })}</label>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  {!useManual && submissions.length > 0 ? (
+                    <select
+                      id={fieldId}
+                      value={value}
+                      onChange={(e) => updateSlot(index, e.target.value)}
+                      required
+                      style={{ flex: 1 }}
+                    >
+                      <option value="">{t('matches:wizard.selectSubmissionPlaceholder')}</option>
+                      {submissions.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          v{s.version} — {s.language} (#{s.id ? s.id.slice(0, 8) : '—'})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      id={fieldId}
+                      type="text"
+                      placeholder={`ID de submission o bot ${number} (ej. sub-00${number})`}
+                      value={value}
+                      onChange={(e) => updateSlot(index, e.target.value)}
+                      required
+                      style={{ flex: 1 }}
+                    />
+                  )}
+                  {slotCount > MIN_PLAYERS && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-compact"
+                      onClick={() => removeSlot(index)}
+                      aria-label={t('matches:wizard.removePlayer', { number })}
+                      title={t('matches:wizard.removePlayer', { number })}
+                    >
+                      <Trash2 size={14} aria-hidden="true" />
+                    </button>
+                  )}
+                </div>
               </div>
+            );
+          })}
 
-              {/* Slot 2: Bot 2 */}
-              <div className="modal-form-group">
-                <label htmlFor="player-2-select">{t('matches:wizard.player2Label')}</label>
-                <select
-                  id="player-2-select"
-                  value={sub2}
-                  onChange={(e) => setSub2(e.target.value)}
-                  required
-                >
-                  <option value="">{t('matches:wizard.selectSubmissionPlaceholder')}</option>
-                  {submissions.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      v{s.version} — {s.language} (#{s.id ? s.id.slice(0, 8) : '—'})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </>
-          ) : (
-            <>
-              {/* Manual Submission IDs */}
-              <div className="modal-form-group">
-                <label htmlFor="player-1-input">{t('matches:wizard.player1Label')}</label>
-                <input
-                  id="player-1-input"
-                  type="text"
-                  placeholder="ID de submission o bot 1 (ej. sub-001)"
-                  value={manualSub1}
-                  onChange={(e) => setManualSub1(e.target.value)}
-                  required
-                />
-              </div>
-
-              <div className="modal-form-group">
-                <label htmlFor="player-2-input">{t('matches:wizard.player2Label')}</label>
-                <input
-                  id="player-2-input"
-                  type="text"
-                  placeholder="ID de submission o bot 2 (ej. sub-002)"
-                  value={manualSub2}
-                  onChange={(e) => setManualSub2(e.target.value)}
-                  required
-                />
-              </div>
-            </>
-          )}
+          <button
+            type="button"
+            className="btn btn-secondary btn-compact"
+            onClick={addSlot}
+            disabled={slotCount >= MAX_PLAYERS}
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', alignSelf: 'flex-start' }}
+          >
+            <Plus size={14} aria-hidden="true" />
+            <span>{t('matches:wizard.addPlayer', { max: MAX_PLAYERS })}</span>
+          </button>
 
           {/* Seed Input */}
           <div className="modal-form-group">

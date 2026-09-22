@@ -79,6 +79,10 @@ func (s *Server) createMatch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp, err := s.Service.CreateMatch(ctx, &match, req.SubmissionIds)
+	if errors.Is(err, service.ErrInvalidParticipants) {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, err.Error())
+		return
+	}
 	if err != nil {
 		tracer.FailRequest(ctx, tracer.ScopeDatabase, "match.create.failed", "No se pudo crear la partida", tracer.Err(err))
 		common.WriteErrorResponse(w, common.DATABASE_ERROR)

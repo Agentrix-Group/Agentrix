@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import i18n from '../src/i18n/index.js';
 import { MatchesPage } from '../src/pages/MatchesPage.jsx';
-import { CreateMatchModal } from '../src/components/CreateMatchModal.jsx';
+import { CreateMatchModal, validParticipants } from '../src/components/CreateMatchModal.jsx';
 import { MatchCard } from '../src/components/MatchCard.jsx';
 import { ApiService } from '../src/service/apiService.js';
 
@@ -161,6 +161,72 @@ describe('Sprint FQ-3: Match Creation, Configuration & Live Run Workflow', () =>
           })
         );
       });
+    });
+  });
+
+  describe('CreateMatchModal free-for-all (ADR-0013)', () => {
+    const fiveSubmissions = ['s1', 's2', 's3', 's4', 's5'].map((id, i) => ({
+      id, version: i + 1, language: 'python',
+    }));
+
+    const renderModal = async () => {
+      vi.spyOn(ApiService, 'listContests').mockResolvedValue([]);
+      vi.spyOn(ApiService, 'listSubmissions').mockResolvedValue(fiveSubmissions);
+      vi.spyOn(ApiService, 'scheduleMatch').mockResolvedValue({ message: 'OK' });
+      await act(async () => {
+        render(<CreateMatchModal isOpen={true} onClose={vi.fn()} onMatchCreated={vi.fn()} />);
+      });
+      await waitFor(() => expect(screen.getByLabelText(/Bot Jugador 2/i).value).toBe('s2'));
+    };
+
+    it('adds players up to five and submits all of them', async () => {
+      await renderModal();
+      const addButton = screen.getByRole('button', { name: /Añadir jugador/i });
+      for (let n = 3; n <= 5; n += 1) {
+        fireEvent.click(addButton);
+        fireEvent.change(screen.getByLabelText(new RegExp(`Bot Jugador ${n}`, 'i')), {
+          target: { value: `s${n}` },
+        });
+      }
+      expect(addButton.disabled).toBe(true);
+      expect(screen.getByText(/Participantes \(5;/i)).toBeDefined();
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Crear partida/i }));
+      });
+      await waitFor(() => {
+        expect(ApiService.scheduleMatch).toHaveBeenCalledWith(
+          expect.objectContaining({ submission_ids: ['s1', 's2', 's3', 's4', 's5'] }),
+        );
+      });
+    });
+
+    it('rejects the same submission in two slots without calling the API', async () => {
+      await renderModal();
+      fireEvent.change(screen.getByLabelText(/Bot Jugador 2/i), { target: { value: 's1' } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Crear partida/i }));
+      });
+      expect(screen.getByRole('alert').textContent).toContain('submissions distintas');
+      expect(ApiService.scheduleMatch).not.toHaveBeenCalled();
+    });
+
+    it('removes a player but never goes below two', async () => {
+      await renderModal();
+      expect(screen.queryByRole('button', { name: /Quitar jugador/i })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /Añadir jugador/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Quitar jugador 3/i }));
+      expect(screen.queryByLabelText(/Bot Jugador 3/i)).toBeNull();
+      expect(screen.queryByRole('button', { name: /Quitar jugador/i })).toBeNull();
+    });
+
+    it('validates participant lists', () => {
+      expect(validParticipants([' a ', 'b'])).toEqual(['a', 'b']);
+      expect(validParticipants(['a', 'b', 'c', 'd', 'e'])).toHaveLength(5);
+      expect(validParticipants(['a'])).toBeNull();
+      expect(validParticipants(['a', 'b', 'c', 'd', 'e', 'f'])).toBeNull();
+      expect(validParticipants(['a', 'a'])).toBeNull();
+      expect(validParticipants(['a', ' '])).toBeNull();
     });
   });
 

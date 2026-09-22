@@ -53,9 +53,33 @@ func (s *service) GetMatch(ctx context.Context, id string) (*model.Match, error)
 	return match, nil
 }
 
+// validateMatchParticipants exige entre StarfighterMinPlayers y
+// StarfighterMaxPlayers submissions distintas y no vacías. Antes una partida
+// con más de 5 fallaba recién en el motor y una con submissions repetidas,
+// al sellar el replay.
+func validateMatchParticipants(submissionIds []string) error {
+	if len(submissionIds) < model.StarfighterMinPlayers || len(submissionIds) > model.StarfighterMaxPlayers {
+		return fmt.Errorf("%w: got %d", ErrInvalidParticipants, len(submissionIds))
+	}
+	seen := make(map[string]bool, len(submissionIds))
+	for _, id := range submissionIds {
+		if id == "" {
+			return fmt.Errorf("%w: empty submission id", ErrInvalidParticipants)
+		}
+		if seen[id] {
+			return fmt.Errorf("%w: submission %s appears twice", ErrInvalidParticipants, id)
+		}
+		seen[id] = true
+	}
+	return nil
+}
+
 func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error) {
 	if match.GameId != "starfighter" {
 		return nil, ErrUnsupportedGame
+	}
+	if err := validateMatchParticipants(submissionIds); err != nil {
+		return nil, err
 	}
 	if match.Id == "" {
 		match.Id = uuid.New().String()

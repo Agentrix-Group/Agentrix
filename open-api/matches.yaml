@@ -39,8 +39,13 @@ paths:
                   type: string
                 submission_ids:
                   type: array
+                  description: Entre 2 y 5 submissions distintas (ADR-0013).
+                  minItems: 2
+                  maxItems: 5
+                  uniqueItems: true
                   items:
                     type: string
+                    minLength: 1
                 seed:
                   type: integer
               required:
@@ -52,6 +57,8 @@ paths:
             application/json:
               schema:
                 $ref: './components/models.yaml#/SuccessResponse'
+        '400':
+          description: Invalid request, including fewer than 2, more than 5 or repeated submissions
 
   /api/v1/matches/{id}:
     get:

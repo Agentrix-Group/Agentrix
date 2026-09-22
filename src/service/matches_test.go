@@ -184,3 +184,18 @@ func TestMatchesService(t *testing.T) {
 	_, err = svc.CreateMatch(ctx, &model.Match{GameId: "other-game"}, nil)
 	r.ErrorIs(err, ErrUnsupportedGame)
 }
+
+func TestValidateMatchParticipants(t *testing.T) {
+	r := require.New(t)
+	r.NoError(validateMatchParticipants([]string{"a", "b"}))
+	r.NoError(validateMatchParticipants([]string{"a", "b", "c", "d", "e"}))
+	for name, ids := range map[string][]string{
+		"none":      nil,
+		"one":       {"a"},
+		"six":       {"a", "b", "c", "d", "e", "f"},
+		"duplicate": {"a", "b", "a"},
+		"empty id":  {"a", ""},
+	} {
+		r.ErrorIs(validateMatchParticipants(ids), ErrInvalidParticipants, name)
+	}
+}

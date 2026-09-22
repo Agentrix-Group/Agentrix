@@ -21,8 +21,10 @@
     "gameOfficial": "Starfighter (Official)",
     "contestLabel": "Tournament (optional):",
     "noContest": "Friendly / Standalone Match",
-    "player1Label": "Bot Player 1 (Submission):",
-    "player2Label": "Bot Player 2 (Submission):",
+    "participantsLabel": "Participants ({{count}}; {{min}} to {{max}}, free-for-all)",
+    "playerLabel": "Bot Player {{number}} (Submission):",
+    "addPlayer": "Add player (max {{max}})",
+    "removePlayer": "Remove player {{number}}",
     "selectSubmissionPlaceholder": "Select a submission...",
     "manualPrompt": "Or enter submission identifier:",
     "seedLabel": "Deterministic seed:",
@@ -31,7 +33,7 @@
     "submit": "Create Match",
     "cancel": "Cancel",
     "submitting": "Creating match...",
-    "validationError": "You must specify two competing submissions for Starfighter (1v1)."
+    "validationError": "Choose between {{min}} and {{max}} distinct submissions for Starfighter."
   },
   "runningState": {
     "badgeText": "Simulating...",

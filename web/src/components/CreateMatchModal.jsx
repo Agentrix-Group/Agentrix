@@ -8,6 +8,15 @@ export const MIN_PLAYERS = 2;
 export const MAX_PLAYERS = 5;
 
 /**
+ * Id visible de una submission: completo si es corto (p. ej. sub-star-ace-3),
+ * recortado a 8 caracteres si es un UUID largo.
+ */
+export function submissionLabel(id) {
+  if (!id) return '—';
+  return id.length <= 24 ? id : id.slice(0, 8);
+}
+
+/**
  * Devuelve los ids limpios si forman una partida válida (entre MIN_PLAYERS y
  * MAX_PLAYERS submissions distintas y no vacías), o null si no.
  */
@@ -254,7 +263,7 @@ export function CreateMatchModal({ isOpen, onClose, onMatchCreated, currentUser 
                       <option value="">{t('matches:wizard.selectSubmissionPlaceholder')}</option>
                       {submissions.map((s) => (
                         <option key={s.id} value={s.id}>
-                          v{s.version} — {s.language} (#{s.id ? s.id.slice(0, 8) : '—'})
+                          v{s.version} — {s.language} (#{submissionLabel(s.id)})
                         </option>
                       ))}
                     </select>

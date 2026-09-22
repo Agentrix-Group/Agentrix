@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import i18n from '../src/i18n/index.js';
 import { MatchesPage } from '../src/pages/MatchesPage.jsx';
-import { CreateMatchModal, validParticipants } from '../src/components/CreateMatchModal.jsx';
+import { CreateMatchModal, submissionLabel, validParticipants } from '../src/components/CreateMatchModal.jsx';
 import { MatchCard } from '../src/components/MatchCard.jsx';
 import { ApiService } from '../src/service/apiService.js';
 
@@ -218,6 +218,12 @@ describe('Sprint FQ-3: Match Creation, Configuration & Live Run Workflow', () =>
       fireEvent.click(screen.getByRole('button', { name: /Quitar jugador 3/i }));
       expect(screen.queryByLabelText(/Bot Jugador 3/i)).toBeNull();
       expect(screen.queryByRole('button', { name: /Quitar jugador/i })).toBeNull();
+    });
+
+    it('shows short submission ids in full so the five Ace bots are distinguishable', () => {
+      expect(submissionLabel('sub-star-ace-3')).toBe('sub-star-ace-3');
+      expect(submissionLabel('4f1c2a9e-8b7d-4c3e-9a1b-2d3e4f5a6b7c')).toBe('4f1c2a9e');
+      expect(submissionLabel('')).toBe('—');
     });
 
     it('validates participant lists', () => {

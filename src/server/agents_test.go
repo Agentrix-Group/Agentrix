@@ -17,12 +17,12 @@ import (
 
 type mockAgentsService struct {
 	service.Service
-	listAgentsFn          func(ctx context.Context) ([]model.Agent, error)
-	listAgentsByOwnerFn   func(ctx context.Context, ownerUserId string) ([]model.Agent, error)
-	getAgentFn            func(ctx context.Context, id string) (*model.Agent, error)
-	createAgentFn         func(ctx context.Context, agent *model.Agent) error
-	updateAgentFn         func(ctx context.Context, agent *model.Agent) error
-	activateAgentFn       func(ctx context.Context, id string, isActive bool) error
+	listAgentsFn        func(ctx context.Context) ([]model.Agent, error)
+	listAgentsByOwnerFn func(ctx context.Context, ownerUserId string) ([]model.Agent, error)
+	getAgentFn          func(ctx context.Context, id string) (*model.Agent, error)
+	createAgentFn       func(ctx context.Context, agent *model.Agent) error
+	updateAgentFn       func(ctx context.Context, agent *model.Agent) error
+	activateAgentFn     func(ctx context.Context, id string, isActive bool) error
 }
 
 func (m *mockAgentsService) ListAgents(ctx context.Context) ([]model.Agent, error) {

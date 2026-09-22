@@ -83,10 +83,12 @@ INSERT INTO users (id, username, email, password, role_id, active) VALUES
 ON CONFLICT (username) DO UPDATE SET role_id = EXCLUDED.role_id, password = EXCLUDED.password, active = EXCLUDED.active;
 
 -- Seed User Roles (RBAC mapping)
-INSERT INTO user_roles (user_id, role_id) VALUES
-('usr-admin-001', 'admin'),
-('usr-pilot-001', 'player'),
-('usr-pilot-002', 'player')
+INSERT INTO user_roles (user_id, role_id)
+SELECT id, 'admin' FROM users WHERE username = 'admin'
+UNION ALL
+SELECT id, 'player' FROM users WHERE username = 'pilot_alpha'
+UNION ALL
+SELECT id, 'player' FROM users WHERE username = 'pilot_beta'
 ON CONFLICT (user_id, role_id) DO NOTHING;
 
 -- Seed Demo Agents

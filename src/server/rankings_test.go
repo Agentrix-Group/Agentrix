@@ -16,13 +16,13 @@ import (
 
 type mockRankingsService struct {
 	service.Service
-	listRankingsFn             func(ctx context.Context) ([]model.Ranking, error)
-	listRankingsByContestFn    func(ctx context.Context, contestId string) ([]model.Ranking, error)
-	getRankingFn               func(ctx context.Context, id string) (*model.Ranking, error)
-	recalculateContestRanksFn  func(ctx context.Context, contestId string) ([]model.Ranking, error)
-	publishRankingSnapshotFn   func(ctx context.Context, contestId, publisherUserId string) (*model.RankingSnapshot, error)
-	listRankingSnapshotsFn     func(ctx context.Context, contestId string) ([]model.RankingSnapshot, error)
-	getPublishedRankingsFn     func(ctx context.Context, contestId string, version ...int) (*model.RankingSnapshot, error)
+	listRankingsFn            func(ctx context.Context) ([]model.Ranking, error)
+	listRankingsByContestFn   func(ctx context.Context, contestId string) ([]model.Ranking, error)
+	getRankingFn              func(ctx context.Context, id string) (*model.Ranking, error)
+	recalculateContestRanksFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
+	publishRankingSnapshotFn  func(ctx context.Context, contestId, publisherUserId string) (*model.RankingSnapshot, error)
+	listRankingSnapshotsFn    func(ctx context.Context, contestId string) ([]model.RankingSnapshot, error)
+	getPublishedRankingsFn    func(ctx context.Context, contestId string, version ...int) (*model.RankingSnapshot, error)
 }
 
 func (m *mockRankingsService) ListRankings(ctx context.Context) ([]model.Ranking, error) {

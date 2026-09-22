@@ -64,9 +64,9 @@ func Duration(key string, value time.Duration) Field {
 }
 
 func Origin(value FailureOrigin) Field { return String("origin", string(value)) }
-func Operation(value string) Field      { return String("operation", value) }
-func SQLState(value string) Field       { return String("sql_state", value) }
-func Constraint(value string) Field     { return String("constraint", value) }
+func Operation(value string) Field     { return String("operation", value) }
+func SQLState(value string) Field      { return String("sql_state", value) }
+func Constraint(value string) Field    { return String("constraint", value) }
 
 // detail keeps diagnostic data in JSON output and in a DEBUG console, while
 // leaving the default human console concise.

@@ -488,4 +488,3 @@ func (r *repository) GetUserRoles(ctx context.Context, userId string) ([]string,
 	}
 	return roles, nil
 }
-

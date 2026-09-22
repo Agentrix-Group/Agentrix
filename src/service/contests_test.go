@@ -14,16 +14,16 @@ import (
 
 type mockContestRepo struct {
 	repository.Repository
-	listPublicContestsFn    func(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
-	getContestFn            func(ctx context.Context, id string) (*model.Contest, error)
-	getAgentFn              func(ctx context.Context, id string) (*model.Agent, error)
-	hasPermissionFn         func(ctx context.Context, userId, permission string) (bool, error)
-	getRankingFn            func(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
-	upsertRankingFn         func(ctx context.Context, ranking *model.Ranking) error
-	listRankingsByContestFn func(ctx context.Context, contestId string) ([]model.Ranking, error)
-	createContestEntryFn    func(ctx context.Context, entry *model.ContestEntry) error
-	listContestEntriesFn    func(ctx context.Context, contestId string) ([]model.ContestEntry, error)
-	getContestEntryFn       func(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error)
+	listPublicContestsFn     func(ctx context.Context, filter model.PublicContestsFilter) ([]model.PublicContestSummary, error)
+	getContestFn             func(ctx context.Context, id string) (*model.Contest, error)
+	getAgentFn               func(ctx context.Context, id string) (*model.Agent, error)
+	hasPermissionFn          func(ctx context.Context, userId, permission string) (bool, error)
+	getRankingFn             func(ctx context.Context, contestId, agentId string) (*model.Ranking, error)
+	upsertRankingFn          func(ctx context.Context, ranking *model.Ranking) error
+	listRankingsByContestFn  func(ctx context.Context, contestId string) ([]model.Ranking, error)
+	createContestEntryFn     func(ctx context.Context, entry *model.ContestEntry) error
+	listContestEntriesFn     func(ctx context.Context, contestId string) ([]model.ContestEntry, error)
+	getContestEntryFn        func(ctx context.Context, contestId, agentId string) (*model.ContestEntry, error)
 	listSubmissionsByAgentFn func(ctx context.Context, agentId string) ([]model.Submission, error)
 	getSubmissionFn          func(ctx context.Context, id string) (*model.Submission, error)
 }

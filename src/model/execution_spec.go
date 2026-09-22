@@ -11,9 +11,9 @@ import (
 )
 
 var (
-	ErrInvalidExecutionSpec  = errors.New("invalid execution spec")
-	ErrEngineDigestMismatch  = errors.New("engine binary digest mismatch")
-	ErrIncompatibleProtocol  = errors.New("incompatible engine protocol version")
+	ErrInvalidExecutionSpec = errors.New("invalid execution spec")
+	ErrEngineDigestMismatch = errors.New("engine binary digest mismatch")
+	ErrIncompatibleProtocol = errors.New("incompatible engine protocol version")
 )
 
 // ExecutionSlotSpec defines an immutable participant slot in a match execution.

@@ -47,16 +47,16 @@ func (s ContestState) IsPublic() bool {
 }
 
 type Contest struct {
-	Id          string       `json:"id,omitempty" db:"id"`
-	Name        string       `json:"name,omitempty" db:"name"`
-	Description string       `json:"description,omitempty" db:"description"`
-	GameId      string       `json:"game_id,omitempty" db:"game_id"`
-	CategoryId  string       `json:"category_id,omitempty" db:"category_id"`
-	StartDate   time.Time    `json:"start_date,omitempty" db:"start_date"`
-	EndDate     time.Time    `json:"end_date,omitempty" db:"end_date"`
-	StartsAt    *time.Time   `json:"starts_at,omitempty" db:"starts_at"`
-	EndsAt      *time.Time   `json:"ends_at,omitempty" db:"ends_at"`
-	Status      string       `json:"status,omitempty" db:"status"`
+	Id            string         `json:"id,omitempty" db:"id"`
+	Name          string         `json:"name,omitempty" db:"name"`
+	Description   string         `json:"description,omitempty" db:"description"`
+	GameId        string         `json:"game_id,omitempty" db:"game_id"`
+	CategoryId    string         `json:"category_id,omitempty" db:"category_id"`
+	StartDate     time.Time      `json:"start_date,omitempty" db:"start_date"`
+	EndDate       time.Time      `json:"end_date,omitempty" db:"end_date"`
+	StartsAt      *time.Time     `json:"starts_at,omitempty" db:"starts_at"`
+	EndsAt        *time.Time     `json:"ends_at,omitempty" db:"ends_at"`
+	Status        string         `json:"status,omitempty" db:"status"`
 	State         ContestState   `json:"state,omitempty" db:"state"`
 	Active        bool           `json:"active,omitempty" db:"active"`
 	ScoringPolicy *ScoringPolicy `json:"scoring_policy,omitempty" db:"scoring_policy"`
@@ -95,9 +95,9 @@ type ContestEntry struct {
 	SubmissionId string             `json:"submission_id" db:"submission_id"`
 	Status       ContestEntryStatus `json:"status" db:"status"`
 	EnrolledAt   time.Time          `json:"enrolled_at" db:"enrolled_at"`
-	Agent        *Agent      `json:"agent,omitempty"`
-	User         *User       `json:"user,omitempty"`
-	Submission   *Submission `json:"submission,omitempty"`
+	Agent        *Agent             `json:"agent,omitempty"`
+	User         *User              `json:"user,omitempty"`
+	Submission   *Submission        `json:"submission,omitempty"`
 }
 
 type EnrollAgentRequest struct {

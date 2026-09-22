@@ -247,4 +247,3 @@ func (s *service) HasPermission(ctx context.Context, userId, permission string) 
 func (s *service) GetUserCapabilities(ctx context.Context, userId string) ([]string, error) {
 	return s.repo.GetUserEffectivePermissions(ctx, userId)
 }
-

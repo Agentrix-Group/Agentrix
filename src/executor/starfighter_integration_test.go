@@ -385,7 +385,6 @@ for line in sys.stdin:
 	}
 }
 
-
 func TestStarfighterIntegration_50ContinuousTicksBetweenHunterAndEvasive(t *testing.T) {
 	r := require.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

@@ -21,9 +21,9 @@ import (
 )
 
 var (
-	ErrMatchNotFound         = errors.New("match not found")
-	ErrInvalidMatchState     = errors.New("invalid match state for execution")
-	ErrInvalidSubmissions    = errors.New("match has invalid or inactive submissions")
+	ErrMatchNotFound          = errors.New("match not found")
+	ErrInvalidMatchState      = errors.New("invalid match state for execution")
+	ErrInvalidSubmissions     = errors.New("match has invalid or inactive submissions")
 	ErrActiveMatchCannotRerun = errors.New("match is currently active or queued")
 )
 

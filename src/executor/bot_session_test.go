@@ -214,4 +214,3 @@ print(json.dumps({"type": "action", "tick": msg["tick"], "action": action}), flu
 	require.Equal(t, "BLOCKED_FS", payloadWrite["thrust"])
 	require.Equal(t, "OSError", payloadWrite["error"])
 }
-

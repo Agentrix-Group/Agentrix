@@ -54,7 +54,7 @@ func (w *ndjsonWriter) WriteSnapshot(snapshot model.ReplaySnapshot) error {
 		return errors.New("public snapshot is not valid JSON")
 	}
 	var publicState struct {
-		Tick      *int  `json:"tick"`
+		Tick      *int   `json:"tick"`
 		StateHash string `json:"stateHash"`
 	}
 	if err := json.Unmarshal(snapshot.PublicSnapshot, &publicState); err != nil || publicState.Tick == nil {
@@ -158,7 +158,7 @@ func DecodeNDJSON(source io.Reader) (*model.ReplayDocument, error) {
 				return nil, err
 			}
 			var publicState struct {
-				Tick      *int  `json:"tick"`
+				Tick      *int   `json:"tick"`
 				StateHash string `json:"stateHash"`
 			}
 			if err := json.Unmarshal(snapshot.PublicSnapshot, &publicState); err != nil || publicState.Tick == nil ||

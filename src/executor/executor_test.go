@@ -680,4 +680,3 @@ func TestZombieWorkerCommitRejected(t *testing.T) {
 	r.Error(err3)
 	r.ErrorIs(err3, repository.ErrMatchAlreadyCommitted)
 }
-

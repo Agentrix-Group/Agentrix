@@ -259,19 +259,19 @@ func TestEnrollAgent_Endpoint(t *testing.T) {
 		mockSvc := &mockContestService{
 			enrollAgentFn: func(ctx context.Context, userId, contestId, agentId string, submissionId ...string) (*model.ContestEntry, *model.Ranking, error) {
 				return &model.ContestEntry{
-						Id:        "entry-1",
-						ContestId: contestId,
-						AgentId:   agentId,
-						UserId:    userId,
-						Status:    model.ContestEntryStatusEnrolled,
-					}, &model.Ranking{
-						Id:        "rank-1",
-						ContestId: contestId,
-						AgentId:   agentId,
-						UserId:    userId,
-						Score:     0,
-						Rank:      1,
-					}, nil
+					Id:        "entry-1",
+					ContestId: contestId,
+					AgentId:   agentId,
+					UserId:    userId,
+					Status:    model.ContestEntryStatusEnrolled,
+				}, &model.Ranking{
+					Id:        "rank-1",
+					ContestId: contestId,
+					AgentId:   agentId,
+					UserId:    userId,
+					Score:     0,
+					Rank:      1,
+				}, nil
 			},
 			hasPermissionFn: func(ctx context.Context, userId, permission string) (bool, error) {
 				return true, nil

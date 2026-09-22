@@ -53,14 +53,14 @@ const (
 )
 
 type subprocessClient struct {
-	mu              sync.Mutex
-	cfg             StartConfig
-	cmd             *exec.Cmd
-	stdin           io.WriteCloser
-	stdoutReader    *bufio.Reader
-	stderrBuf       *limitedBuffer
-	sendSeq         uint64
-	expectedRecvSeq uint64
+	mu                 sync.Mutex
+	cfg                StartConfig
+	cmd                *exec.Cmd
+	stdin              io.WriteCloser
+	stdoutReader       *bufio.Reader
+	stderrBuf          *limitedBuffer
+	sendSeq            uint64
+	expectedRecvSeq    uint64
 	matchID            string
 	lifecycle          ClientLifecycleState
 	engineVersion      string

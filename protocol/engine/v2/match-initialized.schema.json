@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/match-initialized.schema.json",
+  "title": "MatchInitializedPayload",
+  "description": "Payload emitido por el motor confirmando la preparación de la partida y entregando las percepciones iniciales.",
+  "type": "object",
+  "required": [
+    "matchId",
+    "initialTick",
+    "stateHash",
+    "publicSnapshot",
+    "perceptions"
+  ],
+  "properties": {
+    "matchId": {
+      "type": "string",
+      "minLength": 1
+    },
+    "initialTick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "stateHash": {
+      "type": "string",
+      "description": "Hash determinista del estado inicial autoritativo."
+    },
+    "publicSnapshot": {
+      "type": "object",
+      "description": "Snapshot público autoritativo y sanitizado de State[0]."
+    },
+    "perceptions": {
+      "type": "object",
+      "description": "Percepción inicial filtrada por cada participante para el primer turno.",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Eventos públicos producidos durante la inicialización."
+    }
+  },
+  "additionalProperties": false
+}

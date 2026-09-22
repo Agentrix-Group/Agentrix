@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/shutdown.schema.json",
+  "title": "ShutdownPayload",
+  "description": "Payload enviado por Agentrix para ordenar la detención limpia del proceso del motor.",
+  "type": "object",
+  "required": [
+    "reason"
+  ],
+  "properties": {
+    "reason": {
+      "type": "string",
+      "description": "Motivo de la orden de apagado (ej. 'worker_stopping', 'normal')."
+    }
+  },
+  "additionalProperties": false
+}

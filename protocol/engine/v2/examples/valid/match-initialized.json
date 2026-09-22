@@ -1,0 +1,35 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "match_initialized",
+  "matchId": "m-12345678-abcd",
+  "sequence": 2,
+  "payload": {
+    "matchId": "m-12345678-abcd",
+    "initialTick": 0,
+    "stateHash": "h0_init_hash_123456",
+    "events": [
+      "Starfighter match initialized"
+    ],
+    "publicSnapshot": {
+      "tick": 0,
+      "fighters": [],
+      "bullets": [],
+      "events": [],
+      "stateHash": "h0_init_hash_123456"
+    },
+    "perceptions": {
+      "bot-alpha": {
+        "tick": 0,
+        "myself": {},
+        "rivals": [],
+        "bullets": []
+      },
+      "bot-beta": {
+        "tick": 0,
+        "myself": {},
+        "rivals": [],
+        "bullets": []
+      }
+    }
+  }
+}

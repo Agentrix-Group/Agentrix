@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/tick-completed.schema.json",
+  "title": "TickCompletedPayload",
+  "description": "Payload emitido por el motor al finalizar la simulación de un tick con eventos, estado y percepciones.",
+  "type": "object",
+  "required": [
+    "tick",
+    "events",
+    "stateHash",
+    "isOver",
+    "publicSnapshot"
+  ],
+  "properties": {
+    "tick": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "Lista de eventos de simulación ocurridos en este tick."
+    },
+    "stateHash": {
+      "type": "string",
+      "description": "Digest/hash acumulativo del estado autoritativo al cierre del tick."
+    },
+    "isOver": {
+      "type": "boolean",
+      "description": "Indica si la partida ha concluido en este tick."
+    },
+    "winner": {
+      "type": "string",
+      "description": "Identificador del ganador si la partida finalizó en este tick con victoria."
+    },
+    "publicSnapshot": {
+      "type": "object",
+      "description": "Snapshot público autoritativo del estado resultante para el visor y replay.",
+      "additionalProperties": true
+    },
+    "playerStates": {
+      "type": "object",
+      "description": "Estado de cada participante (activo, eliminado, vida, puntaje).",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "perceptions": {
+      "type": "object",
+      "description": "Nuevas percepciones para cada agente vivo de cara al siguiente tick (si !isOver).",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  },
+  "additionalProperties": false
+}

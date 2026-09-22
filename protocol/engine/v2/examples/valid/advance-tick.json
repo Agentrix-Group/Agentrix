@@ -1,0 +1,24 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "advance_tick",
+  "matchId": "m-12345678-abcd",
+  "sequence": 2,
+  "payload": {
+    "tick": 0,
+    "actions": {
+      "bot-alpha": {
+        "status": "valid",
+        "payload": {
+          "thrust": "FORWARD",
+          "turn": "RIGHT",
+          "shoot": false,
+          "shield": false
+        }
+      },
+      "bot-beta": {
+        "status": "disqualified",
+        "errorDetails": "timeout"
+      }
+    }
+  }
+}

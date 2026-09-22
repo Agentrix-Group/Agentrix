@@ -1,0 +1,9 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "shutdown",
+  "matchId": "",
+  "sequence": 4,
+  "payload": {
+    "reason": "worker_stopped"
+  }
+}

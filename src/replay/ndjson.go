@@ -66,7 +66,7 @@ func (w *ndjsonWriter) WriteSnapshot(snapshot model.ReplaySnapshot) error {
 	if *publicState.Tick != snapshot.Tick {
 		return errors.New("public snapshot tick does not match replay envelope")
 	}
-	if snapshot.StateHash == "" || publicState.StateHash != snapshot.StateHash {
+	if snapshot.StateHash == "" || (publicState.StateHash != "" && publicState.StateHash != snapshot.StateHash) {
 		return errors.New("public snapshot state hash does not match replay envelope")
 	}
 	snapshot.Type = "snapshot"
@@ -163,7 +163,7 @@ func DecodeNDJSON(source io.Reader) (*model.ReplayDocument, error) {
 			}
 			if err := json.Unmarshal(snapshot.PublicSnapshot, &publicState); err != nil || publicState.Tick == nil ||
 				snapshot.Tick != len(document.Snapshots) || *publicState.Tick != snapshot.Tick || snapshot.StateHash == "" ||
-				publicState.StateHash != snapshot.StateHash {
+				(publicState.StateHash != "" && publicState.StateHash != snapshot.StateHash) {
 				return nil, errors.New("invalid replay snapshot sequence")
 			}
 			document.Snapshots = append(document.Snapshots, snapshot)

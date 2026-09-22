@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
@@ -161,7 +162,13 @@ func TestMatchesService(t *testing.T) {
 	r.Len(resp.Slots, 2)
 	r.Equal(0, queue.Len(), "CreateMatch schedules but does not enqueue")
 
-	// RunMatch enqueues the match
+	// RunMatch fails closed when no engine digest is configured
+	_, err = svc.RunMatch(ctx, newMatch.Id)
+	r.ErrorIs(err, model.ErrInvalidExecutionSpec)
+	r.ErrorContains(err, "engine binary digest is required (fail closed)")
+
+	// Now configure valid engine digest and verify successful enqueue
+	t.Setenv("AGENTRIX_ENGINE_DIGEST", strings.Repeat("a", 64))
 	runResp, err := svc.RunMatch(ctx, newMatch.Id)
 	r.NoError(err)
 	r.NotNil(runResp)

@@ -319,11 +319,23 @@ func (q *postgresJobQueue) enrichJobFromRun(ctx context.Context, job *MatchJob) 
 	_ = q.db.QueryRowContext(ctx, `SELECT COALESCE(execution_spec::text, '') FROM match_runs WHERE id = $1`, job.RunId).Scan(&rawSpec)
 	if rawSpec.Valid && rawSpec.String != "" {
 		var spec struct {
-			GameVersion  string `json:"game_version"`
-			EngineDigest string `json:"engine_digest"`
-			ConfigHash   string `json:"config_hash"`
+			GameVersion        string `json:"gameVersion"`
+			EngineDigest       string `json:"engineDigest"`
+			ConfigDigest       string `json:"configDigest"`
+			LegacyGameVersion  string `json:"game_version"`
+			LegacyEngineDigest string `json:"engine_digest"`
+			LegacyConfigHash   string `json:"config_hash"`
 		}
 		if err := json.Unmarshal([]byte(rawSpec.String), &spec); err == nil {
+			if spec.GameVersion == "" {
+				spec.GameVersion = spec.LegacyGameVersion
+			}
+			if spec.EngineDigest == "" {
+				spec.EngineDigest = spec.LegacyEngineDigest
+			}
+			if spec.ConfigDigest == "" {
+				spec.ConfigDigest = spec.LegacyConfigHash
+			}
 			if job.GameVersion == "" {
 				job.GameVersion = spec.GameVersion
 			}
@@ -331,7 +343,7 @@ func (q *postgresJobQueue) enrichJobFromRun(ctx context.Context, job *MatchJob) 
 				job.EngineDigest = spec.EngineDigest
 			}
 			if job.ConfigHash == "" {
-				job.ConfigHash = spec.ConfigHash
+				job.ConfigHash = spec.ConfigDigest
 			}
 		}
 	}

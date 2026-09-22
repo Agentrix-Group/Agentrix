@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/match-completed.schema.json",
+  "title": "MatchCompletedPayload",
+  "description": "Payload emitido por el motor al concluir formalmente la partida con resultados finales consolidados.",
+  "type": "object",
+  "required": [
+    "finalTick",
+    "reason",
+    "scores",
+    "rankings",
+    "finalStateHash"
+  ],
+  "properties": {
+    "finalTick": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "eliminated",
+        "timeout",
+        "score_limit"
+      ],
+      "description": "Causa oficial de conclusión de la partida."
+    },
+    "winner": {
+      "type": "string",
+      "description": "Identificador del participante ganador si aplica."
+    },
+    "scores": {
+      "type": "object",
+      "description": "Puntuación numérica final por participante.",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "rankings": {
+      "type": "array",
+      "description": "Lista de puestos competitivos resultantes.",
+      "items": {
+        "type": "object",
+        "required": [
+          "playerId",
+          "rank",
+          "score"
+        ],
+        "properties": {
+          "playerId": {
+            "type": "string"
+          },
+          "rank": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "score": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "finalStateHash": {
+      "type": "string",
+      "description": "Hash final inmutable de la simulación para verificación de replay."
+    },
+    "replayMetadata": {
+      "type": "object",
+      "description": "Metadatos adicionales de la simulación para construcción del replay.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

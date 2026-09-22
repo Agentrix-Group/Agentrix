@@ -1,0 +1,9 @@
+{
+  "type": "engine_ready",
+  "matchId": "",
+  "sequence": 1,
+  "payload": {
+    "engineVersion": "1.0.0",
+    "supportedProtocols": ["agentrix-engine/2"]
+  }
+}

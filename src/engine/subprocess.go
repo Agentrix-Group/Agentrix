@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"sync"
 	"time"
+
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 type limitedBuffer struct {
@@ -62,10 +64,16 @@ type subprocessClient struct {
 	sendSeq            uint64
 	expectedRecvSeq    uint64
 	matchID            string
+	runID              string
 	lifecycle          ClientLifecycleState
 	engineVersion      string
 	engineDigest       string
 	engineReadyPayload *EngineReadyPayload
+	lastTick           int
+	lastStateHash      string
+	lastWinner         string
+	playerSlots        []string
+	lastResult         *TickResult
 }
 
 // NewSubprocessClient creates a new unstarted EngineClient.
@@ -215,13 +223,114 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 	}
 
 	c.matchID = req.MatchID
+	if req.RunID != "" {
+		c.runID = req.RunID
+	} else if req.Spec != nil && req.Spec.RunID != "" {
+		c.runID = req.Spec.RunID
+		req.RunID = req.Spec.RunID
+	} else {
+		c.runID = fmt.Sprintf("%s-run-1", req.MatchID)
+		req.RunID = c.runID
+	}
 
-	payloadMap, err := toMap(req)
+	if req.Spec == nil {
+		gameKey, err := model.StarfighterGameKey()
+		if err != nil {
+			return nil, err
+		}
+		schemaDigests := model.StarfighterSchemaDigests()
+		tickRate, err := model.NewTickRate(60, 1)
+		if err != nil {
+			return nil, err
+		}
+		if req.FixedTimestepMs > 0 && req.TickHz <= 0 {
+			req.TickHz = 1000.0 / float64(req.FixedTimestepMs)
+		}
+		if req.TickHz > 0 {
+			if tr, err := model.NewTickRate(uint32(req.TickHz), 1); err == nil {
+				tickRate = tr
+			}
+		}
+		var slots []model.ExecutionSlotSpec
+		for _, p := range req.Players {
+			art := ""
+			if req.ParticipantArtifactDigests != nil {
+				art = req.ParticipantArtifactDigests[p]
+			}
+			if !model.IsValidSHA256(art) {
+				h := sha256.Sum256([]byte(p))
+				art = hex.EncodeToString(h[:])
+			}
+			slots = append(slots, model.ExecutionSlotSpec{
+				SlotID:         p,
+				ArtifactDigest: art,
+			})
+		}
+		if len(slots) == 0 {
+			h0 := sha256.Sum256([]byte("p0"))
+			h1 := sha256.Sum256([]byte("p1"))
+			slots = []model.ExecutionSlotSpec{
+				{SlotID: "p0", ArtifactDigest: hex.EncodeToString(h0[:])},
+				{SlotID: "p1", ArtifactDigest: hex.EncodeToString(h1[:])},
+			}
+		}
+		cfg := req.Config
+		if cfg == nil {
+			defCfg := DefaultStarfighterConfig()
+			b, _ := json.Marshal(defCfg)
+			_ = json.Unmarshal(b, &cfg)
+		} else {
+			delete(cfg, "tick_hz")
+		}
+		maxTicks := uint64(req.MaxTicks)
+		if maxTicks == 0 {
+			maxTicks = 100
+		}
+		limits := model.ExecutionLimits{
+			MaxTicks:        maxTicks,
+			MaxPlayers:      2,
+			MaxEntities:     100000,
+			MaxMessageBytes: 10485760,
+		}
+		seedVal := uint64(req.Seed)
+		if req.Seed < 0 {
+			seedVal = uint64(-req.Seed)
+		}
+		engDigest := c.engineDigest
+		if engDigest == "" {
+			engDigest = "b67fd4613e5cc5d2d742b59c3f5d7846f83f348fb01fac5f521a05c57aef1cf6"
+		}
+		spec := &model.ExecutionSpec{
+			ProtocolVersion: ProtocolVersion,
+			RunID:           req.RunID,
+			MatchID:         req.MatchID,
+			EngineVersion:   "0.3.0",
+			EngineDigest:    engDigest,
+			BuildIdentity:   "starfighter-build",
+			Target:          "x86_64-unknown-linux-gnu",
+			Game:            gameKey,
+			SchemaDigests:   schemaDigests,
+			Config:          cfg,
+			TickRate:        tickRate,
+			Seed:            seedVal,
+			Slots:                slots,
+			Limits:               limits,
+			FailurePolicyVersion: model.DefaultFailurePolicyVersion,
+			DeterminismTier:      model.TierSameArtifactSameTarget,
+			RNGAlgorithm:         model.DefaultRNGAlgorithm,
+		}
+		if err := spec.Seal(); err != nil {
+			return nil, fmt.Errorf("failed to seal execution spec: %w", err)
+		}
+		req.Spec = spec
+	}
+
+	payloadMap, err := toMap(req.Spec)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := c.writeEnvelopeInternal(TypeInitializeMatch, req.MatchID, payloadMap); err != nil {
+	if err := c.writeEnvelopeInternal(TypeInitializeMatch, req.MatchID, req.RunID, payloadMap); err != nil {
 		return nil, err
 	}
 
@@ -239,10 +348,23 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 		return nil, fmt.Errorf("failed to decode match_initialized payload: %w", err)
 	}
 
+	if result.MatchID == "" {
+		result.MatchID = req.MatchID
+	}
 	if result.MatchID != req.MatchID {
 		return nil, fmt.Errorf("%w: payload matchId %s does not match requested %s", ErrMatchIDMismatch, result.MatchID, req.MatchID)
 	}
 
+	c.playerSlots = nil
+	if req.Spec != nil && len(req.Spec.Slots) > 0 {
+		for _, s := range req.Spec.Slots {
+			c.playerSlots = append(c.playerSlots, s.SlotID)
+		}
+	} else {
+		c.playerSlots = append(c.playerSlots, req.Players...)
+	}
+	c.lastTick = result.Tick
+	c.lastStateHash = result.StateHash
 	c.lifecycle = ClientStateInitialized
 	return &result, nil
 }
@@ -266,7 +388,7 @@ func (c *subprocessClient) AdvanceTick(ctx context.Context, req AdvanceTickReque
 		return nil, err
 	}
 
-	if err := c.writeEnvelopeInternal(TypeAdvanceTick, c.matchID, payloadMap); err != nil {
+	if err := c.writeEnvelopeInternal(TypeAdvanceTick, c.matchID, c.runID, payloadMap); err != nil {
 		return nil, err
 	}
 
@@ -284,12 +406,21 @@ func (c *subprocessClient) AdvanceTick(ctx context.Context, req AdvanceTickReque
 		return nil, fmt.Errorf("failed to decode tick_completed payload: %w", err)
 	}
 
-	if env.Type == TypeMatchCompleted {
-		result.IsOver = true
-		c.lifecycle = ClientStateFinished
-	} else {
-		c.lifecycle = ClientStateRunning
+	c.lastTick = result.Tick
+	c.lastStateHash = result.StateHash
+	c.lastResult = &result
+	if result.Winner != "" {
+		c.lastWinner = result.Winner
+	} else if result.Result != nil {
+		if w, ok := result.Result["winner"].(string); ok && w != "" {
+			c.lastWinner = w
+		}
 	}
+
+	if env.Type == TypeMatchCompleted || result.Terminal {
+		result.IsOver = true
+	}
+	c.lifecycle = ClientStateRunning
 
 	return &result, nil
 }
@@ -312,7 +443,7 @@ func (c *subprocessClient) FinishMatch(ctx context.Context, reason string) (*Mat
 		"reason": reason,
 	}
 
-	if err := c.writeEnvelopeInternal(TypeFinishMatch, c.matchID, payloadMap); err != nil {
+	if err := c.writeEnvelopeInternal(TypeFinishMatch, c.matchID, c.runID, payloadMap); err != nil {
 		return nil, err
 	}
 
@@ -330,6 +461,76 @@ func (c *subprocessClient) FinishMatch(ctx context.Context, reason string) (*Mat
 		return nil, fmt.Errorf("failed to decode match_completed payload: %w", err)
 	}
 
+	if result.FinalTick == 0 && c.lastTick > 0 {
+		result.FinalTick = c.lastTick
+	}
+	if result.FinalStateHash == "" {
+		result.FinalStateHash = c.lastStateHash
+	}
+	if result.Reason == "" {
+		result.Reason = reason
+	}
+	if result.Winner == "" && c.lastWinner != "" {
+		result.Winner = c.lastWinner
+	}
+	if result.Scores == nil {
+		result.Scores = make(map[string]int)
+		if c.lastResult != nil && c.lastResult.Result != nil {
+			if rankingsRaw, ok := c.lastResult.Result["rankings"].([]interface{}); ok {
+				for _, rRaw := range rankingsRaw {
+					if rMap, ok := rRaw.(map[string]interface{}); ok {
+						slotID, _ := rMap["slot"].(string)
+						if slotID == "" {
+							slotID, _ = rMap["playerId"].(string)
+						}
+						sc := 0
+						if scoreNum, ok := rMap["score"].(float64); ok {
+							sc = int(scoreNum)
+						}
+						rk := 1
+						if rankNum, ok := rMap["rank"].(float64); ok {
+							rk = int(rankNum)
+						}
+						if slotID != "" {
+							result.Scores[slotID] = sc
+							result.Rankings = append(result.Rankings, PlayerRank{
+								PlayerID: slotID,
+								Rank:     rk,
+								Score:    sc,
+							})
+						}
+					}
+				}
+			}
+		}
+		if len(result.Scores) == 0 {
+			for _, p := range c.playerSlots {
+				if result.Winner != "" && p == result.Winner {
+					result.Scores[p] = 1
+					result.Rankings = append(result.Rankings, PlayerRank{
+						PlayerID: p,
+						Rank:     1,
+						Score:    1,
+					})
+				} else if result.Winner != "" {
+					result.Scores[p] = 0
+					result.Rankings = append(result.Rankings, PlayerRank{
+						PlayerID: p,
+						Rank:     2,
+						Score:    0,
+					})
+				} else {
+					result.Scores[p] = 0
+					result.Rankings = append(result.Rankings, PlayerRank{
+						PlayerID: p,
+						Rank:     1,
+						Score:    0,
+					})
+				}
+			}
+		}
+	}
+
 	c.lifecycle = ClientStateFinished
 	return &result, nil
 }
@@ -344,7 +545,7 @@ func (c *subprocessClient) Close(ctx context.Context) error {
 	c.lifecycle = ClientStateClosed
 
 	// Send shutdown command
-	_ = c.writeEnvelopeInternal(TypeShutdown, "", map[string]interface{}{
+	_ = c.writeEnvelopeInternal(TypeShutdown, c.matchID, c.runID, map[string]interface{}{
 		"reason": "close",
 	})
 
@@ -403,11 +604,12 @@ func (c *subprocessClient) forceKill() {
 	}
 }
 
-func (c *subprocessClient) writeEnvelopeInternal(msgType string, matchID string, payload map[string]interface{}) error {
+func (c *subprocessClient) writeEnvelopeInternal(msgType string, matchID string, runID string, payload map[string]interface{}) error {
 	env := Envelope{
 		ProtocolVersion: ProtocolVersion,
 		Type:            msgType,
 		MatchID:         matchID,
+		RunID:           runID,
 		Sequence:        c.sendSeq,
 		Payload:         payload,
 	}
@@ -482,6 +684,9 @@ func (c *subprocessClient) readEnvelopeInternal(ctx context.Context) (*Envelope,
 
 		if c.matchID != "" && env.MatchID != "" && env.MatchID != c.matchID {
 			return nil, fmt.Errorf("%w: expected matchId %s, got %s", ErrMatchIDMismatch, c.matchID, env.MatchID)
+		}
+		if c.runID != "" && env.RunID != "" && env.RunID != c.runID {
+			return nil, fmt.Errorf("%w: expected runId %s, got %s", ErrMatchIDMismatch, c.runID, env.RunID)
 		}
 
 		return &env, nil

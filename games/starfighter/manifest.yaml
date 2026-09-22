@@ -1,6 +1,6 @@
 id: starfighter
 name: Starfighter Arena
-version: 0.1.0
+version: 0.3.0-core.1
 binary_path: bin/starfighter-engine
 description: >
   2D Newtonian space dogfight. Ships move by inertia (thrust, drag, active
@@ -33,3 +33,4 @@ settings:
   energy_regen_per_tick: "0.5"
   # Perception
   radar_range: "800"
+  asteroid_count: "5"

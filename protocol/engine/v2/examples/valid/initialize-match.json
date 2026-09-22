@@ -1,0 +1,26 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "initialize_match",
+  "matchId": "m-12345678-abcd",
+  "sequence": 1,
+  "payload": {
+    "matchId": "m-12345678-abcd",
+    "gameId": "starfighter",
+    "expectedEngineVersion": "1.0.0",
+    "seed": 42,
+    "fixedTimestepMs": 50,
+    "maxTicks": 200,
+    "players": [
+      "bot-alpha",
+      "bot-beta"
+    ],
+    "config": {
+      "gridWidth": 10,
+      "gridHeight": 10
+    },
+    "participantArtifactDigests": {
+      "bot-alpha": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bot-beta": "sha256:ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb"
+    }
+  }
+}

@@ -50,15 +50,19 @@ func main() {
 		ProtocolVersion: protocolVersion,
 		Type:            engine.TypeEngineReady,
 		MatchID:         "",
+		RunID:           "",
 		Sequence:        sendSeq,
 		Payload: map[string]interface{}{
-			"engineVersion": "0.1.0-fake",
+			"engineVersion": "0.3.0",
+			"engineDigest":  "b67fd4613e5cc5d2d742b59c3f5d7846f83f348fb01fac5f521a05c57aef1cf6",
 			"supportedProtocols": []string{
 				protocolVersion,
 			},
 			"capabilities": map[string]interface{}{
-				"headless":      true,
-				"deterministic": true,
+				"headless":                 true,
+				"deterministic":            true,
+				"avian2d":                  true,
+				"authoritative_commitment": true,
 			},
 		},
 	}
@@ -72,6 +76,7 @@ func main() {
 	scanner.Buffer(buf, 2*1024*1024)
 
 	var matchID string
+	var runID string
 	var seed int64
 	var maxTicks int
 	var currentTick int
@@ -101,6 +106,7 @@ func main() {
 					ProtocolVersion: engine.ProtocolVersion,
 					Type:            engine.TypeEngineError,
 					MatchID:         inEnv.MatchID,
+					RunID:           inEnv.RunID,
 					Sequence:        sendSeq,
 					Payload: map[string]interface{}{
 						"code":    "ERR_FAKE_SIMULATION_ABORT",
@@ -127,6 +133,10 @@ func main() {
 			_ = json.Unmarshal(reqBytes, &req)
 
 			matchID = req.MatchID
+			if matchID == "" {
+				matchID = inEnv.MatchID
+			}
+			runID = inEnv.RunID
 			if *mode == "mismatch_match_id" {
 				matchID = "m-unexpected-fake-id"
 			}
@@ -136,6 +146,20 @@ func main() {
 				maxTicks = 100
 			}
 			players = req.Players
+			if len(players) == 0 {
+				if slotsRaw, ok := inEnv.Payload["slots"].([]interface{}); ok {
+					for _, s := range slotsRaw {
+						if sm, ok := s.(map[string]interface{}); ok {
+							if slotID, ok := sm["slotId"].(string); ok {
+								players = append(players, slotID)
+							}
+						}
+					}
+				}
+			}
+			if len(players) == 0 {
+				players = []string{"bot-1", "bot-2"}
+			}
 
 			for _, p := range players {
 				scores[p] = 0
@@ -162,14 +186,24 @@ func main() {
 				ProtocolVersion: engine.ProtocolVersion,
 				Type:            engine.TypeMatchInitialized,
 				MatchID:         matchID,
+				RunID:           runID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
 					"matchId":        matchID,
+					"tick":           0,
 					"initialTick":    0,
 					"stateHash":      initHash,
 					"events":         []string{"Match initialized by fake engine"},
 					"perceptions":    perceptions,
+					"observations":   perceptions,
 					"publicSnapshot": publicSnapshot,
+					"commitments": map[string]interface{}{
+						"executionSpecDigest":          initHash,
+						"actionBatchDigest":            initHash,
+						"authoritativeStateCommitment": initHash,
+						"publicSnapshotHash":           initHash,
+						"replayChainDigest":            initHash,
+					},
 				},
 			}
 			sendSeq++
@@ -188,6 +222,7 @@ func main() {
 					ProtocolVersion: engine.ProtocolVersion,
 					Type:            engine.TypeTickCompleted,
 					MatchID:         matchID,
+					RunID:           runID,
 					Sequence:        sendSeq,
 					Payload: map[string]interface{}{
 						"tick":      1,
@@ -267,15 +302,25 @@ func main() {
 				ProtocolVersion: engine.ProtocolVersion,
 				Type:            engine.TypeTickCompleted,
 				MatchID:         matchID,
+				RunID:           runID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
 					"tick":           resultingTick,
 					"events":         events,
 					"stateHash":      stateHash,
 					"isOver":         isOver,
+					"terminal":       isOver,
 					"winner":         winner,
 					"perceptions":    perceptions,
+					"observations":   perceptions,
 					"publicSnapshot": publicSnapshot,
+					"commitments": map[string]interface{}{
+						"executionSpecDigest":          stateHash,
+						"actionBatchDigest":            stateHash,
+						"authoritativeStateCommitment": stateHash,
+						"publicSnapshotHash":           stateHash,
+						"replayChainDigest":            stateHash,
+					},
 				},
 			}
 			sendSeq++
@@ -312,6 +357,7 @@ func main() {
 				ProtocolVersion: engine.ProtocolVersion,
 				Type:            engine.TypeMatchCompleted,
 				MatchID:         matchID,
+				RunID:           runID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
 					"finalTick":      currentTick,
@@ -320,6 +366,13 @@ func main() {
 					"scores":         scores,
 					"rankings":       rankings,
 					"finalStateHash": lastStateHash,
+					"commitments": map[string]interface{}{
+						"executionSpecDigest":          lastStateHash,
+						"actionBatchDigest":            lastStateHash,
+						"authoritativeStateCommitment": lastStateHash,
+						"publicSnapshotHash":           lastStateHash,
+						"replayChainDigest":            lastStateHash,
+					},
 				},
 			}
 			sendSeq++
@@ -330,6 +383,7 @@ func main() {
 				ProtocolVersion: engine.ProtocolVersion,
 				Type:            engine.TypeShutdownAck,
 				MatchID:         matchID,
+				RunID:           runID,
 				Sequence:        sendSeq,
 				Payload: map[string]interface{}{
 					"status": "ok",
@@ -353,7 +407,7 @@ func calculateStateHash(seed int64, tick int, scores map[string]int) string {
 	for _, p := range keys {
 		_, _ = fmt.Fprintf(h, "|%s:%d", p, scores[p])
 	}
-	return "sha256:" + hex.EncodeToString(h.Sum(nil))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func writeEnvelope(env engine.Envelope) {

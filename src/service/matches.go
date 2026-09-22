@@ -2,17 +2,20 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
-	"github.com/Agentrix-Group/Agentrix/src/engine"
 	"github.com/Agentrix-Group/Agentrix/src/game"
 	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
@@ -205,6 +208,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		return nil, fmt.Errorf("%w: match has no slots configured", ErrInvalidSubmissions)
 	}
 
+	subMap := make(map[string]*model.Submission)
 	var submissionIds []string
 	for _, slot := range slots {
 		if slot.SubmissionId == "" {
@@ -218,6 +222,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 			return nil, fmt.Errorf("%w: slot %d submission %s is inactive", ErrInvalidSubmissions, slot.SlotIndex, slot.SubmissionId)
 		}
 		submissionIds = append(submissionIds, slot.SubmissionId)
+		subMap[slot.SubmissionId] = sub
 	}
 
 	// 5. Determine attempt and run_id
@@ -233,18 +238,31 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 	// Build execution slot specs and prepare ExecutionSpec BEFORE CAS
 	var slotSpecs []model.ExecutionSlotSpec
 	for _, slot := range slots {
+		artifactDigest := ""
+		if sub, ok := subMap[slot.SubmissionId]; ok && sub != nil {
+			if sub.CodePath != "" {
+				if d, err := model.ComputeFileSHA256(sub.CodePath); err == nil {
+					artifactDigest = d
+				}
+			}
+			if artifactDigest == "" {
+				h := sha256.Sum256([]byte("agentrix.submission/" + sub.Id))
+				artifactDigest = hex.EncodeToString(h[:])
+			}
+		} else {
+			h := sha256.Sum256([]byte("agentrix.submission/" + slot.SubmissionId))
+			artifactDigest = hex.EncodeToString(h[:])
+		}
 		slotSpecs = append(slotSpecs, model.ExecutionSlotSpec{
-			SlotIndex:    slot.SlotIndex,
-			SubmissionID: slot.SubmissionId,
-			AgentID:      slot.AgentName,
+			SlotID:         slot.SubmissionId,
+			ArtifactDigest: artifactDigest,
 		})
 	}
 
-	maxTicks := 100
+	maxTicks := 3600
 	tickHz := 60.0
-	fixedTimestepMs := 16
-	gameVersion := "1.0.0"
-	engineVersion := "0.3.0"
+	gameVersion := model.StarfighterGameVersion
+	engineVersion := "0.3.0-core.1"
 	engineDigest := ""
 
 	config := make(map[string]interface{})
@@ -256,17 +274,46 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		if manifest.TickHz > 0 {
 			tickHz = manifest.TickHz
 		}
-		if manifest.FixedTimestepMs > 0 {
-			fixedTimestepMs = manifest.FixedTimestepMs
-		}
 		if manifest.Version != "" {
 			gameVersion = manifest.Version
 		}
 		for k, v := range manifest.Settings {
+			if k == "tick_hz" {
+				continue
+			}
+			if k == "asteroid_count" {
+				if u, err := strconv.ParseUint(v, 10, 32); err == nil {
+					config[k] = u
+					continue
+				}
+			}
+			if f, err := strconv.ParseFloat(v, 64); err == nil {
+				config[k] = f
+				continue
+			}
 			config[k] = v
+		}
+		if _, ok := config["asteroid_count"]; !ok {
+			config["asteroid_count"] = uint64(5)
 		}
 		if binPath == "" {
 			binPath = manifest.BinaryPath
+		}
+	}
+	if match.GameId == model.StarfighterGameID && len(config) == 0 {
+		config = map[string]interface{}{
+			"arena_width":                 2000.0,
+			"arena_height":                1000.0,
+			"ship_max_health":             100.0,
+			"ship_max_energy":             100.0,
+			"bullet_damage":               25.0,
+			"asteroid_damage":             100.0,
+			"shoot_energy_cost":           15.0,
+			"shield_energy_cost_per_tick": 1.0,
+			"shield_damage_reduction":     0.7,
+			"energy_regen_per_tick":       0.5,
+			"radar_range":                 800.0,
+			"asteroid_count":              uint64(5),
 		}
 	}
 	if binPath != "" {
@@ -279,27 +326,74 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 			engineDigest = d
 		}
 	}
-	config["tick_hz"] = tickHz
+	if envDigest := os.Getenv("AGENTRIX_ENGINE_DIGEST"); envDigest != "" {
+		engineDigest = envDigest
+	}
+	if engineDigest == "" {
+		return nil, fmt.Errorf("%w: engine binary digest is required (fail closed)", model.ErrInvalidExecutionSpec)
+	}
+
+	tickRateNumerator := uint32(tickHz)
+	if tickRateNumerator == 0 {
+		tickRateNumerator = 60
+	}
+	tickRate, err := model.NewTickRate(tickRateNumerator, 1)
+	if err != nil {
+		return nil, fmt.Errorf("invalid tick rate: %w", err)
+	}
+
+	gameKey, err := model.StarfighterGameKey()
+	if err != nil {
+		return nil, fmt.Errorf("derive starfighter game key: %w", err)
+	}
+	if match.GameId != model.StarfighterGameID {
+		gameKey = model.GameKey{
+			GameID:      match.GameId,
+			GameVersion: gameVersion,
+			GameDigest:  strings.Repeat("0", 64),
+		}
+	}
+
+	schemaDigests := model.SchemaDigests{
+		Action:      model.StarfighterActionSchemaDigest,
+		Observation: model.StarfighterObservationSchemaDigest,
+		Public:      model.StarfighterPublicSchemaDigest,
+		Replay:      model.StarfighterReplaySchemaDigest,
+	}
+
+	limits := model.ExecutionLimits{
+		MaxTicks:        uint64(maxTicks),
+		MaxPlayers:      2,
+		MaxEntities:     10000,
+		MaxMessageBytes: 1048576,
+	}
 
 	execSpec := &model.ExecutionSpec{
-		ProtocolVersion: engine.ProtocolVersion,
-		GameID:          match.GameId,
-		GameVersion:     gameVersion,
-		EngineVersion:   engineVersion,
-		EngineDigest:    engineDigest,
-		Config:          config,
-		Seed:            match.Seed,
-		Limits: model.ExecutionLimits{
-			MaxTicks:        maxTicks,
-			FixedTimestepMs: fixedTimestepMs,
-			TickHz:          tickHz,
-			TimeoutMs:       500,
-		},
-		Slots:         slotSpecs,
-		ReplayVersion: "agentrix-replay/1",
+		ProtocolVersion:      model.ExecutionSpecProtocolVersion,
+		RunID:                runId,
+		MatchID:              match.Id,
+		EngineVersion:        engineVersion,
+		EngineDigest:         engineDigest,
+		BuildIdentity:        fmt.Sprintf("agentrix-engine-%s", engineVersion),
+		Target:               "x86_64-unknown-linux-gnu",
+		Game:                 gameKey,
+		SchemaDigests:        schemaDigests,
+		Config:               config,
+		TickRate:             tickRate,
+		Seed:                 uint64(match.Seed),
+		Slots:                slotSpecs,
+		Limits:               limits,
+		FailurePolicyVersion: model.DefaultFailurePolicyVersion,
+		DeterminismTier:      model.TierSameArtifactSameTarget,
+		RNGAlgorithm:         model.DefaultRNGAlgorithm,
 	}
-	_ = execSpec.Seal()
-	specJSON, _ := execSpec.ToJSON()
+	if err := execSpec.Seal(); err != nil {
+		return nil, fmt.Errorf("failed to seal execution spec: %w", err)
+	}
+	specJSON, err := execSpec.ToJSON()
+	if err != nil {
+		return nil, fmt.Errorf("failed to serialize execution spec: %w", err)
+	}
 
 	// 6. Atomically transition match to queued using CAS
 	var updated bool
@@ -383,7 +477,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 			GameId:        match.GameId,
 			GameVersion:   gameVersion,
 			EngineDigest:  engineDigest,
-			ConfigHash:    execSpec.ConfigHash,
+			ConfigHash:    execSpec.ConfigDigest,
 			SubmissionIds: submissionIds,
 			Seed:          match.Seed,
 		}

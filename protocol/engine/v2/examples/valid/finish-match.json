@@ -1,0 +1,9 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "finish_match",
+  "matchId": "m-12345678-abcd",
+  "sequence": 3,
+  "payload": {
+    "reason": "score_limit"
+  }
+}

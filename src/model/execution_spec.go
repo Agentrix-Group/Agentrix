@@ -8,137 +8,307 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strings"
 )
+
+const (
+	ExecutionSpecProtocolVersion = "agentrix-engine/2"
+	DefaultRNGAlgorithm          = "xoshiro256starstar/1"
+	DefaultFailurePolicyVersion  = "fail-closed/1"
+	TierSameArtifactSameTarget   = "same_artifact_same_target"
+	TierCertifiedTargetMatrix    = "certified_target_matrix"
+
+	StarfighterGameID                  = "starfighter"
+	StarfighterGameVersion             = "0.3.0-core.1"
+	StarfighterActionSchemaDigest      = "6a01f31f81fcc4ee40aed89bee030a5250d841edbf5a9c93548d7f8ae78356d4"
+	StarfighterObservationSchemaDigest = "09264082275be4df7a7da2d51f447f8dbb1c08929a0a4120a9f9202a950426ea"
+	StarfighterPublicSchemaDigest      = "6a422a9da18f35530ea63ac49959e77ac08a08c30e2a728b51d6c6144ead293c"
+	StarfighterReplaySchemaDigest      = "0000000000000000000000000000000000000000000000000000000000000000"
+)
+
+// DeriveStarfighterGameDigest computes the canonical game manifest digest.
+func DeriveStarfighterGameDigest() (string, error) {
+	manifest := map[string]interface{}{
+		"gameId":      StarfighterGameID,
+		"gameVersion": StarfighterGameVersion,
+		"schemas": map[string]interface{}{
+			"action":      StarfighterActionSchemaDigest,
+			"observation": StarfighterObservationSchemaDigest,
+			"public":      StarfighterPublicSchemaDigest,
+		},
+	}
+	return CanonicalJSONDigest("agentrix.game-manifest/1", manifest)
+}
+
+// StarfighterGameKey returns the validated canonical GameKey for Starfighter.
+func StarfighterGameKey() (GameKey, error) {
+	digest, err := DeriveStarfighterGameDigest()
+	if err != nil {
+		return GameKey{}, err
+	}
+	return GameKey{
+		GameID:      StarfighterGameID,
+		GameVersion: StarfighterGameVersion,
+		GameDigest:  digest,
+	}, nil
+}
+
+// StarfighterSchemaDigests returns the canonical schema digests for Starfighter.
+func StarfighterSchemaDigests() SchemaDigests {
+	return SchemaDigests{
+		Action:      StarfighterActionSchemaDigest,
+		Observation: StarfighterObservationSchemaDigest,
+		Public:      StarfighterPublicSchemaDigest,
+		Replay:      StarfighterReplaySchemaDigest,
+	}
+}
 
 var (
 	ErrInvalidExecutionSpec = errors.New("invalid execution spec")
 	ErrEngineDigestMismatch = errors.New("engine binary digest mismatch")
 	ErrIncompatibleProtocol = errors.New("incompatible engine protocol version")
+
+	sha256Regex = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
+
+func IsValidSHA256(s string) bool {
+	return sha256Regex.MatchString(s)
+}
+
+func isValidSHA256(s string) bool {
+	return IsValidSHA256(s)
+}
+
+func gcd(a, b uint32) uint32 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
+}
+
+// TickRate represents the simulation update frequency as a reduced fraction.
+type TickRate struct {
+	Numerator   uint32 `json:"numerator"`
+	Denominator uint32 `json:"denominator"`
+}
+
+func NewTickRate(numerator, denominator uint32) (TickRate, error) {
+	if numerator == 0 || denominator == 0 {
+		return TickRate{}, fmt.Errorf("%w: tick rate numerator and denominator must be positive", ErrInvalidExecutionSpec)
+	}
+	if numerator > 10000 || denominator > 10000 {
+		return TickRate{}, fmt.Errorf("%w: tick rate numerator and denominator must not exceed 10000", ErrInvalidExecutionSpec)
+	}
+	g := gcd(numerator, denominator)
+	return TickRate{
+		Numerator:   numerator / g,
+		Denominator: denominator / g,
+	}, nil
+}
+
+func (tr TickRate) SecondsPerTick() float64 {
+	return float64(tr.Denominator) / float64(tr.Numerator)
+}
+
+// GameKey identifies the game implementation and version.
+type GameKey struct {
+	GameID      string `json:"gameId"`
+	GameVersion string `json:"gameVersion"`
+	GameDigest  string `json:"gameDigest"`
+}
+
+func (g GameKey) Validate() error {
+	if strings.TrimSpace(g.GameID) == "" {
+		return fmt.Errorf("%w: gameId must not be empty", ErrInvalidExecutionSpec)
+	}
+	if strings.TrimSpace(g.GameVersion) == "" {
+		return fmt.Errorf("%w: gameVersion must not be empty", ErrInvalidExecutionSpec)
+	}
+	if !isValidSHA256(g.GameDigest) {
+		return fmt.Errorf("%w: gameDigest must be a 64-character lowercase hex sha256", ErrInvalidExecutionSpec)
+	}
+	return nil
+}
+
+// SchemaDigests contains canonical SHA-256 hashes of the schemas.
+type SchemaDigests struct {
+	Action      string `json:"action"`
+	Observation string `json:"observation"`
+	Public      string `json:"public"`
+	Replay      string `json:"replay"`
+}
+
+func (s SchemaDigests) Validate() error {
+	for name, digest := range map[string]string{
+		"action":      s.Action,
+		"observation": s.Observation,
+		"public":      s.Public,
+		"replay":      s.Replay,
+	} {
+		if !isValidSHA256(digest) {
+			return fmt.Errorf("%w: %s schema digest must be a 64-character lowercase hex sha256", ErrInvalidExecutionSpec, name)
+		}
+	}
+	return nil
+}
 
 // ExecutionSlotSpec defines an immutable participant slot in a match execution.
 type ExecutionSlotSpec struct {
-	SlotIndex    int    `json:"slot_index"`
-	SubmissionID string `json:"submission_id"`
-	AgentID      string `json:"agent_id,omitempty"`
-	Digest       string `json:"digest,omitempty"`
+	SlotID         string `json:"slotId"`
+	ArtifactDigest string `json:"artifactDigest"`
+}
+
+func (s ExecutionSlotSpec) Validate() error {
+	if strings.TrimSpace(s.SlotID) == "" {
+		return fmt.Errorf("%w: slotId must not be empty", ErrInvalidExecutionSpec)
+	}
+	if !isValidSHA256(s.ArtifactDigest) {
+		return fmt.Errorf("%w: artifactDigest must be a 64-character lowercase hex sha256", ErrInvalidExecutionSpec)
+	}
+	return nil
 }
 
 // ExecutionLimits defines simulation boundaries and rate configurations.
 type ExecutionLimits struct {
-	MaxTicks        int     `json:"max_ticks"`
-	FixedTimestepMs int     `json:"fixed_timestep_ms"`
-	TickHz          float64 `json:"tick_hz"`
-	TimeoutMs       int     `json:"timeout_ms,omitempty"`
-	MaxLineBytes    int     `json:"max_line_bytes,omitempty"`
+	MaxTicks        uint64 `json:"maxTicks"`
+	MaxPlayers      uint32 `json:"maxPlayers"`
+	MaxEntities     uint32 `json:"maxEntities"`
+	MaxMessageBytes uint32 `json:"maxMessageBytes"`
 }
 
-// ExecutionSpec is an immutable, serializable, and hashable specification of a match execution.
-// It establishes the complete reproducible envelope: protocol, engine identity, game config, limits, and participants.
-type ExecutionSpec struct {
-	ProtocolVersion string                 `json:"protocol_version"`
-	GameID          string                 `json:"game_id"`
-	GameVersion     string                 `json:"game_version"`
-	EngineVersion   string                 `json:"engine_version"`
-	EngineDigest    string                 `json:"engine_digest"`
-	Config          map[string]interface{} `json:"config"`
-	ConfigHash      string                 `json:"config_hash"`
-	Seed            int64                  `json:"seed"`
-	Limits          ExecutionLimits        `json:"limits"`
-	Slots           []ExecutionSlotSpec    `json:"slots"`
-	ReplayVersion   string                 `json:"replay_version"`
-	SpecHash        string                 `json:"spec_hash,omitempty"`
-}
-
-// ComputeConfigHash computes a deterministic SHA256 digest of the game configuration.
-func ComputeConfigHash(config map[string]interface{}) (string, error) {
-	if config == nil {
-		config = make(map[string]interface{})
+func (l ExecutionLimits) Validate() error {
+	if l.MaxTicks == 0 {
+		return fmt.Errorf("%w: maxTicks must be > 0", ErrInvalidExecutionSpec)
 	}
-	raw, err := json.Marshal(config)
-	if err != nil {
-		return "", fmt.Errorf("marshal config: %w", err)
+	if l.MaxPlayers == 0 || l.MaxPlayers > 64 {
+		return fmt.Errorf("%w: maxPlayers must be between 1 and 64", ErrInvalidExecutionSpec)
 	}
-	h := sha256.Sum256(raw)
-	return hex.EncodeToString(h[:]), nil
-}
-
-// ComputeConfigHash computes the SHA256 digest for the spec's Config.
-func (s *ExecutionSpec) ComputeConfigHash() (string, error) {
-	return ComputeConfigHash(s.Config)
-}
-
-// ComputeSpecHash computes the deterministic SHA256 digest of the execution specification,
-// excluding the SpecHash field itself.
-func (s *ExecutionSpec) ComputeSpecHash() (string, error) {
-	copySpec := *s
-	copySpec.SpecHash = ""
-	raw, err := json.Marshal(copySpec)
-	if err != nil {
-		return "", fmt.Errorf("marshal execution spec: %w", err)
+	if l.MaxEntities == 0 {
+		return fmt.Errorf("%w: maxEntities must be > 0", ErrInvalidExecutionSpec)
 	}
-	h := sha256.Sum256(raw)
-	return hex.EncodeToString(h[:]), nil
-}
-
-// Seal computes and populates ConfigHash and SpecHash.
-func (s *ExecutionSpec) Seal() error {
-	cfgHash, err := s.ComputeConfigHash()
-	if err != nil {
-		return err
+	if l.MaxMessageBytes < 1024 {
+		return fmt.Errorf("%w: maxMessageBytes must be >= 1024", ErrInvalidExecutionSpec)
 	}
-	s.ConfigHash = cfgHash
-
-	specHash, err := s.ComputeSpecHash()
-	if err != nil {
-		return err
-	}
-	s.SpecHash = specHash
 	return nil
 }
 
-// Validate ensures all required fields are populated, slots are ordered, and hashes match.
-func (s *ExecutionSpec) Validate() error {
-	if s.ProtocolVersion == "" {
-		return fmt.Errorf("%w: missing protocol_version", ErrInvalidExecutionSpec)
-	}
-	if s.GameID == "" {
-		return fmt.Errorf("%w: missing game_id", ErrInvalidExecutionSpec)
-	}
-	if s.Limits.MaxTicks <= 0 {
-		return fmt.Errorf("%w: max_ticks must be > 0", ErrInvalidExecutionSpec)
-	}
-	if s.Limits.TickHz <= 0 {
-		return fmt.Errorf("%w: tick_hz must be > 0", ErrInvalidExecutionSpec)
-	}
-	if len(s.Slots) < 2 {
-		return fmt.Errorf("%w: match must have at least 2 participant slots", ErrInvalidExecutionSpec)
-	}
-	for i, slot := range s.Slots {
-		if slot.SlotIndex != i {
-			return fmt.Errorf("%w: slot index %d does not match position %d", ErrInvalidExecutionSpec, slot.SlotIndex, i)
-		}
-		if slot.SubmissionID == "" {
-			return fmt.Errorf("%w: slot %d has empty submission_id", ErrInvalidExecutionSpec, i)
-		}
-	}
+// ExecutionSpec is an immutable, serializable, and hashable specification of a match execution.
+// It establishes the complete reproducible envelope conforming to agentrix-engine/2.
+type ExecutionSpec struct {
+	ProtocolVersion      string                 `json:"protocolVersion"`
+	RunID                string                 `json:"runId"`
+	MatchID              string                 `json:"matchId"`
+	EngineVersion        string                 `json:"engineVersion"`
+	EngineDigest         string                 `json:"engineDigest"`
+	BuildIdentity        string                 `json:"buildIdentity"`
+	Target               string                 `json:"target"`
+	Game                 GameKey                `json:"game"`
+	SchemaDigests        SchemaDigests          `json:"schemaDigests"`
+	Config               map[string]interface{} `json:"config"`
+	ConfigDigest         string                 `json:"configDigest"`
+	TickRate             TickRate               `json:"tickRate"`
+	Seed                 uint64                 `json:"seed"`
+	Slots                []ExecutionSlotSpec    `json:"slots"`
+	Limits               ExecutionLimits        `json:"limits"`
+	FailurePolicyVersion string                 `json:"failurePolicyVersion"`
+	DeterminismTier      string                 `json:"determinismTier"`
+	RNGAlgorithm         string                 `json:"rngAlgorithm"`
+}
 
-	expectedConfigHash, err := s.ComputeConfigHash()
+// ComputeConfigDigest computes a deterministic canonical SHA256 digest of the game configuration.
+func (s *ExecutionSpec) ComputeConfigDigest() (string, error) {
+	domain := "starfighter-config"
+	if s.Game.GameID != "" && s.Game.GameID != "starfighter" {
+		domain = s.Game.GameID + "-config"
+	}
+	cfg := s.Config
+	if cfg == nil {
+		cfg = make(map[string]interface{})
+	}
+	return CanonicalJSONDigest(domain, cfg)
+}
+
+// ComputeDigest computes the deterministic canonical SHA256 digest of the execution specification.
+func (s *ExecutionSpec) ComputeDigest() (string, error) {
+	return CanonicalJSONDigest("agentrix.execution-spec/2", s)
+}
+
+// Seal computes and validates ConfigDigest.
+func (s *ExecutionSpec) Seal() error {
+	cfgDigest, err := s.ComputeConfigDigest()
 	if err != nil {
-		return fmt.Errorf("%w: failed to compute config hash: %v", ErrInvalidExecutionSpec, err)
+		return fmt.Errorf("%w: compute config digest: %v", ErrInvalidExecutionSpec, err)
 	}
-	if s.ConfigHash != "" && s.ConfigHash != expectedConfigHash {
-		return fmt.Errorf("%w: config_hash mismatch (expected %s, got %s)", ErrInvalidExecutionSpec, expectedConfigHash, s.ConfigHash)
+	s.ConfigDigest = cfgDigest
+	return s.Validate()
+}
+
+// Validate ensures all required fields are populated, slots are valid, and hashes match.
+func (s *ExecutionSpec) Validate() error {
+	if s.ProtocolVersion != ExecutionSpecProtocolVersion {
+		return fmt.Errorf("%w: expected protocolVersion %s, got %s", ErrInvalidExecutionSpec, ExecutionSpecProtocolVersion, s.ProtocolVersion)
+	}
+	if strings.TrimSpace(s.RunID) == "" {
+		return fmt.Errorf("%w: runId must not be empty", ErrInvalidExecutionSpec)
+	}
+	if strings.TrimSpace(s.MatchID) == "" {
+		return fmt.Errorf("%w: matchId must not be empty", ErrInvalidExecutionSpec)
+	}
+	if strings.TrimSpace(s.EngineVersion) == "" {
+		return fmt.Errorf("%w: engineVersion must not be empty", ErrInvalidExecutionSpec)
+	}
+	if !isValidSHA256(s.EngineDigest) {
+		return fmt.Errorf("%w: engineDigest must be a 64-character lowercase hex sha256", ErrInvalidExecutionSpec)
+	}
+	if strings.TrimSpace(s.BuildIdentity) == "" {
+		return fmt.Errorf("%w: buildIdentity must not be empty", ErrInvalidExecutionSpec)
+	}
+	if strings.TrimSpace(s.Target) == "" {
+		return fmt.Errorf("%w: target must not be empty", ErrInvalidExecutionSpec)
+	}
+	if err := s.Game.Validate(); err != nil {
+		return err
+	}
+	if err := s.SchemaDigests.Validate(); err != nil {
+		return err
+	}
+	if !isValidSHA256(s.ConfigDigest) {
+		return fmt.Errorf("%w: configDigest must be a 64-character lowercase hex sha256", ErrInvalidExecutionSpec)
+	}
+	if s.TickRate.Numerator == 0 || s.TickRate.Denominator == 0 {
+		return fmt.Errorf("%w: tickRate numerator and denominator must be positive", ErrInvalidExecutionSpec)
+	}
+	if gcd(s.TickRate.Numerator, s.TickRate.Denominator) != 1 {
+		return fmt.Errorf("%w: tickRate must be in lowest terms", ErrInvalidExecutionSpec)
+	}
+	if len(s.Slots) == 0 || len(s.Slots) > 64 {
+		return fmt.Errorf("%w: slots count must be between 1 and 64", ErrInvalidExecutionSpec)
+	}
+	for _, slot := range s.Slots {
+		if err := slot.Validate(); err != nil {
+			return err
+		}
+	}
+	if err := s.Limits.Validate(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(s.FailurePolicyVersion) == "" {
+		return fmt.Errorf("%w: failurePolicyVersion must not be empty", ErrInvalidExecutionSpec)
+	}
+	if s.DeterminismTier != TierSameArtifactSameTarget && s.DeterminismTier != TierCertifiedTargetMatrix {
+		return fmt.Errorf("%w: unsupported determinismTier: %s", ErrInvalidExecutionSpec, s.DeterminismTier)
+	}
+	if s.RNGAlgorithm != DefaultRNGAlgorithm {
+		return fmt.Errorf("%w: expected rngAlgorithm %s, got %s", ErrInvalidExecutionSpec, DefaultRNGAlgorithm, s.RNGAlgorithm)
 	}
 
-	if s.SpecHash != "" {
-		expectedSpecHash, err := s.ComputeSpecHash()
-		if err != nil {
-			return fmt.Errorf("%w: failed to compute spec hash: %v", ErrInvalidExecutionSpec, err)
-		}
-		if s.SpecHash != expectedSpecHash {
-			return fmt.Errorf("%w: spec_hash mismatch (expected %s, got %s)", ErrInvalidExecutionSpec, expectedSpecHash, s.SpecHash)
-		}
+	expectedConfigDigest, err := s.ComputeConfigDigest()
+	if err != nil {
+		return fmt.Errorf("%w: failed to compute config digest: %v", ErrInvalidExecutionSpec, err)
+	}
+	if s.ConfigDigest != expectedConfigDigest {
+		return fmt.Errorf("%w: configDigest mismatch (expected %s, got %s)", ErrInvalidExecutionSpec, expectedConfigDigest, s.ConfigDigest)
 	}
 
 	return nil

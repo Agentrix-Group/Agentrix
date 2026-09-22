@@ -1,0 +1,14 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "initialize_match",
+  "matchId": "m-1234",
+  "sequence": 1,
+  "payload": {
+    "matchId": "m-1234",
+    "gameId": "starfighter",
+    "seed": 42,
+    "fixedTimestepMs": 50,
+    "maxTicks": 100,
+    "players": []
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "magic_unknown_command",
+  "matchId": "m-1234",
+  "sequence": 1,
+  "payload": {}
+}

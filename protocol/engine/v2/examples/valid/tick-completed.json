@@ -1,0 +1,34 @@
+{
+  "protocolVersion": "agentrix-engine/2",
+  "type": "tick_completed",
+  "matchId": "m-12345678-abcd",
+  "sequence": 3,
+  "payload": {
+    "tick": 1,
+    "events": [
+      "bot-alpha fired",
+      "bot-beta was disqualified by timeout"
+    ],
+    "stateHash": "h1_tick_hash_987654",
+    "isOver": false,
+    "publicSnapshot": {
+      "tick": 1,
+      "fighters": [],
+      "bullets": [],
+      "events": ["bot-alpha fired"],
+      "stateHash": "h1_tick_hash_987654"
+    },
+    "perceptions": {
+      "bot-alpha": {
+        "tick": 1,
+        "x": 2,
+        "y": 1
+      },
+      "bot-beta": {
+        "tick": 1,
+        "x": 8,
+        "y": 8
+      }
+    }
+  }
+}

@@ -25,7 +25,7 @@ func TestEnvelopeSerialization(t *testing.T) {
 
 	data, err := json.Marshal(env)
 	r.NoError(err)
-	r.Contains(string(data), `"protocolVersion":"agentrix-engine/1"`)
+	r.Contains(string(data), `"protocolVersion":"agentrix-engine/2"`)
 	r.Contains(string(data), `"type":"advance_tick"`)
 	r.Contains(string(data), `"sequence":1`)
 
@@ -95,10 +95,10 @@ func TestInitializeAndTickDTOs(t *testing.T) {
 func TestContractExamplesValidation(t *testing.T) {
 	r := require.New(t)
 
-	validDir := "../../protocol/engine/v1/examples/valid"
+	validDir := "../../protocol/engine/v2/examples/valid"
 	files, err := os.ReadDir(validDir)
 	if err != nil {
-		validDir = "protocol/engine/v1/examples/valid"
+		validDir = "protocol/engine/v2/examples/valid"
 		files, err = os.ReadDir(validDir)
 	}
 	r.NoError(err)
@@ -160,10 +160,10 @@ func TestContractExamplesValidation(t *testing.T) {
 	}
 
 	// Test invalid examples
-	invalidDir := "../../protocol/engine/v1/examples/invalid"
+	invalidDir := "../../protocol/engine/v2/examples/invalid"
 	invFiles, err := os.ReadDir(invalidDir)
 	if err != nil {
-		invalidDir = "protocol/engine/v1/examples/invalid"
+		invalidDir = "protocol/engine/v2/examples/invalid"
 		invFiles, err = os.ReadDir(invalidDir)
 	}
 	r.NoError(err)

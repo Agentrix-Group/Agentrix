@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/advance-tick.schema.json",
+  "title": "AdvanceTickPayload",
+  "description": "Payload enviado por Agentrix hacia el motor para avanzar la simulación un tick entregando las acciones evaluadas.",
+  "type": "object",
+  "required": [
+    "tick",
+    "actions"
+  ],
+  "properties": {
+    "tick": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Tick de la percepción y acción que se aplica. La primera transición usa tick 0."
+    },
+    "actions": {
+      "type": "object",
+      "description": "Mapa de participanteId a su acción o estado de ejecución.",
+      "additionalProperties": {
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "valid",
+              "timeout",
+              "invalid_output",
+              "crashed",
+              "disqualified"
+            ],
+            "description": "Estado estricto de la evaluación del agente en este tick."
+          },
+          "payload": {
+            "type": "object",
+            "description": "Acción opaca suministrada por el agente; Go no interpreta su contenido.",
+            "additionalProperties": true
+          },
+          "errorDetails": {
+            "type": "string",
+            "description": "Detalles diagnósticos redactados cuando status != 'valid'."
+          }
+        },
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {"properties": {"status": {"const": "valid"}}},
+            "then": {"required": ["payload"]}
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

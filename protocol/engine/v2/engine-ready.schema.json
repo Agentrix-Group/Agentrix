@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentrix.dev/schemas/engine/v1/engine-ready.schema.json",
+  "title": "EngineReadyPayload",
+  "description": "Payload emitido por el motor tras iniciar para anunciar su disponibilidad y versión.",
+  "type": "object",
+  "required": [
+    "engineVersion",
+    "supportedProtocols"
+  ],
+  "properties": {
+    "engineVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Versión del ejecutable del motor (ej. '1.0.0')."
+    },
+    "supportedProtocols": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "description": "Lista de versiones de protocolo soportadas (debe incluir 'agentrix-engine/2')."
+    },
+    "engineDigest": {
+      "type": "string",
+      "description": "Checksum/digest sha256 del binario del motor si está disponible."
+    },
+    "capabilities": {
+      "type": "object",
+      "description": "Capacidades y opciones de simulación del motor.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

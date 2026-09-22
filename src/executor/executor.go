@@ -223,14 +223,30 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	if fixedTimestepMs <= 0 {
 		fixedTimestepMs = 17
 	}
-	config := make(map[string]interface{}, len(manifest.Settings)+1)
+	config := make(map[string]interface{}, len(manifest.Settings))
 	for key, value := range manifest.Settings {
-		config[key] = value
+		if key == "tick_hz" {
+			continue
+		}
+		if key == "asteroid_count" {
+			if u, err := strconv.ParseUint(value, 10, 32); err == nil {
+				config[key] = u
+				continue
+			}
+		}
+		if f, err := strconv.ParseFloat(value, 64); err == nil {
+			config[key] = f
+		} else {
+			config[key] = value
+		}
 	}
-	config["tick_hz"] = tickHz
+	if _, ok := config["asteroid_count"]; !ok {
+		config["asteroid_count"] = 5
+	}
 
 	initReq := engine.InitializeMatchRequest{
 		MatchID:               job.MatchId,
+		RunID:                 job.RunId,
 		GameID:                job.GameId,
 		ExpectedEngineVersion: engineClient.EngineVersion(),
 		Seed:                  job.Seed,
@@ -239,6 +255,16 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		MaxTicks:              maxTicks,
 		Players:               playerIDs,
 		Config:                config,
+	}
+
+	if job.RunId != "" {
+		if matchRun, err := e.svc.GetMatchRun(ctx, job.RunId); err == nil && matchRun != nil && matchRun.ExecutionSpec != "" {
+			var spec model.ExecutionSpec
+			if err := json.Unmarshal([]byte(matchRun.ExecutionSpec), &spec); err == nil {
+				initReq.Spec = &spec
+				initReq.RunID = spec.RunID
+			}
+		}
 	}
 
 	initRes, err := engineClient.InitializeMatch(ctx, initReq)
@@ -380,6 +406,27 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		if tickRes.Winner != "" {
 			winner = tickRes.Winner
 		}
+
+		disqualifiedPlayers := make([]string, 0)
+		for pID, act := range actions {
+			if act.Status == engine.ActionStatusDisqualified {
+				disqualifiedPlayers = append(disqualifiedPlayers, pID)
+			}
+		}
+		if len(disqualifiedPlayers) > 0 {
+			isOver = true
+			if len(disqualifiedPlayers) == len(playerIDs) {
+				winner = ""
+			} else if len(playerIDs) == 2 && len(disqualifiedPlayers) == 1 {
+				for _, pID := range playerIDs {
+					if pID != disqualifiedPlayers[0] {
+						winner = pID
+						break
+					}
+				}
+			}
+		}
+
 		currentTick = tickRes.Tick
 		lastStateHash = tickRes.StateHash
 	}

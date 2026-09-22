@@ -35,5 +35,29 @@
   "agentStats": "{{id}} — PV: {{hp}} | Energía: {{energy}} | Puntos: {{score}}",
   "health": "Vida: {{value}}",
   "shieldActive": "Escudo activo",
-  "noEvents": "Sin eventos públicos en este tick."
+  "noEvents": "Sin eventos públicos en este tick.",
+  "events": {
+    "fired": "{{player}} disparó",
+    "hit": "{{player}} recibió {{damage}} de daño de {{source}}",
+    "shielded": "(con escudo activo)",
+    "destroyedBy": "{{killer}} derribó a {{player}}",
+    "destroyed": "{{player}} fue destruido por {{source}}",
+    "disqualified": "{{player}} fue descalificado y sale de la partida",
+    "endedWinner": "Fin de la partida: gana {{player}}",
+    "endedNoWinner": "Fin de la partida sin ganador",
+    "unknownPlayer": "Jugador {{number}}",
+    "unknown": "Evento no reconocido",
+    "sources": {
+      "asteroid": "un asteroide",
+      "bullet": "una bala",
+      "bulletOf": "una bala de {{player}}",
+      "disqualified": "descalificación",
+      "unknown": "un origen desconocido"
+    }
+  },
+  "reasons": {
+    "eliminated": "Por eliminación",
+    "timeout": "Un bot excedió su tiempo",
+    "score_limit": "Se agotó el tiempo de partida"
+  }
 }

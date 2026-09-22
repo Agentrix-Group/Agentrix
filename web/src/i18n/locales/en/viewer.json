@@ -35,5 +35,29 @@
   "agentStats": "{{id}} — HP: {{hp}} | Energy: {{energy}} | Score: {{score}}",
   "health": "Health: {{value}}",
   "shieldActive": "Shield active",
-  "noEvents": "No public events at this tick."
+  "noEvents": "No public events at this tick.",
+  "events": {
+    "fired": "{{player}} fired",
+    "hit": "{{player}} took {{damage}} damage from {{source}}",
+    "shielded": "(shield up)",
+    "destroyedBy": "{{killer}} shot down {{player}}",
+    "destroyed": "{{player}} was destroyed by {{source}}",
+    "disqualified": "{{player}} was disqualified and leaves the match",
+    "endedWinner": "Match over: {{player}} wins",
+    "endedNoWinner": "Match over with no winner",
+    "unknownPlayer": "Player {{number}}",
+    "unknown": "Unrecognized event",
+    "sources": {
+      "asteroid": "an asteroid",
+      "bullet": "a bullet",
+      "bulletOf": "{{player}}'s bullet",
+      "disqualified": "disqualification",
+      "unknown": "an unknown source"
+    }
+  },
+  "reasons": {
+    "eliminated": "By elimination",
+    "timeout": "A bot ran out of time",
+    "score_limit": "Match time ran out"
+  }
 }

@@ -684,6 +684,27 @@ textarea:focus-visible,
   font-weight: 700;
 }
 
+.event-log div.event-fired {
+  border-left-color: #c9dfdf;
+}
+
+.event-log div.event-hit {
+  color: var(--warning-text);
+  border-left-color: var(--warning);
+}
+
+.event-log div.event-destroyed {
+  color: var(--danger-text);
+  border-left-color: var(--danger);
+  font-weight: 600;
+}
+
+.event-log div.event-ended {
+  color: var(--success-text);
+  border-left-color: var(--success);
+  font-weight: 700;
+}
+
 .event-log p {
   color: var(--text-muted);
   font-size: .82rem;

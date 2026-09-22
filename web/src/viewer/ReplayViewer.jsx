@@ -15,6 +15,7 @@ import {
 import { ApiService } from '../service/apiService.js';
 import { formatNumber } from '../i18n/formatters.js';
 import { drawStarfighterArena, fighterSlot, slotColor } from '../renderers/starfighter/canvasRenderer.js';
+import { describeEvent, describeReason } from './eventText.js';
 import { parseReplayNDJSON, parseReplayAsync, computeSha256 } from './replayParser.js';
 
 export { parseReplayNDJSON, parseReplayAsync, computeSha256 };
@@ -225,7 +226,7 @@ export function ReplayViewer({ replayId, onBrowseMatches, expectedSha256 = null 
         <div className="replay-result">
           <span>{t('viewer:result')}</span>
           <strong>{replay.result.winner || t('viewer:draw')}</strong>
-          <small>{replay.result.reason}</small>
+          <small>{describeReason(replay.result.reason, t)}</small>
         </div>
       </header>
 
@@ -338,9 +339,15 @@ export function ReplayViewer({ replayId, onBrowseMatches, expectedSha256 = null 
           <div className="viewer-section event-section">
             <h3>{t('viewer:eventsTitle')}</h3>
             <div className="event-log" aria-live="polite">
-              {events.length ? events.map((event, index) => (
-                <div key={`${currentFrame.tick}-${index}`}><span>{currentFrame.tick}</span>{event}</div>
-              )) : <p>{t('viewer:noEvents')}</p>}
+              {events.length ? events.map((event, index) => {
+                const { kind, text } = describeEvent(event, replay?.metadata?.participants, t);
+                return (
+                  <div key={`${currentFrame.tick}-${index}`} className={`event-${kind}`}>
+                    <span>{currentFrame.tick}</span>
+                    {text}
+                  </div>
+                );
+              }) : <p>{t('viewer:noEvents')}</p>}
             </div>
           </div>
         </aside>

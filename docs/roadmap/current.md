@@ -20,7 +20,7 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 | Commit/replay | Implementado | Sello inmutable, commit idempotente cercado con run_id, tabla match_runs y publicación atómica |
 | Despliegue | Implementado | API/worker separados, Dockerfile.api/worker, docker-compose y fail-closed en producción |
 | Certificación MVP | Implementado | Suite E2E canónica, rechazo de zombis por fencing token, replay atómico verificado bit a bit y ADR-0008 |
-| Rapier + todos contra todos | En curso: F0–F5 hechas en el motor (`agentrix_engine` rama `feat/rapier-ffa`) | F6: corte de plataforma Go/web; F7 opcional: evidencia ARM64 |
+| Rapier + todos contra todos | Implementado en ramas `feat/rapier-ffa` (F0–F6); pendiente de integrar | F7 opcional: evidencia ARM64. Integrar primero `agentrix_engine` (commit fijado en `engine.lock`) |
 | sim-core | No iniciado | Mismas reglas fuera de IPC/renderer |
 | Segundo juego | No iniciado | Juego discreto sin modificar el loop central |
 | Gym | No iniciado | API vectorizada sobre el mismo sim-core |
@@ -34,7 +34,7 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 
 ## Próximo corte
 
-Rapier + todos contra todos (ADR-0013), fase F6: adaptar la plataforma Go y web a `starfighter 0.4.0` (2 a 5 jugadores, clasificación por eliminación) y recién entonces mover `engine.lock` al motor 0.4.0.
+Integrar las ramas `feat/rapier-ffa` de `agentrix_engine` y `Agentrix` (en ese orden, porque `engine.lock` fija un commit del motor). F7 (evidencia ARM64) es opcional y no bloquea.
 
 Después, post-MVP (sim-core): extracción de la lógica de simulación fuera de Bevy/IPC para inferencia rápida y soporte Gym sin alterar las garantías transaccionales del MVP cerrado.
 

@@ -1,5 +1,11 @@
 # ADR-0004: Identidad de ejecución y política de descalificación
 
+> [!NOTE]
+> La resolución de descalificación para partidas de más de dos jugadores y
+> su implementación en el motor están en
+> [ADR-0013](0013-starfighter-rapier-and-free-for-all.md); en 1 contra 1 el
+> resultado sigue siendo el descrito aquí.
+
 ## Estado
 
 accepted

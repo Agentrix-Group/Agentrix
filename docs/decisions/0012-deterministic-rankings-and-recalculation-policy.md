@@ -1,5 +1,11 @@
 # ADR 0012: Clasificaciones Deterministas, Criterios de Desempate en Cascada y Snapshots Auditables
 
+> [!NOTE]
+> Desde [ADR-0013](0013-starfighter-rapier-and-free-for-all.md) la política
+> por defecto de los concursos nuevos es por posición (`mode: placement`)
+> con las bajas como primer desempate. Las políticas guardadas sin `mode`
+> conservan victoria/empate/derrota.
+
 ## Estado
 Aceptado (Accepted)
 

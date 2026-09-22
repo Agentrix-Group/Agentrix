@@ -2,7 +2,7 @@
 
 ## Estado actual
 
-**No implementado como plataforma extensible.** Starfighter es el único juego registrable y ejecutable. El registry, el validador, el servicio y el executor contienen guardas explícitas para `starfighter` y dos jugadores.
+**No implementado como plataforma extensible.** Starfighter es el único juego registrable y ejecutable. El registry, el validador, el servicio y el executor contienen guardas explícitas para `starfighter` y de 2 a 5 jugadores (ADR-0013).
 
 Esto es correcto para el MVP, pero no debe confundirse con la arquitectura objetivo.
 

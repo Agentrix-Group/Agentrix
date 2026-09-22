@@ -72,6 +72,29 @@ La auditoría del motor (`agentrix_engine@486e22b`) encontró:
 | F6 | Plataforma Go/web: suite con `-race` en verde y partida E2E real de cinco bots con replay sellado |
 | F7 | Opcional: hashes idénticos entre x86_64 y ARM64; si no se ejecuta, no se afirma determinismo entre plataformas |
 
+## Decisiones del corte de plataforma (F6, 2026-09-22)
+
+- **Puntos por posición.** Cada puesto de competencia p en una partida de N
+  participantes vale `2·(N − p)`; los empatados reciben el promedio de los
+  puestos que ocupan, que con el factor 2 siempre es entero. Con 5
+  jugadores: 8, 6, 4, 2, 0; dos empatados primeros reciben 7; en 1 contra 1:
+  2 / 1 / 0, así un empate nunca vale lo mismo que ganar. Las bajas son el
+  primer criterio de desempate, seguido de los de ADR-0012; el cara a cara
+  compara el puesto final, no el `score`.
+- **Compatibilidad del puntaje.** La política pasa a tener `mode`
+  (`placement` o `win_draw_loss`). Una política guardada sin `mode` se lee
+  como `win_draw_loss`, así los concursos existentes no reinterpretan sus
+  resultados; la migración 00005 solo cambia el valor por defecto de los
+  concursos nuevos.
+- **Descalificación con más de dos jugadores.** El motor elimina la nave del
+  slot descalificado en ese tick (sin baja para nadie) y la partida sigue con
+  el resto. En 1 contra 1 esto reproduce ADR-0004: una descalificación da la
+  victoria al rival y dos simultáneas terminan sin ganador y empatadas.
+  `timeout` es el motivo final solo si la partida terminó en ese tick.
+- **Slots eliminados.** Después del tick 0, un slot sin percepción está
+  eliminado: el worker deja de pedirle acciones y una percepción posterior
+  para ese slot es un error del motor.
+
 ## Consecuencias
 
 - Hasta completar F6, la plataforma sigue ofreciendo solo `0.3.0-core.1`

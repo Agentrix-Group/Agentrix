@@ -29,6 +29,8 @@ Cada sobre incluye `protocolVersion`, `type`, `matchId`, `sequence` y `payload`.
 - Go conserva `payload` de acción, percepciones y snapshot como JSON opaco.
 - Rust conoce y valida el esquema de acción Starfighter.
 - Rust produce percepciones privadas por slot y un snapshot público separado.
+- Después del tick 0, un slot ausente de las percepciones está eliminado y no vuelve a aparecer; el worker no le pide más acciones (ADR-0013).
+- Una acción con estado `disqualified` elimina la nave del slot en ese tick; el motor decide si la partida termina y quién gana.
 - El motor nunca inicia ni habla directamente con bots.
 
 ## Validación actual

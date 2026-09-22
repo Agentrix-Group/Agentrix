@@ -21,6 +21,8 @@ El replay contiene el snapshot público de `state[0]` antes de cualquier acción
 
 **Implementado:** cada slot inicia un proceso Python, envía `init` una vez y reutiliza el proceso para todos los ticks. Cada percepción exige una acción del mismo tick. Timeout, salida inválida o desfase desconectan el proceso.
 
+**Implementado (ADR-0013):** con 2 a 5 jugadores, un slot cuya nave fue destruida deja de recibir percepción desde el tick siguiente y el worker deja de pedirle acciones. Un bot descalificado pierde su nave en ese tick y la partida continúa con el resto.
+
 **Parcial:** el supervisor clasifica estados como `valid`, `timeout`, `invalid_output`, `crashed` o `disqualified`, pero la aplicación de límites del sistema operativo no está completa.
 
 ## Aislamiento

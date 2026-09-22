@@ -331,13 +331,22 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
-	// 1. Initial Migrate: 0 -> 4
+	// 1. Initial Migrate: 0 -> 5
 	err := database.Migrate(conn.Db)
-	r.NoError(err, "Initial forward migration to v4 must succeed")
+	r.NoError(err, "Initial forward migration to v5 must succeed")
 
 	ver, err := database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(4), ver)
+	r.Equal(int64(5), ver)
+
+	scoringDefault := func() string {
+		var def string
+		r.NoError(conn.Db.QueryRow(`
+			SELECT column_default FROM information_schema.columns
+			WHERE table_name = 'contests' AND column_name = 'scoring_policy'`).Scan(&def))
+		return def
+	}
+	r.Contains(scoringDefault(), `"mode": "placement"`, "v5 makes placement scoring the default for new contests")
 
 	// 2. Idempotence: re-running Migrate on up-to-date DB must succeed
 	err = database.Migrate(conn.Db)
@@ -345,9 +354,17 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 
 	ver, err = database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(4), ver)
+	r.Equal(int64(5), ver)
 
-	// 3. Rollback v4 -> v3
+	// 3. Rollback v5 -> v4 restores the win/draw/loss default
+	err = database.Rollback(conn.Db)
+	r.NoError(err, "Rollback from v5 to v4 must succeed")
+	ver, err = database.GetCurrentVersion(conn.Db)
+	r.NoError(err)
+	r.Equal(int64(4), ver)
+	r.NotContains(scoringDefault(), `"mode"`)
+
+	// 4. Rollback v4 -> v3
 	err = database.Rollback(conn.Db)
 	r.NoError(err, "Rollback from v4 to v3 must succeed")
 
@@ -363,7 +380,7 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 		)`).Scan(&snapTableExists)
 	r.False(snapTableExists, "contest_rankings_snapshots must be dropped after rolling back v4")
 
-	// 4. Rollback v3 -> v2
+	// 5. Rollback v3 -> v2
 	err = database.Rollback(conn.Db)
 	r.NoError(err, "Rollback from v3 to v2 must succeed")
 
@@ -379,13 +396,13 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 		)`).Scan(&sessionsTableExists)
 	r.False(sessionsTableExists, "sessions table must be dropped after rolling back v3")
 
-	// 5. Re-apply all migrations forward: v2 -> v4
+	// 6. Re-apply all migrations forward: v2 -> v5
 	err = database.Migrate(conn.Db)
-	r.NoError(err, "Re-migrating from v2 back to v4 must succeed cleanly")
+	r.NoError(err, "Re-migrating from v2 back to v5 must succeed cleanly")
 
 	ver, err = database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(4), ver)
+	r.Equal(int64(5), ver)
 
 	err = database.CheckSchemaCompatible(ctx, conn.Db)
 	r.NoError(err, "Database must be fully schema compatible after re-migrating")

@@ -749,3 +749,91 @@ func TestStarfighterIntegration_FiveBotFreeForAll(t *testing.T) {
 	r.Equal(document.Result.FinalStateHash, document.Snapshots[len(document.Snapshots)-1].StateHash)
 	t.Logf("frames=%d reason=%s winner=%q", len(document.Snapshots), document.Result.Reason, document.Result.Winner)
 }
+
+// ADR-0013 (F6): en una partida de 5, un bot que excede el tiempo queda
+// descalificado, su nave sale en ese tick y los otros cuatro siguen jugando.
+func TestStarfighterIntegration_FreeForAllTimeoutDisqualifiesOnlyTheSlowBot(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+	r.NoError(game.GetRegistry().LoadGamesFromDir(resolveTestPath("games")))
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest)
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
+	manifest.BinaryPath = engineBin
+	manifest.MaxTicks = 60
+
+	slowBot := filepath.Join(t.TempDir(), "slow_bot.py")
+	r.NoError(os.WriteFile(slowBot, []byte(`import json, sys, time
+json.loads(sys.stdin.readline())
+for line in sys.stdin:
+    message = json.loads(line)
+    if message["type"] == "end":
+        break
+    time.sleep(2)
+`), 0o600))
+	botBySubmission := map[string]string{
+		"slow":    slowBot,
+		"hunter":  resolveTestPath("games/starfighter/examples/bot_hunter.py"),
+		"evasive": resolveTestPath("games/starfighter/examples/bot_evasive.py"),
+		"random":  resolveTestPath("games/starfighter/examples/bot_random.py"),
+		"hunter2": resolveTestPath("games/starfighter/examples/bot_hunter.py"),
+	}
+	replayPath := filepath.Join(t.TempDir(), "ffa-timeout.ndjson")
+	var results []model.Result
+	mockSvc := &mockExecutorService{
+		getMatchFn: func(ctx context.Context, id string) (*model.Match, error) {
+			return &model.Match{Id: id, GameId: "starfighter", Status: common.MatchStatusPending}, nil
+		},
+		getSubmissionFn: func(ctx context.Context, id string) (*model.Submission, error) {
+			return &model.Submission{Id: id, AgentId: id, Language: "python", CodePath: botBySubmission[id], Status: common.SubmissionStatusReady, Active: true}, nil
+		},
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
+		},
+		createResultFn: func(ctx context.Context, res *model.Result) error {
+			results = append(results, *res)
+			return nil
+		},
+	}
+	engineFactory := func(ctx context.Context, _ *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{BinaryPath: engineBin, HandshakeTimeout: 5 * time.Second})
+		return client, err
+	}
+	exec := NewMatchExecutor(mockSvc, NewSandbox(500*time.Millisecond), engineFactory)
+	err := exec.Execute(ctx, &connection.MatchJob{
+		JobId: "job-ffa-timeout", MatchId: "match-ffa-timeout", GameId: "starfighter",
+		SubmissionIds: []string{"slow", "hunter", "evasive", "random", "hunter2"}, Seed: 7,
+	})
+	r.NoError(err)
+
+	replayFile, err := os.Open(replayPath)
+	r.NoError(err)
+	defer replayFile.Close()
+	document, err := replaystream.DecodeNDJSON(replayFile)
+	r.NoError(err)
+	r.Greater(document.Result.FinalTick, 1, "the other four keep playing after the timeout")
+	r.NotEqual("timeout", document.Result.Reason, "the match did not end because of the timeout")
+
+	r.Len(results, 5)
+	for _, res := range results {
+		t.Logf("result %s: rank=%d kills=%d status=%s", res.SubmissionId, res.Rank, res.Score, res.Status)
+		if res.SubmissionId == "slow" {
+			r.Equal("disqualified", res.Status)
+			r.Equal(5, res.Rank, "the first ship out ranks last")
+		} else {
+			r.NotEqual("disqualified", res.Status)
+		}
+	}
+}

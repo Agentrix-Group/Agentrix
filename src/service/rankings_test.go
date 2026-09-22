@@ -244,13 +244,13 @@ func TestRankingsService(t *testing.T) {
 	r.Len(calculated, 2)
 	r.Equal("agent-1", calculated[0].AgentId)
 	r.Equal(1, calculated[0].Rank)
-	r.Equal(3, calculated[0].Points) // 3 win points
+	r.Equal(2, calculated[0].Points) // placement: 2·(2−1) in a 1v1 (ADR-0013)
 	r.Equal(100, calculated[0].Score)
 	r.Equal(1, calculated[0].Wins)
 
 	r.Equal("agent-2", calculated[1].AgentId)
 	r.Equal(2, calculated[1].Rank)
-	r.Equal(0, calculated[1].Points) // 0 loss points
+	r.Equal(0, calculated[1].Points) // last place
 	r.Equal(50, calculated[1].Score)
 	r.Equal(1, calculated[1].Losses)
 
@@ -298,4 +298,99 @@ func TestPublishRankingSnapshot(t *testing.T) {
 	r.Equal("user-admin", *snap.PublishedBy)
 	r.Len(snap.Rankings, 2)
 	r.Equal(createdSnapshot, snap)
+}
+
+// ffaRankingsRepo arma un concurso con dos partidas de 5 agentes (a..e) con
+// empates, para probar la política por posición de ADR-0013.
+func ffaRankingsRepo(policy model.ScoringPolicy) *mockRankingsRepo {
+	now := time.Now().UTC()
+	later := now.Add(time.Minute)
+	run1, run2 := "run-1", "run-2"
+	results := map[string][]model.Result{
+		// m1: a 1°, b y c empatados 2°, d 4°, e 5°.
+		"m1": {
+			{SubmissionId: "a", Rank: 1, Score: 2}, {SubmissionId: "b", Rank: 2, Score: 1},
+			{SubmissionId: "c", Rank: 2, Score: 0}, {SubmissionId: "d", Rank: 4, Score: 0},
+			{SubmissionId: "e", Rank: 5, Score: 0},
+		},
+		// m2: b y c empatados 1°, a 3°, e 4°, d 5°.
+		"m2": {
+			{SubmissionId: "b", Rank: 1, Score: 0}, {SubmissionId: "c", Rank: 1, Score: 3},
+			{SubmissionId: "a", Rank: 3, Score: 0}, {SubmissionId: "e", Rank: 4, Score: 1},
+			{SubmissionId: "d", Rank: 5, Score: 0},
+		},
+	}
+	storage := make(map[string]*model.Ranking)
+	return &mockRankingsRepo{
+		getContestFn: func(ctx context.Context, id string) (*model.Contest, error) {
+			return &model.Contest{Id: id, ScoringPolicy: &policy}, nil
+		},
+		getRankingByContestAndAgent: func(ctx context.Context, contestId, agentId string) (*model.Ranking, error) {
+			return storage[agentId], nil
+		},
+		upsertRankingFn: func(ctx context.Context, ranking *model.Ranking) error {
+			cp := *ranking
+			storage[ranking.AgentId] = &cp
+			return nil
+		},
+		listMatchesByContestFn: func(ctx context.Context, contestId string) ([]model.Match, error) {
+			return []model.Match{
+				{Id: "m1", ContestId: contestId, Status: "finished", CommittedRunId: &run1, FinishedAt: &now},
+				{Id: "m2", ContestId: contestId, Status: "finished", CommittedRunId: &run2, FinishedAt: &later},
+			}, nil
+		},
+		listResultsByMatchFn: func(ctx context.Context, matchId string) ([]model.Result, error) {
+			return results[matchId], nil
+		},
+		getSubmissionFn: func(ctx context.Context, id string) (*model.Submission, error) {
+			return &model.Submission{Id: id, AgentId: id}, nil
+		},
+		getAgentFn: func(ctx context.Context, id string) (*model.Agent, error) {
+			return &model.Agent{Id: id, OwnerUserId: "user-" + id}, nil
+		},
+	}
+}
+
+func TestRankings_PlacementPointsWithKillsTiebreak(t *testing.T) {
+	r := require.New(t)
+	svc := NewService(ffaRankingsRepo(model.DefaultScoringPolicy()), nil, nil)
+
+	rankings, err := svc.RecalculateContestRankings(context.Background(), "c-ffa")
+	r.NoError(err)
+	type row struct {
+		agent  string
+		points int
+		kills  int
+	}
+	var got []row
+	for _, rk := range rankings {
+		got = append(got, row{rk.AgentId, rk.Points, rk.Score})
+	}
+	// a: 8 + 4 = 12; b: 5 + 7 = 12; c: 5 + 7 = 12; d: 2 + 0 = 2; e: 0 + 2 = 2.
+	// Empates a 12 y a 2 los decide primero la cantidad de bajas.
+	r.Equal([]row{
+		{"c", 12, 3}, {"a", 12, 2}, {"b", 12, 1}, {"e", 2, 1}, {"d", 2, 0},
+	}, got)
+	for i, rk := range rankings {
+		r.Equal(i+1, rk.Rank)
+	}
+}
+
+func TestRankings_LegacyPolicyWithoutModeKeepsWinDrawLoss(t *testing.T) {
+	r := require.New(t)
+	legacy := model.ScoringPolicy{
+		WinPoints: 3, DrawPoints: 1, LossPoints: 0,
+		Tiebreakers: []model.TiebreakerRule{model.TiebreakerScoreDiff, model.TiebreakerHeadToHead, model.TiebreakerWins},
+	}
+	r.Equal(model.ScoringModeWinDrawLoss, legacy.EffectiveMode())
+	svc := NewService(ffaRankingsRepo(legacy), nil, nil)
+
+	rankings, err := svc.RecalculateContestRankings(context.Background(), "c-legacy")
+	r.NoError(err)
+	points := map[string]int{}
+	for _, rk := range rankings {
+		points[rk.AgentId] = rk.Points
+	}
+	// m1: a gana; m2: b y c comparten el primer puesto (empate).
+	r.Equal(map[string]int{"a": 3, "b": 1, "c": 1, "d": 0, "e": 0}, points)
 }

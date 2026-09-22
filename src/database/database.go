@@ -15,7 +15,7 @@ var MigrationsFS embed.FS
 
 const (
 	MigrationsDir       = "migrations"
-	TargetSchemaVersion = int64(4)
+	TargetSchemaVersion = int64(5)
 )
 
 var (

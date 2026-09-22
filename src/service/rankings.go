@@ -85,6 +85,24 @@ func normalizeResultOutcome(res model.Result, allMatchResults []model.Result) st
 	return "loss"
 }
 
+// matchPoints devuelve los puntos de torneo de un participante en una
+// partida según el modo de la política. En modo por posición un
+// descalificado recibe los puntos de su puesto menos la penalización, y una
+// partida sin resultado no reparte puntos.
+func matchPoints(policy model.ScoringPolicy, outcome string, rank, players, tied int) int {
+	if policy.EffectiveMode() != model.ScoringModePlacement {
+		return policy.PointsForResult(outcome)
+	}
+	switch outcome {
+	case "no_contest":
+		return 0
+	case "disqualified":
+		return model.PlacementPoints(players, rank, tied) - policy.DisqualificationPenalty
+	default:
+		return model.PlacementPoints(players, rank, tied)
+	}
+}
+
 func (s *service) RecalculateContestRankings(ctx context.Context, contestId string) ([]model.Ranking, error) {
 	contest, err := s.repo.GetContest(ctx, contestId)
 	if err != nil {
@@ -172,6 +190,13 @@ func (s *service) RecalculateContestRankings(ctx context.Context, contestId stri
 			continue
 		}
 
+		// Puestos de competencia compartidos en esta partida (1, 2, 2, 4),
+		// para repartir puntos por posición entre empatados.
+		tiedAtRank := make(map[int]int, len(results))
+		for _, res := range results {
+			tiedAtRank[res.Rank]++
+		}
+
 		var participants []matchParticipant
 		for _, res := range results {
 			sub, err := s.repo.GetSubmission(ctx, res.SubmissionId)
@@ -204,7 +229,7 @@ func (s *service) RecalculateContestRankings(ctx context.Context, contestId stri
 
 			st.MatchesPlayed++
 			st.Score += p.res.Score
-			st.Points += policy.PointsForResult(p.outcome)
+			st.Points += matchPoints(policy, p.outcome, p.res.Rank, len(results), tiedAtRank[p.res.Rank])
 
 			switch p.outcome {
 			case "win":
@@ -222,9 +247,11 @@ func (s *service) RecalculateContestRankings(ctx context.Context, contestId stri
 					continue
 				}
 				st.ScoreDiff += (p.res.Score - opp.res.Score)
-				if p.res.Score > opp.res.Score {
+				// Cara a cara por puesto final (menor es mejor): el score
+				// ya no indica quién le ganó a quién (son bajas, ADR-0013).
+				if p.res.Rank < opp.res.Rank {
 					st.H2HPoints[opp.agentId] += policy.WinPoints
-				} else if p.res.Score == opp.res.Score {
+				} else if p.res.Rank == opp.res.Rank {
 					st.H2HPoints[opp.agentId] += policy.DrawPoints
 				} else {
 					st.H2HPoints[opp.agentId] += policy.LossPoints
@@ -265,6 +292,10 @@ func (s *service) RecalculateContestRankings(ctx context.Context, contestId stri
 					return a.Wins > b.Wins
 				}
 			case model.TiebreakerRivalSurvival:
+				if a.Score != b.Score {
+					return a.Score > b.Score
+				}
+			case model.TiebreakerKills:
 				if a.Score != b.Score {
 					return a.Score > b.Score
 				}

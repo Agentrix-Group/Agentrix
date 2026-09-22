@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/Agentrix-Group/agentrix_engine.git",
-  "commit": "8b0f1857d3e634d3fd53509c4477008151503318",
+  "commit": "d4d750d6b04c76583cb224ace465ac55454cf95f",
   "engine_version": "0.4.0",
   "protocol": "agentrix-engine/2",
   "game": "starfighter",

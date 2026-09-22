@@ -382,9 +382,14 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	currentTick := 0
 	lastStateHash := initRes.StateHash
 	terminationReason := ""
+	// Slots descalificados durante la partida: el motor elimina su nave en el
+	// tick de la descalificación (ADR-0013) y su resultado se registra como
+	// "disqualified".
+	disqualified := make(map[string]bool)
 
 	// Run simulation loop over EngineClient IPC
 	for !isOver && currentTick < maxTicks {
+		timedOutThisTick := false
 		actions := make(map[string]engine.PlayerActionInput)
 		for _, pID := range activePlayers {
 			perception := currentPerceptions[pID]
@@ -393,8 +398,11 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 
 			if input.Status != engine.ActionStatusValid {
 				recordAgentIssue(agentIssues, pID, statusToAgentError(input.Status))
-				if input.Status == engine.ActionStatusDisqualified && input.ErrorDetails == "timeout" {
-					terminationReason = "timeout"
+				if input.Status == engine.ActionStatusDisqualified {
+					disqualified[pID] = true
+					if input.ErrorDetails == "timeout" {
+						timedOutThisTick = true
+					}
 				}
 			}
 		}
@@ -436,24 +444,11 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			winner = tickRes.Winner
 		}
 
-		disqualifiedPlayers := make([]string, 0)
-		for pID, act := range actions {
-			if act.Status == engine.ActionStatusDisqualified {
-				disqualifiedPlayers = append(disqualifiedPlayers, pID)
-			}
-		}
-		if len(disqualifiedPlayers) > 0 {
-			isOver = true
-			if len(disqualifiedPlayers) == len(playerIDs) {
-				winner = ""
-			} else if len(playerIDs) == 2 && len(disqualifiedPlayers) == 1 {
-				for _, pID := range playerIDs {
-					if pID != disqualifiedPlayers[0] {
-						winner = pID
-						break
-					}
-				}
-			}
+		// El motor resuelve la descalificación: elimina la nave y decide si
+		// la partida termina y quién gana. "timeout" solo es el motivo final
+		// si la partida terminó en el mismo tick de la descalificación.
+		if isOver && timedOutThisTick {
+			terminationReason = "timeout"
 		}
 
 		currentTick = tickRes.Tick
@@ -599,7 +594,9 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		// el estado sale del puesto. Quien ocupa el primer puesto, solo o
 		// empatado, terminó la partida; el resto quedó por detrás.
 		status := "finished"
-		if item.Rank > 1 && len(rankings) > 1 {
+		if disqualified[item.PlayerID] {
+			status = "disqualified"
+		} else if item.Rank > 1 && len(rankings) > 1 {
 			status = "eliminated"
 		}
 		var slotID *string

@@ -383,7 +383,9 @@ func TestIntegration_Rankings_IdempotencyAndCommittedRuns(t *testing.T) {
 	r.NoError(err)
 	r.Len(ranks1, 2)
 	r.Equal("a-1", ranks1[0].AgentId)
-	r.Equal(3, ranks1[0].Points)
+	// Contest without explicit policy: DB default since migration 00005 is
+	// placement scoring (ADR-0013), 2 points for winning a duel.
+	r.Equal(2, ranks1[0].Points)
 
 	// Second incremental application: must be completely idempotent
 	err = srv.Service.ApplyMatchResultIncremental(ctx, "m-uncommitted")

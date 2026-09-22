@@ -171,9 +171,13 @@ Game:
     manifest_path:
       type: string
     min_players:
-      const: 2
+      type: integer
+      minimum: 2
+      maximum: 5
     max_players:
-      const: 2
+      type: integer
+      minimum: 2
+      maximum: 5
     active:
       type: boolean
     created_at:

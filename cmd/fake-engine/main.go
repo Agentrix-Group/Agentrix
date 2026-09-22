@@ -53,7 +53,7 @@ func main() {
 		RunID:           "",
 		Sequence:        sendSeq,
 		Payload: map[string]interface{}{
-			"engineVersion": "0.3.0",
+			"engineVersion": "0.4.0",
 			"engineDigest":  "b67fd4613e5cc5d2d742b59c3f5d7846f83f348fb01fac5f521a05c57aef1cf6",
 			"supportedProtocols": []string{
 				protocolVersion,
@@ -61,7 +61,7 @@ func main() {
 			"capabilities": map[string]interface{}{
 				"headless":                 true,
 				"deterministic":            true,
-				"avian2d":                  true,
+				"rapier2d":                 true,
 				"authoritative_commitment": true,
 			},
 		},

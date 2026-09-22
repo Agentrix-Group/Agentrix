@@ -122,6 +122,31 @@ func validatePerceptions(perceptions map[string]json.RawMessage, players []strin
 	return nil
 }
 
+// activePerceptions valida las percepciones de un tick posterior al 0 en una
+// partida todos contra todos (ADR-0013). Un slot activo sin percepción quedó
+// eliminado y sale de la lista; una percepción de un slot ya eliminado, o una
+// inválida o con tick distinto, es un error del motor.
+func activePerceptions(perceptions map[string]json.RawMessage, active []string, expectedTick int) ([]string, error) {
+	stillActive := make([]string, 0, len(active))
+	isActive := make(map[string]bool, len(active))
+	for _, playerID := range active {
+		isActive[playerID] = true
+		if _, ok := perceptions[playerID]; !ok {
+			continue
+		}
+		stillActive = append(stillActive, playerID)
+	}
+	for playerID := range perceptions {
+		if !isActive[playerID] {
+			return nil, fmt.Errorf("perception for inactive player %s at tick %d", playerID, expectedTick)
+		}
+	}
+	if err := validatePerceptions(perceptions, stillActive, expectedTick); err != nil {
+		return nil, err
+	}
+	return stillActive, nil
+}
+
 func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) error {
 	startedAt := time.Now()
 	ctx = tracer.WithMatchID(ctx, job.MatchId)
@@ -160,7 +185,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 		}
 	}
 	if len(submissions) > manifest.MaxPlayers {
-		return fmt.Errorf("starfighter accepts exactly %d players", manifest.MaxPlayers)
+		return fmt.Errorf("starfighter accepts at most %d players, got %d", manifest.MaxPlayers, len(submissions))
 	}
 
 	// If fewer than 2 submissions provided, create reference bots with reference agent script
@@ -350,6 +375,8 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	}
 
 	currentPerceptions := initRes.Perceptions
+	// Slots con nave viva: solo a ellos se les piden acciones.
+	activePlayers := append([]string(nil), playerIDs...)
 	isOver := false
 	winner := ""
 	currentTick := 0
@@ -359,7 +386,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	// Run simulation loop over EngineClient IPC
 	for !isOver && currentTick < maxTicks {
 		actions := make(map[string]engine.PlayerActionInput)
-		for _, pID := range playerIDs {
+		for _, pID := range activePlayers {
 			perception := currentPerceptions[pID]
 			input := botSession.ExecuteTurn(ctx, currentTick, pID, perception)
 			actions[pID] = input
@@ -387,10 +414,12 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			break
 		}
 		if !tickRes.IsOver {
-			if err := validatePerceptions(tickRes.Perceptions, playerIDs, tickRes.Tick); err != nil {
+			stillActive, err := activePerceptions(tickRes.Perceptions, activePlayers, tickRes.Tick)
+			if err != nil {
 				executionErr = err
 				break
 			}
+			activePlayers = stillActive
 		}
 
 		if err := replayWriter.WriteSnapshot(model.ReplaySnapshot{
@@ -566,8 +595,11 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 	now := time.Now().UTC()
 	resultsList := make([]model.Result, 0, len(rankings))
 	for _, item := range rankings {
+		// Desde starfighter 0.4.0 el score son bajas, no victoria (ADR-0013):
+		// el estado sale del puesto. Quien ocupa el primer puesto, solo o
+		// empatado, terminó la partida; el resto quedó por detrás.
 		status := "finished"
-		if item.Score <= 0 && len(rankings) > 1 {
+		if item.Rank > 1 && len(rankings) > 1 {
 			status = "eliminated"
 		}
 		var slotID *string

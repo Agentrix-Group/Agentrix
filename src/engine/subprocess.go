@@ -288,7 +288,7 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 		}
 		limits := model.ExecutionLimits{
 			MaxTicks:        maxTicks,
-			MaxPlayers:      2,
+			MaxPlayers:      uint32(len(slots)),
 			MaxEntities:     100000,
 			MaxMessageBytes: 10485760,
 		}
@@ -301,18 +301,18 @@ func (c *subprocessClient) InitializeMatch(ctx context.Context, req InitializeMa
 			engDigest = "b67fd4613e5cc5d2d742b59c3f5d7846f83f348fb01fac5f521a05c57aef1cf6"
 		}
 		spec := &model.ExecutionSpec{
-			ProtocolVersion: ProtocolVersion,
-			RunID:           req.RunID,
-			MatchID:         req.MatchID,
-			EngineVersion:   "0.3.0",
-			EngineDigest:    engDigest,
-			BuildIdentity:   "starfighter-build",
-			Target:          "x86_64-unknown-linux-gnu",
-			Game:            gameKey,
-			SchemaDigests:   schemaDigests,
-			Config:          cfg,
-			TickRate:        tickRate,
-			Seed:            seedVal,
+			ProtocolVersion:      ProtocolVersion,
+			RunID:                req.RunID,
+			MatchID:              req.MatchID,
+			EngineVersion:        model.StarfighterEngineVersion,
+			EngineDigest:         engDigest,
+			BuildIdentity:        "starfighter-build",
+			Target:               "x86_64-unknown-linux-gnu",
+			Game:                 gameKey,
+			SchemaDigests:        schemaDigests,
+			Config:               cfg,
+			TickRate:             tickRate,
+			Seed:                 seedVal,
 			Slots:                slots,
 			Limits:               limits,
 			FailurePolicyVersion: model.DefaultFailurePolicyVersion,

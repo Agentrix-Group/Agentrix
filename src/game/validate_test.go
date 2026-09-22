@@ -22,8 +22,21 @@ func TestValidateManifest(t *testing.T) {
 	invalid := valid
 	invalid.ID = "other-game"
 	r.Error(ValidateManifest(&invalid))
+	// ADR-0013: Starfighter admite de 2 a 5 jugadores.
+	for _, maxPlayers := range []int{3, 4, 5} {
+		ffa := valid
+		ffa.MaxPlayers = maxPlayers
+		r.NoError(ValidateManifest(&ffa), "max_players=%d", maxPlayers)
+	}
 	invalid = valid
-	invalid.MaxPlayers = 4
+	invalid.MaxPlayers = 6
+	r.Error(ValidateManifest(&invalid))
+	invalid = valid
+	invalid.MinPlayers = 1
+	r.Error(ValidateManifest(&invalid))
+	invalid = valid
+	invalid.MinPlayers = 4
+	invalid.MaxPlayers = 3
 	r.Error(ValidateManifest(&invalid))
 	invalid = valid
 	invalid.FixedTimestepMs = 0

@@ -206,8 +206,17 @@ func validResultReason(reason string) bool {
 
 func validMetadata(metadata model.ReplayMetadata) bool {
 	if metadata.MatchID == "" || metadata.ReplayID == "" || metadata.GameID != "starfighter" ||
-		len(metadata.Participants) != 2 || metadata.FixedTimestepMs <= 0 || metadata.CreatedAt.IsZero() {
+		len(metadata.Participants) < model.StarfighterMinPlayers ||
+		len(metadata.Participants) > model.StarfighterMaxPlayers ||
+		metadata.FixedTimestepMs <= 0 || metadata.CreatedAt.IsZero() {
 		return false
 	}
-	return metadata.Participants[0] != "" && metadata.Participants[1] != "" && metadata.Participants[0] != metadata.Participants[1]
+	seen := make(map[string]bool, len(metadata.Participants))
+	for _, participant := range metadata.Participants {
+		if participant == "" || seen[participant] {
+			return false
+		}
+		seen[participant] = true
+	}
+	return true
 }

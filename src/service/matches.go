@@ -262,7 +262,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 	maxTicks := 3600
 	tickHz := 60.0
 	gameVersion := model.StarfighterGameVersion
-	engineVersion := "0.3.0-core.1"
+	engineVersion := model.StarfighterEngineVersion
 	engineDigest := ""
 
 	config := make(map[string]interface{})
@@ -363,7 +363,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 
 	limits := model.ExecutionLimits{
 		MaxTicks:        uint64(maxTicks),
-		MaxPlayers:      2,
+		MaxPlayers:      uint32(len(slotSpecs)),
 		MaxEntities:     10000,
 		MaxMessageBytes: 1048576,
 	}

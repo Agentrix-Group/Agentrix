@@ -642,3 +642,110 @@ func TestStarfighterIntegration_100MatchesDurationAndMemoryMetrics(t *testing.T)
 	t.Logf("Peak Alloc: %.2f MB", float64(peakAlloc)/(1024*1024))
 	t.Logf("Peak Sys: %.2f MB", float64(peakSys)/(1024*1024))
 }
+
+// ADR-0013 (F6): partida real todos contra todos de 5 bots de Python sobre
+// el motor Rapier. Exige un resultado por slot con puestos de competencia
+// válidos y un replay NDJSON sellado con los 5 participantes.
+func TestStarfighterIntegration_FiveBotFreeForAll(t *testing.T) {
+	r := require.New(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	engineBin := resolveTestPath("bin/starfighter-engine")
+	if _, err := os.Stat(engineBin); err != nil {
+		t.Skipf("Starfighter engine binary not found at %s. Run 'make build-engine' first.", engineBin)
+	}
+	bots := []string{
+		resolveTestPath("games/starfighter/examples/bot_hunter.py"),
+		resolveTestPath("games/starfighter/examples/bot_evasive.py"),
+		resolveTestPath("games/starfighter/examples/bot_random.py"),
+		resolveTestPath("games/starfighter/examples/bot_hunter.py"),
+		resolveTestPath("games/starfighter/examples/bot_evasive.py"),
+	}
+	submissionIDs := make([]string, len(bots))
+	botBySubmission := make(map[string]string, len(bots))
+	for i, bot := range bots {
+		r.FileExists(bot)
+		submissionIDs[i] = fmt.Sprintf("sub-ffa-%d", i+1)
+		botBySubmission[submissionIDs[i]] = bot
+	}
+
+	_ = game.GetRegistry().LoadGamesFromDir(resolveTestPath("games"))
+	manifest := game.GetRegistry().GetManifest("starfighter")
+	r.NotNil(manifest)
+	r.Equal(model.StarfighterMaxPlayers, manifest.MaxPlayers)
+	previousMaxTicks := manifest.MaxTicks
+	defer func() { manifest.MaxTicks = previousMaxTicks }()
+	manifest.BinaryPath = engineBin
+	manifest.MaxTicks = 600
+
+	replayPath := filepath.Join(t.TempDir(), "ffa.ndjson")
+	var results []model.Result
+	var statuses []string
+	mockSvc := &mockExecutorService{
+		getMatchFn: func(ctx context.Context, id string) (*model.Match, error) {
+			return &model.Match{Id: id, GameId: "starfighter", Status: common.MatchStatusPending}, nil
+		},
+		updateMatchFn: func(ctx context.Context, match *model.Match) error {
+			statuses = append(statuses, match.Status)
+			return nil
+		},
+		getSubmissionFn: func(ctx context.Context, id string) (*model.Submission, error) {
+			return &model.Submission{
+				Id: id, AgentId: id + "-agent", Language: "python",
+				CodePath: botBySubmission[id], Status: common.SubmissionStatusReady, Active: true,
+			}, nil
+		},
+		openReplayFn: func(ctx context.Context, replay *model.Replay, metadata model.ReplayMetadata) (replaystream.StreamWriter, error) {
+			file, err := os.Create(replayPath)
+			if err != nil {
+				return nil, err
+			}
+			return replaystream.NewStreamWriter(file, metadata)
+		},
+		createResultFn: func(ctx context.Context, res *model.Result) error {
+			results = append(results, *res)
+			return nil
+		},
+	}
+	engineFactory := func(ctx context.Context, job *connection.MatchJob) (engine.EngineClient, error) {
+		client := engine.NewSubprocessClient()
+		err := client.Start(ctx, engine.StartConfig{BinaryPath: engineBin, HandshakeTimeout: 5 * time.Second})
+		return client, err
+	}
+	exec := NewMatchExecutor(mockSvc, NewSandbox(3*time.Second), engineFactory)
+
+	err := exec.Execute(ctx, &connection.MatchJob{
+		JobId: "job-ffa", Attempt: 1, MatchId: "match-ffa", GameId: "starfighter",
+		SubmissionIds: submissionIDs, Seed: 2026,
+	})
+	r.NoError(err, "a 5-bot match must execute cleanly")
+	r.Contains(statuses, common.MatchStatusFinished)
+
+	r.Len(results, 5, "one result per slot")
+	seen := map[string]bool{}
+	for _, res := range results {
+		r.False(seen[res.SubmissionId], "duplicate result for %s", res.SubmissionId)
+		seen[res.SubmissionId] = true
+		r.GreaterOrEqual(res.Rank, 1)
+		r.LessOrEqual(res.Rank, 5)
+		r.GreaterOrEqual(res.Score, 0, "score is the slot's kill count")
+		t.Logf("result %s: rank=%d kills=%d status=%s", res.SubmissionId, res.Rank, res.Score, res.Status)
+		if res.Rank == 1 {
+			r.Equal("finished", res.Status, "first place is never reported as eliminated")
+		} else {
+			r.Equal("eliminated", res.Status)
+		}
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Rank < results[j].Rank })
+	r.Equal(1, results[0].Rank, "someone holds first place")
+
+	replayFile, err := os.Open(replayPath)
+	r.NoError(err)
+	defer replayFile.Close()
+	document, err := replaystream.DecodeNDJSON(replayFile)
+	r.NoError(err, "the 5-bot match must produce a sealed NDJSON replay")
+	r.Len(document.Metadata.Participants, 5)
+	r.Equal(document.Result.FinalStateHash, document.Snapshots[len(document.Snapshots)-1].StateHash)
+	t.Logf("frames=%d reason=%s winner=%q", len(document.Snapshots), document.Result.Reason, document.Result.Winner)
+}

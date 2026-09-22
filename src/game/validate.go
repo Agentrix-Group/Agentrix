@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/Agentrix-Group/Agentrix/src/model"
 )
 
 func ValidateManifest(manifest *Manifest) error {
@@ -16,8 +18,11 @@ func ValidateManifest(manifest *Manifest) error {
 	if manifest.Name == "" {
 		return errors.New("game name is required")
 	}
-	if manifest.MinPlayers != 2 || manifest.MaxPlayers != 2 {
-		return errors.New("starfighter requires exactly two players")
+	if manifest.MinPlayers < model.StarfighterMinPlayers ||
+		manifest.MaxPlayers > model.StarfighterMaxPlayers ||
+		manifest.MinPlayers > manifest.MaxPlayers {
+		return fmt.Errorf("starfighter accepts between %d and %d players",
+			model.StarfighterMinPlayers, model.StarfighterMaxPlayers)
 	}
 	if manifest.MaxTicks <= 0 {
 		return errors.New("max_ticks must be greater than 0")

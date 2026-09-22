@@ -19,11 +19,16 @@ const (
 	TierSameArtifactSameTarget   = "same_artifact_same_target"
 	TierCertifiedTargetMatrix    = "certified_target_matrix"
 
+	// Starfighter 0.4.0 (ADR-0013): Rapier, de 2 a 5 jugadores todos contra
+	// todos. Los digests son los de agentrix_engine/schemas/games/starfighter/0.4.0.
 	StarfighterGameID                  = "starfighter"
-	StarfighterGameVersion             = "0.3.0-core.1"
-	StarfighterActionSchemaDigest      = "6a01f31f81fcc4ee40aed89bee030a5250d841edbf5a9c93548d7f8ae78356d4"
-	StarfighterObservationSchemaDigest = "09264082275be4df7a7da2d51f447f8dbb1c08929a0a4120a9f9202a950426ea"
-	StarfighterPublicSchemaDigest      = "6a422a9da18f35530ea63ac49959e77ac08a08c30e2a728b51d6c6144ead293c"
+	StarfighterGameVersion             = "0.4.0"
+	StarfighterEngineVersion           = "0.4.0"
+	StarfighterMinPlayers              = 2
+	StarfighterMaxPlayers              = 5
+	StarfighterActionSchemaDigest      = "c97852810619ca799214c65f54acbdd1cd6e4ea98c55ea21dc7f21c73e004848"
+	StarfighterObservationSchemaDigest = "fecb52b52fcb6d3af1bf69d2e83f4dcb300ac9dbbbb0f6fbaeeb3c310bee126d"
+	StarfighterPublicSchemaDigest      = "a40acf5714e7f4571b82b8c67829987f98e80f23aa4c802190d44770d79581d9"
 	StarfighterReplaySchemaDigest      = "0000000000000000000000000000000000000000000000000000000000000000"
 )
 

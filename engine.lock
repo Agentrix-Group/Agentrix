@@ -1,9 +1,9 @@
 {
   "repository": "https://github.com/Agentrix-Group/agentrix_engine.git",
-  "commit": "540fd7e4aa44558e672b031a908b65cf9901e5cc",
-  "engine_version": "0.3.0",
+  "commit": "8b0f1857d3e634d3fd53509c4477008151503318",
+  "engine_version": "0.4.0",
   "protocol": "agentrix-engine/2",
   "game": "starfighter",
-  "game_version": "0.3.0-core.1",
+  "game_version": "0.4.0",
   "note": "Build inputs are pinned by commit. The binary digest is announced by each worker at registration and sealed into every ExecutionSpec; workers only reserve jobs whose engine digest equals their own."
 }

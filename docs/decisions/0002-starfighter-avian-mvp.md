@@ -1,8 +1,13 @@
 # ADR-0002: Starfighter con Avian para el MVP
 
+> [!WARNING]
+> Decisión sustituida parcialmente. La separación Go/Rust, Starfighter como único juego oficial y el objetivo de 60 Hz permanecen vigentes; la permanencia de Avian2D y el duelo de dos jugadores fueron reemplazados por [ADR-0013](0013-starfighter-rapier-and-free-for-all.md).
+
 ## Estado
 
-accepted
+superseded (2026-09-22)
+
+Aceptada originalmente el 2026-09-19.
 
 ## Fecha
 

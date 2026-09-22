@@ -5,7 +5,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | ID | Estado | Decisión |
 | --- | --- | --- |
 | [0001](0001-external-rust-engine.md) | superseded | Motor externo Rust; la parte que fijaba Rapier fue sustituida |
-| [0002](0002-starfighter-avian-mvp.md) | accepted | Starfighter con Avian para el MVP y ruta condicionada hacia sim-core/Gym/Rapier |
+| [0002](0002-starfighter-avian-mvp.md) | superseded | Starfighter con Avian para el MVP; la permanencia de Avian y el duelo 1 vs 1 fueron sustituidos por 0013 |
 | [0003](0003-isolation-runtime-and-storage.md) | accepted | Runtime de aislamiento Podman rootless (fail-closed) y almacenamiento S3/MinIO |
 | [0004](0004-execution-identity-and-disqualification-policy.md) | accepted | Identidad de ejecución (run_id, digests) y resolución simétrica de descalificación |
 | [0005](0005-protocol-state-machine-and-exact-timestep.md) | accepted | Máquina de estados bilateral en el protocolo IPC y simulación exacta a 60 Hz |
@@ -16,6 +16,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | [0010](0010-execution-chain-and-frozen-contracts.md) | accepted | Cadena de ejecución inmutable, slots ordenados y contratos congelados post-Participant |
 | [0011](0011-rbac-capabilities-and-session-security.md) | accepted | Modelo de seguridad RBAC, sesiones persistentes y trazabilidad sin fuga |
 | [0012](0012-deterministic-rankings-and-recalculation-policy.md) | accepted | Clasificaciones deterministas, criterios de desempate en cascada y snapshots auditables |
+| [0013](0013-starfighter-rapier-and-free-for-all.md) | accepted | Starfighter sobre `rapier2d` directo y partidas de 2 a 5 jugadores todos contra todos |
 
 ## Decisiones vigentes resumidas
 
@@ -25,6 +26,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 - PostgreSQL es la cola autoritativa fuera de desarrollo.
 - El timestep objetivo es 60 Hz exactos.
 - La entrega de producto se realiza de forma paralela por vertical slices frontend + backend + QA.
-- Multi-juego, Gym y la decisión Avian/Rapier siguen el orden de [roadmap/current.md](../roadmap/current.md).
+- Starfighter migra a Rapier y a partidas de 2 a 5 jugadores según [ADR-0013](0013-starfighter-rapier-and-free-for-all.md).
+- Multi-juego y Gym siguen el orden de [roadmap/current.md](../roadmap/current.md).
 
 Las brechas de implementación no cambian una decisión: se documentan como estado parcial hasta que una prueba las cierre.

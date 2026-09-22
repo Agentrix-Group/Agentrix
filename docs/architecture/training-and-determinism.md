@@ -27,18 +27,17 @@ Una afirmación de determinismo requiere repetir la misma configuración y secue
 
 ## Avian y Rapier
 
-Avian2D es la implementación actual y permanece durante el MVP. Rapier con opciones de determinismo mejorado es solo candidato.
+[ADR-0013](../decisions/0013-starfighter-rapier-and-free-for-all.md) reemplaza Avian2D por `rapier2d` 0.35.3 con `enhanced-determinism`. Hasta que el corte termine, la implementación en producción sigue siendo Avian2D.
 
-La decisión se tomará después de extraer `sim-core`, con:
+La migración conserva las exigencias de evidencia:
 
-- benchmark de throughput y memoria;
-- escenarios de colisión representativos;
-- comparación reproducible en x86_64 y ARM64;
-- pruebas de conformidad del resultado;
-- costo de integración con Bevy y Gym vectorizado.
+- benchmark de throughput contra la línea base de Avian (`agentrix_engine/benches/baseline/avian2d-f0.md`);
+- escenarios de colisión representativos, incluido el atravesamiento de balas;
+- comparación reproducible en x86_64 y ARM64 antes de afirmar determinismo entre plataformas;
+- pruebas de conformidad del resultado.
 
-No se reserva Rapier exclusivamente para Gym ni se asume que una biblioteca garantiza determinismo sin evidencia del sistema completo.
+No se asume que una biblioteca garantiza determinismo sin evidencia del sistema completo.
 
 ## Orden
 
-`certificación MVP -> sim-core -> segundo juego -> Gym -> decisión Rapier`
+`certificación MVP -> Rapier + todos contra todos -> sim-core -> segundo juego -> Gym`

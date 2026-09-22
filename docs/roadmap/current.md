@@ -5,7 +5,8 @@ Este es el único roadmap normativo de Agentrix.
 ```text
 baseline -> sandbox -> lease/fencing -> protocolo/configuración
          -> commit/replay -> despliegue -> certificación MVP
-         -> sim-core -> segundo juego -> Gym -> decisión Rapier
+         -> Rapier + todos contra todos (ADR-0013)
+         -> sim-core -> segundo juego -> Gym
 ```
 
 ## Estado
@@ -19,21 +20,23 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 | Commit/replay | Implementado | Sello inmutable, commit idempotente cercado con run_id, tabla match_runs y publicación atómica |
 | Despliegue | Implementado | API/worker separados, Dockerfile.api/worker, docker-compose y fail-closed en producción |
 | Certificación MVP | Implementado | Suite E2E canónica, rechazo de zombis por fencing token, replay atómico verificado bit a bit y ADR-0008 |
+| Rapier + todos contra todos | En curso (F0 hecha) | Fases F0–F7 de ADR-0013 con sus criterios numéricos |
 | sim-core | No iniciado | Mismas reglas fuera de IPC/renderer |
 | Segundo juego | No iniciado | Juego discreto sin modificar el loop central |
 | Gym | No iniciado | API vectorizada sobre el mismo sim-core |
-| Decisión Rapier | No iniciada | Benchmark y conformidad x86_64/ARM64 |
 
 ## Reglas de avance
 
 - No se inicia una etapa que dependa de una garantía anterior abierta.
 - Un archivo o test existente no cierra una etapa: la salida debe ejecutarse y conservar evidencia.
 - Un fallo de seguridad, doble ejecución o replay inconsistente reabre la etapa correspondiente.
-- Multi-juego, Gym y Rapier nunca se adelantan para embellecer la arquitectura del MVP.
+- Multi-juego y Gym nunca se adelantan para embellecer la arquitectura del MVP. Rapier se adelantó por decisión explícita (ADR-0013), no por arrastre.
 
 ## Próximo corte
 
-Post-MVP (sim-core): extracción de la lógica de simulación fuera de Bevy/IPC para inferencia rápida y soporte Gym sin alterar las garantías transaccionales del MVP cerrado.
+Rapier + todos contra todos (ADR-0013), fase F1: corrección de los bugs de auditoría del motor sobre Avian antes de cambiar de backend.
+
+Después, post-MVP (sim-core): extracción de la lógica de simulación fuera de Bevy/IPC para inferencia rápida y soporte Gym sin alterar las garantías transaccionales del MVP cerrado.
 
 ## Roadmap paralelo de Frontend y QA (ADR-0009)
 

@@ -11,12 +11,16 @@ Python 3. Hablan el protocolo JSON Lines `init` / `perception` / `action` /
 - `bot_evasive.py`: se aleja y activa el escudo ante peligro; en otro caso
   conserva inercia y recupera energía.
 - `bot_ace.py`: pensado para partidas de 2 a 5 naves todos contra todos
-  (ADR-0013). Esquiva las balas enemigas que van a pasarle cerca, levanta el
-  escudo solo ante un impacto inminente y, si no hay amenaza, ataca: elige el
-  blanco más cercano (prefiriendo naves dañadas), apunta al punto de
-  intercepción y mantiene una distancia preferida. Cada copia varía levemente
-  su estilo según el id de su slot. No ve asteroides: la percepción no los
-  incluye. `make db-bootstrap` ejecuta con cinco copias la partida de demo
+  (ADR-0013). Cada tick simula 0.6 s de nueve maniobras con la física del
+  motor contra todas las balas enemigas, las paredes y la línea de tiro de
+  los rivales que lo apuntan, y solo abandona su plan si lo pone en peligro.
+  Con el arma lista prioriza apuntar al punto de intercepción; mientras
+  recarga orbita al blanco a distancia (480 a 640 u) para ser difícil de
+  acertar. Dispara solo si su bala, simulada contra el movimiento de un
+  rival a tiro, lo alcanza, y usa el escudo solo ante un impacto
+  inevitable. Cada copia varía su distancia y sentido de órbita según el id
+  de su slot. No ve asteroides: la percepción no los incluye.
+  `make db-bootstrap` ejecuta con cinco copias la partida de demo
   `match-star-ffa-demo-001`.
 
 El manifiesto actual de Starfighter usa `bot_hunter.py` o `bot_evasive.py`

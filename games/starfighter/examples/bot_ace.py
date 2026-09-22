@@ -2,24 +2,34 @@
 """bot_ace.py -- reference strategy for free-for-all: attacks AND evades.
 
 Designed for Starfighter 0.4.0 (2 to 5 ships, everyone against everyone,
-ADR-0013). Every tick it decides between two modes:
+ADR-0013). Every tick:
 
-- **Evade** when an enemy bullet is about to pass close: it computes the
-  closest approach of every enemy bullet (relative position and velocity,
-  as the perception gives them), moves sideways out of the path of the most
-  urgent one and raises the shield only if the impact is imminent.
-- **Attack** otherwise: it picks a target (nearest, preferring damaged
-  ships), aims at the intercept point (leading the target's motion) and
-  shoots when aligned, keeping a preferred distance instead of ramming.
+1. **Plan an attack.** Keep a target (switching only for a clearly better
+   one). While the gun reloads, orbit the target at a preferred distance so
+   the ship is never a still target; when the gun is about to be ready,
+   turn to the intercept point.
+2. **Check the plan against every threat.** Simulate the next 0.6 s with
+   the engine's own dynamics for the planned maneuver and for the other
+   eight (thrust forward/off/brake x turn left/none/right), against every
+   enemy bullet in flight, a virtual bullet from every rival currently
+   aiming at this ship, and the arena walls. Keep the plan if it is safe;
+   otherwise take the safe maneuver closest to it, or the one with the most
+   clearance. Raise the shield only when no maneuver avoids the impact.
+3. **Shoot only when the shot connects.** Simulate this ship's bullet
+   against every rival moving at constant velocity and fire only if it
+   passes within the hull of one of them, inside an effective range.
 
-Each copy gets a small deterministic "personality" (preferred distance,
-aim tolerance) from its slot id, so five copies do not fly identically.
+Each copy derives a small deterministic personality (preferred distance,
+orbit side) from its slot id, so five copies do not fly identically.
 
-Engine facts it relies on (agentrix_engine src/lib.rs): bullets leave the
-nose at 1500 u/s added to the ship velocity; the turn rate grows by
-0.5 rad/s per tick up to 4 rad/s and decays by the same amount when not
-turning; the arena is 2000 x 1000 centered at the origin; asteroids are
-NOT in the perception, so they cannot be avoided.
+Engine facts it relies on (agentrix_engine src/lib.rs, src/physics.rs):
+thrust adds ~22.2 u/s per tick along the nose (800000 N on 600 kg); speed
+is capped at 500 u/s; "OFF" applies drag, "BRAKE" decelerates at the same
+rate; the turn rate changes 0.5 rad/s per tick up to 4 rad/s and decays by
+0.5 rad/s per tick when not turning; bullets leave the nose (+24 u) at
+1500 u/s added to the ship velocity, live 90 ticks and are 3 u in radius;
+the gun reloads in 40 ticks; the arena is 2000 x 1000 centered at the
+origin. Asteroids are NOT in the perception, so they cannot be avoided.
 
 Speaks the real Agentrix agent protocol (ATD-007) over stdin/stdout, one
 JSON object per line -- no dependency beyond the Python standard library.
@@ -31,21 +41,32 @@ import zlib
 
 PROTOCOL_VERSION = "1.0"
 
-TICK_SECONDS = 1.0 / 60.0
+DT = 1.0 / 60.0
+THRUST_DV = 800000.0 / 600.0 * DT  # u/s gained per tick of thrust
+MAX_SPEED = 500.0
+DRAG_COEF = 0.02
+DRAG_EXP = 1.5
+TURN_STEP = 0.5  # rad/s per tick
+MAX_TURN = 4.0
 BULLET_SPEED = 1500.0
-BULLET_RANGE_SECONDS = 90 * TICK_SECONDS
-TURN_DECEL = 0.5 / TICK_SECONDS  # rad/s^2 while coasting
+BULLET_OFFSET = 24.0
+BULLET_LIFETIME = 90 * DT
+RELOAD_TICKS = 40
+SHOOT_COST = 15.0
 ARENA_HALF_W = 1000.0
 ARENA_HALF_H = 500.0
-WALL_MARGIN = 130.0
 
-# A bullet is a threat if it will pass within this distance of the ship's
-# center (hull ~25 u + bullet 3 u + margin) within THREAT_HORIZON seconds.
-THREAT_MISS_DISTANCE = 42.0
-THREAT_HORIZON = 0.55
-SHIELD_HORIZON = 0.18
-SHOOT_COST = 15.0
-ENERGY_RESERVE = 12.0
+HORIZON_TICKS = 36  # 0.6 s of look-ahead for maneuvers
+HIT_RADIUS = 22.0  # bullet center closer than this to the hull center hits
+SAFE_CLEARANCE = 38.0  # a maneuver is "safe" above this clearance
+WALL_MARGIN = 40.0
+SHOT_RADIUS = 14.0  # our shot must pass this close to count as a hit
+EFFECTIVE_RANGE = 720.0
+AIM_THREAT_ANGLE = 0.14  # a rival whose nose is this close to us may fire
+AIM_THREAT_RANGE = 700.0
+ENERGY_RESERVE = 10.0  # kept for the shield
+
+MANEUVERS = [(t, r) for t in ("FORWARD", "OFF", "BRAKE") for r in ("LEFT", "NONE", "RIGHT")]
 
 
 def send(msg: dict) -> None:
@@ -68,174 +89,279 @@ def normalize_angle(a: float) -> float:
     return a
 
 
-def dot(ax: float, ay: float, bx: float, by: float) -> float:
-    return ax * bx + ay * by
+def vec(d: dict):
+    return d["x"], d["y"]
 
 
 class Ace:
     def __init__(self, slot_id: str) -> None:
-        # Deterministic per-slot personality (crc32, not hash(): Python's
-        # str hash is randomized per process).
+        # crc32, not hash(): Python's str hash is randomized per process.
         h = zlib.crc32(slot_id.encode("utf-8"))
-        self.preferred_distance = 260.0 + (h % 5) * 45.0  # 260..440
-        self.aim_slack = 0.9 + ((h >> 8) % 4) * 0.1  # 0.9..1.2
-        self.prev_facing_angle = None
+        self.preferred_distance = 480.0 + (h % 5) * 40.0  # 480..640
+        self.orbit_side = 1.0 if (h >> 3) & 1 else -1.0
+        self.prev_angle = None
         self.omega = 0.0
+        self.target_id = None
 
-    # -- steering -----------------------------------------------------------
+    # -- dynamics -------------------------------------------------------------
 
-    def steer(self, target_x: float, target_y: float, facing_angle: float, tolerance: float) -> str:
-        """Turn toward a direction, coasting early when the current spin
-        would already carry the nose there (avoids overshooting)."""
-        diff = normalize_angle(math.atan2(target_y, target_x) - facing_angle)
-        stopping = self.omega * self.omega / (2 * TURN_DECEL)
+    def simulate(self, x, y, vx, vy, angle, omega, thrust, turn, ticks):
+        """Yield the ship position for each of the next ticks, holding one
+        maneuver, with the engine's own per-tick update order."""
+        for _ in range(ticks):
+            if turn == "LEFT":
+                omega = min(MAX_TURN, omega + TURN_STEP)
+            elif turn == "RIGHT":
+                omega = max(-MAX_TURN, omega - TURN_STEP)
+            elif omega != 0.0:
+                omega -= math.copysign(min(TURN_STEP, abs(omega)), omega)
+            speed = math.hypot(vx, vy)
+            if thrust == "FORWARD":
+                vx += -math.sin(angle) * THRUST_DV
+                vy += math.cos(angle) * THRUST_DV
+            elif thrust == "OFF":
+                factor = 1.0 - DRAG_COEF * (speed / MAX_SPEED) ** DRAG_EXP
+                vx, vy = vx * factor, vy * factor
+            elif speed > 1.0:
+                cut = min(THRUST_DV, speed)
+                vx -= vx / speed * cut
+                vy -= vy / speed * cut
+            speed = math.hypot(vx, vy)
+            if speed > MAX_SPEED:
+                vx, vy = vx / speed * MAX_SPEED, vy / speed * MAX_SPEED
+            angle += omega * DT
+            x += vx * DT
+            y += vy * DT
+            yield x, y
+
+    # -- threats --------------------------------------------------------------
+
+    @staticmethod
+    def threats(perception, x, y, vx, vy):
+        """World-frame (x, y, vx, vy) of every enemy bullet in flight, and
+        separately a virtual bullet leaving the nose of each rival that is
+        aiming at us now (it may or may not fire)."""
+        me = perception["player_id"]
+        real, virtual = [], []
+        for b in perception["bullets"]:
+            if b["player_id"] == me:
+                continue
+            px, py = vec(b["relative_position"])
+            rvx, rvy = vec(b["relative_velocity"])
+            real.append((x + px, y + py, vx + rvx, vy + rvy))
+        out = virtual
+        for r in perception["rivals"]:
+            px, py = vec(r["relative_position"])
+            distance = math.hypot(px, py)
+            if distance < 1.0 or distance > AIM_THREAT_RANGE:
+                continue
+            fx, fy = vec(r["facing"])
+            # Angle between the rival's nose and the line from it to us.
+            if math.acos(max(-1.0, min(1.0, (-px * fx - py * fy) / distance))) > AIM_THREAT_ANGLE:
+                continue
+            rvx, rvy = vec(r["relative_velocity"])
+            out.append((
+                x + px + fx * BULLET_OFFSET,
+                y + py + fy * BULLET_OFFSET,
+                vx + rvx + fx * BULLET_SPEED,
+                vy + rvy + fy * BULLET_SPEED,
+            ))
+        return real, virtual
+
+    def clearance(self, state, maneuver, threats):
+        """Smallest distance to any threat over the horizon, penalized near
+        the walls. Returns (clearance, first tick at which it happens)."""
+        x, y, vx, vy, angle, omega = state
+        worst, worst_tick = 1e9, HORIZON_TICKS
+        for tick, (sx, sy) in enumerate(self.simulate(x, y, vx, vy, angle, omega, *maneuver, HORIZON_TICKS), 1):
+            t = tick * DT
+            for bx, by, bvx, bvy in threats:
+                if t > BULLET_LIFETIME:
+                    continue
+                d = math.hypot(sx - (bx + bvx * t), sy - (by + bvy * t))
+                if d < worst:
+                    worst, worst_tick = d, tick
+            wall = min(ARENA_HALF_W - abs(sx), ARENA_HALF_H - abs(sy))
+            if wall < WALL_MARGIN:
+                # Hitting a wall reflects the ship and kills its speed.
+                worst = min(worst, SAFE_CLEARANCE - 1.0 + max(wall, 0.0) / WALL_MARGIN)
+        return worst, worst_tick
+
+    # -- targeting ------------------------------------------------------------
+
+    def pick_target(self, rivals):
+        def score(r):
+            distance = math.hypot(*vec(r["relative_position"]))
+            return distance - 1.5 * (100.0 - r["health"]) + (60.0 if r["shield_active"] else 0.0)
+
+        best = min(rivals, key=score)
+        current = next((r for r in rivals if r["player_id"] == self.target_id), None)
+        if current is not None and score(current) < score(best) + 120.0:
+            best = current  # hysteresis: do not hop between targets
+        self.target_id = best["player_id"]
+        return best
+
+    @staticmethod
+    def intercept(px, py, rvx, rvy):
+        a = rvx * rvx + rvy * rvy - BULLET_SPEED * BULLET_SPEED
+        b = 2 * (px * rvx + py * rvy)
+        c = px * px + py * py
+        disc = b * b - 4 * a * c
+        if abs(a) < 1e-6 or disc < 0:
+            return px, py
+        root = math.sqrt(disc)
+        times = [t for t in ((-b - root) / (2 * a), (-b + root) / (2 * a)) if t > 0]
+        if not times:
+            return px, py
+        t = min(times)
+        return px + rvx * t, py + rvy * t
+
+    @staticmethod
+    def shot_connects(perception, fx, fy):
+        """Would a bullet fired now pass within SHOT_RADIUS of a rival that
+        keeps its current velocity? Evaluated relative to this ship."""
+        for r in perception["rivals"]:
+            px, py = vec(r["relative_position"])
+            if math.hypot(px, py) > EFFECTIVE_RANGE:
+                continue
+            rvx, rvy = vec(r["relative_velocity"])
+            # Relative gap: target - bullet = (P - f*24) + (V - f*1500) t
+            gx, gy = px - fx * BULLET_OFFSET, py - fy * BULLET_OFFSET
+            wx, wy = rvx - fx * BULLET_SPEED, rvy - fy * BULLET_SPEED
+            ww = wx * wx + wy * wy
+            t = max(0.0, min(BULLET_LIFETIME, -(gx * wx + gy * wy) / ww)) if ww > 1e-9 else 0.0
+            if math.hypot(gx + wx * t, gy + wy * t) < SHOT_RADIUS:
+                return True
+        return False
+
+    def steer(self, dx, dy, angle, tolerance):
+        """Turn toward a world direction, coasting early when the current
+        spin already carries the nose there (no overshoot)."""
+        diff = normalize_angle(math.atan2(dy, dx) - (angle + math.pi / 2))
+        stopping = self.omega * self.omega / (2 * TURN_STEP / DT)
         if diff > tolerance:
             return "NONE" if self.omega > 0 and stopping >= diff else "LEFT"
         if diff < -tolerance:
             return "NONE" if self.omega < 0 and stopping >= -diff else "RIGHT"
-        # Inside the window: cancel leftover spin.
         if self.omega > 1.0:
             return "RIGHT"
         if self.omega < -1.0:
             return "LEFT"
         return "NONE"
 
-    # -- perception helpers -------------------------------------------------
-
     @staticmethod
-    def most_urgent_threat(perception: dict):
-        me = perception["player_id"]
-        best = None
-        for bullet in perception["bullets"]:
-            if bullet["player_id"] == me:
-                continue
-            px, py = bullet["relative_position"]["x"], bullet["relative_position"]["y"]
-            vx, vy = bullet["relative_velocity"]["x"], bullet["relative_velocity"]["y"]
-            vv = dot(vx, vy, vx, vy)
-            if vv < 1e-6:
-                continue
-            tca = -dot(px, py, vx, vy) / vv
-            if tca <= 0.0 or tca > THREAT_HORIZON:
-                continue
-            mx, my = px + vx * tca, py + vy * tca
-            miss = math.hypot(mx, my)
-            if miss > THREAT_MISS_DISTANCE:
-                continue
-            if best is None or tca < best[0]:
-                best = (tca, vx, vy, mx, my, miss)
-        return best
-
-    @staticmethod
-    def intercept(rel_x: float, rel_y: float, rvx: float, rvy: float):
-        """Point to aim at so a bullet (relative speed BULLET_SPEED) meets a
-        target at rel with relative velocity rv. None if unreachable."""
-        a = dot(rvx, rvy, rvx, rvy) - BULLET_SPEED * BULLET_SPEED
-        b = 2 * dot(rel_x, rel_y, rvx, rvy)
-        c = dot(rel_x, rel_y, rel_x, rel_y)
-        t = None
-        if abs(a) < 1e-6:
-            if abs(b) > 1e-6:
-                t = -c / b
+    def turn_ticks(error):
+        """Ticks needed to rotate the nose by `error` radians from rest
+        (accelerate at 30 rad/s^2 up to 4 rad/s, then brake)."""
+        error = abs(error)
+        accel = TURN_STEP / DT
+        if error < MAX_TURN * MAX_TURN / accel:
+            seconds = 2 * math.sqrt(error / accel)
         else:
-            disc = b * b - 4 * a * c
-            if disc >= 0:
-                root = math.sqrt(disc)
-                candidates = [x for x in ((-b - root) / (2 * a), (-b + root) / (2 * a)) if x > 0]
-                t = min(candidates) if candidates else None
-        if t is None or t <= 0 or t > BULLET_RANGE_SECONDS:
-            return None
-        return rel_x + rvx * t, rel_y + rvy * t
+            seconds = error / MAX_TURN + MAX_TURN / accel
+        return seconds / DT
 
-    def pick_target(self, rivals: list):
-        def score(rival):
-            rel = rival["relative_position"]
-            distance = math.hypot(rel["x"], rel["y"])
-            # Up to 150 u of "distance discount" for a badly damaged ship.
-            return distance - 1.5 * (100.0 - rival["health"])
+    def plan(self, perception, x, y, vx, vy, angle, fx, fy):
+        """Returns ((thrust, turn), mode) with mode "aim" or "move"."""
+        myself = perception["myself"]
+        rivals = perception["rivals"]
+        if not rivals:
+            # Patrol toward the center; the radar is omnidirectional.
+            far = math.hypot(x, y) > 220.0
+            return ("FORWARD" if far else "OFF", self.steer(-x, -y, angle, 0.3)), "move"
 
-        return min(rivals, key=score)
+        target = self.pick_target(rivals)
+        px, py = vec(target["relative_position"])
+        rvx, rvy = vec(target["relative_velocity"])
+        distance = max(math.hypot(px, py), 1.0)
+        ux, uy = px / distance, py / distance
 
-    # -- decision -----------------------------------------------------------
+        reload_left = myself["remaining_bullet_cooldown"]
+        ax, ay = self.intercept(px, py, rvx, rvy)
+        aim_error = normalize_angle(math.atan2(ay, ax) - (angle + math.pi / 2))
+        # Start turning back early enough to be on target when the gun is.
+        if reload_left <= self.turn_ticks(aim_error) + 6 or distance > EFFECTIVE_RANGE:
+            turn = self.steer(ax, ay, angle, 0.03)
+            facing_target = (fx * ux + fy * uy) > 0.8
+            closing = -(rvx * ux + rvy * uy)
+            if distance > self.preferred_distance + 90.0 and facing_target:
+                thrust = "FORWARD"
+            elif distance < self.preferred_distance - 110.0 and closing > 60.0:
+                thrust = "BRAKE"
+            else:
+                thrust = "OFF"
+            return (thrust, turn), "aim"
+
+        # Reloading: orbit the target (tangential speed + distance keeping).
+        side = self.orbit_side
+        tx, ty = -uy * side, ux * side
+        # Turn the orbit around if it runs into a wall.
+        if abs(x + tx * 150.0) > ARENA_HALF_W - 120.0 or abs(y + ty * 150.0) > ARENA_HALF_H - 120.0:
+            self.orbit_side = -self.orbit_side
+            tx, ty = -tx, -ty
+        radial = max(-1.0, min(1.0, (distance - self.preferred_distance) / 150.0))
+        dvx = tx * 280.0 + ux * radial * 200.0 - vx
+        dvy = ty * 280.0 + uy * radial * 200.0 - vy
+        if math.hypot(dvx, dvy) < 70.0:
+            # Already moving as wanted: pre-aim at the target.
+            return ("OFF", self.steer(ax, ay, angle, 0.05)), "move"
+        turn = self.steer(dvx, dvy, angle, 0.2)
+        aligned = (fx * dvx + fy * dvy) / math.hypot(dvx, dvy) > 0.7
+        return (("FORWARD" if aligned else "OFF"), turn), "move"
+
+    # -- decision -------------------------------------------------------------
 
     def choose_action(self, perception: dict) -> dict:
         myself = perception["myself"]
-        fx, fy = myself["facing"]["x"], myself["facing"]["y"]
-        facing_angle = math.atan2(fy, fx)
-        if self.prev_facing_angle is not None:
-            self.omega = normalize_angle(facing_angle - self.prev_facing_angle) / TICK_SECONDS
-        self.prev_facing_angle = facing_angle
+        x, y = vec(myself["position"])
+        vx, vy = vec(myself["velocity"])
+        fx, fy = vec(myself["facing"])
+        # Engine convention: nose at (-sin θ, cos θ).
+        angle = math.atan2(-fx, fy)
+        if self.prev_angle is not None:
+            self.omega = normalize_angle(angle - self.prev_angle) / DT
+        self.prev_angle = angle
 
-        pos = myself["position"]
-        vel = myself["velocity"]
+        planned, mode = self.plan(perception, x, y, vx, vy, angle, fx, fy)
+        real, virtual = self.threats(perception, x, y, vx, vy)
+        state = (x, y, vx, vy, angle, self.omega)
+        chosen, shield = planned, False
+        if mode == "aim":
+            # Aiming has priority: only real bullets may change the plan, and
+            # only its thrust, so the nose stays on target. If the impact is
+            # unavoidable anyway, shield and keep shooting.
+            planned_clear, planned_tick = self.clearance(state, planned, real)
+            if planned_clear < SAFE_CLEARANCE:
+                options = [(m, *self.clearance(state, m, real)) for m in MANEUVERS if m[1] == planned[1]]
+                best = max(options, key=lambda o: o[1])
+                if best[1] >= SAFE_CLEARANCE:
+                    chosen = best[0]
+                else:
+                    shield = best[1] < HIT_RADIUS and best[2] <= 12 and myself["energy"] > 3.0
+        else:
+            # Moving while reloading: avoid real bullets and the line of fire
+            # of every rival aiming at us.
+            threats = real + virtual
+            planned_clear, _ = self.clearance(state, planned, threats)
+            if planned_clear < SAFE_CLEARANCE:
+                scored = [(m, *self.clearance(state, m, threats)) for m in MANEUVERS]
+                safe = [o for o in scored if o[1] >= SAFE_CLEARANCE]
+                if safe:
+                    # Closest safe maneuver to the plan: same turn first.
+                    safe.sort(key=lambda o: (o[0][1] != planned[1], o[0][0] != planned[0], -o[1]))
+                    chosen = safe[0][0]
+                else:
+                    best = max(scored, key=lambda o: o[1])
+                    chosen = best[0]
+                    real_clear, real_tick = self.clearance(state, chosen, real)
+                    shield = real_clear < HIT_RADIUS and real_tick <= 12 and myself["energy"] > 3.0
+
         can_shoot = (
             myself["remaining_bullet_cooldown"] <= 0
             and myself["energy"] >= SHOOT_COST + ENERGY_RESERVE
+            and self.shot_connects(perception, fx, fy)
         )
-
-        # Opportunistic shot at whatever is in front, valid in every mode.
-        aim = None
-        target = self.pick_target(perception["rivals"]) if perception["rivals"] else None
-        if target is not None:
-            rel, rv = target["relative_position"], target["relative_velocity"]
-            aim = self.intercept(rel["x"], rel["y"], rv["x"], rv["y"]) or (rel["x"], rel["y"])
-
-        def aligned_shot() -> bool:
-            if aim is None or not can_shoot:
-                return False
-            distance = math.hypot(aim[0], aim[1])
-            diff = abs(normalize_angle(math.atan2(aim[1], aim[0]) - facing_angle))
-            return diff < max(0.04, math.atan2(18.0 * self.aim_slack, distance))
-
-        # 1. Evade the most urgent enemy bullet.
-        threat = self.most_urgent_threat(perception)
-        if threat is not None:
-            tca, vx, vy, mx, my, miss = threat
-            speed = math.hypot(vx, vy)
-            px, py = -vy / speed, vx / speed  # perpendicular to the bullet path
-            if miss > 8.0:
-                # Keep moving to the side the bullet already passes on.
-                side = 1.0 if dot(px, py, mx, my) >= 0 else -1.0
-            else:
-                # Dead center: take the side that needs the smaller turn.
-                side = 1.0 if dot(px, py, fx, fy) >= 0 else -1.0
-            dodge_x, dodge_y = px * side, py * side
-            turn = self.steer(dodge_x, dodge_y, facing_angle, 0.25)
-            along = dot(fx, fy, dodge_x, dodge_y)
-            thrust = "FORWARD" if along > -0.2 else "BRAKE"
-            shield = tca < SHIELD_HORIZON and myself["energy"] > 5.0
-            return {"thrust": thrust, "turn": turn, "shoot": aligned_shot(), "shield": shield}
-
-        # 2. Stay away from the walls (the engine reflects, which kills speed).
-        near_wall = abs(pos["x"]) > ARENA_HALF_W - WALL_MARGIN or abs(pos["y"]) > ARENA_HALF_H - WALL_MARGIN
-        heading_out = dot(vel["x"], vel["y"], pos["x"], pos["y"]) > 0
-        if near_wall and heading_out:
-            turn = self.steer(-pos["x"], -pos["y"], facing_angle, 0.3)
-            return {"thrust": "FORWARD", "turn": turn, "shoot": aligned_shot(), "shield": False}
-
-        # 3. No one on radar: patrol toward the center.
-        if target is None:
-            turn = self.steer(-pos["x"], -pos["y"], facing_angle, 0.3)
-            far_from_center = math.hypot(pos["x"], pos["y"]) > 200.0
-            return {
-                "thrust": "FORWARD" if far_from_center else "OFF",
-                "turn": turn,
-                "shoot": False,
-                "shield": False,
-            }
-
-        # 4. Attack: face the intercept point, keep the preferred distance.
-        rel = target["relative_position"]
-        distance = math.hypot(rel["x"], rel["y"])
-        turn = self.steer(aim[0], aim[1], facing_angle, 0.05)
-        closing_speed = -dot(target["relative_velocity"]["x"], target["relative_velocity"]["y"], rel["x"], rel["y"]) / max(distance, 1.0)
-        facing_target = abs(normalize_angle(math.atan2(rel["y"], rel["x"]) - facing_angle)) < 0.8
-        if distance > self.preferred_distance + 80.0 and facing_target:
-            thrust = "FORWARD"
-        elif distance < self.preferred_distance - 80.0 and closing_speed > 0:
-            thrust = "BRAKE"
-        else:
-            thrust = "OFF"
-        return {"thrust": thrust, "turn": turn, "shoot": aligned_shot(), "shield": False}
+        return {"thrust": chosen[0], "turn": chosen[1], "shoot": can_shoot, "shield": shield}
 
 
 def main() -> None:

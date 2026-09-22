@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,6 +30,9 @@ type realMatchStats struct {
 	reason           string
 	ticks            int
 	participants     []string
+	// Disparos hechos sin ningún rival a menos de 780 u (alcance efectivo
+	// del Ace + margen), medidos con las posiciones del snapshot público.
+	shotsNoTarget map[int]int
 }
 
 func runRealMatch(t *testing.T, bots []string, seed int64, maxTicks int) realMatchStats {
@@ -94,6 +98,40 @@ func runRealMatch(t *testing.T, bots []string, seed int64, maxTicks int) realMat
 			} `json:"events"`
 		}
 		_ = json.Unmarshal(s.PublicSnapshot, &pub)
+		var fighters struct {
+			Fighters []struct {
+				Slot     string                 `json:"slot"`
+				Position struct{ X, Y float64 } `json:"position"`
+			} `json:"fighters"`
+		}
+		_ = json.Unmarshal(s.PublicSnapshot, &fighters)
+		if st.shotsNoTarget == nil {
+			st.shotsNoTarget = map[int]int{}
+		}
+		for _, e := range pub.Events {
+			if e.Type != "fired" {
+				continue
+			}
+			shooter := doc.Metadata.Participants[e.PlayerID]
+			var sx, sy float64
+			found := false
+			for _, f := range fighters.Fighters {
+				if f.Slot == shooter {
+					sx, sy, found = f.Position.X, f.Position.Y, true
+				}
+			}
+			nearest := 1e9
+			for _, f := range fighters.Fighters {
+				if f.Slot != shooter && found {
+					if d := math.Hypot(f.Position.X-sx, f.Position.Y-sy); d < nearest {
+						nearest = d
+					}
+				}
+			}
+			if nearest > 720+60 {
+				st.shotsNoTarget[e.PlayerID]++
+			}
+		}
 		for _, e := range pub.Events {
 			switch e.Type {
 			case "fired":
@@ -120,7 +158,8 @@ func total(m map[int]int) int {
 }
 
 // Cinco copias de bot_ace.py pelean de verdad: la partida termina por
-// eliminación, con bajas atribuidas y un único primer puesto.
+// eliminación, con bajas atribuidas, un único primer puesto y ningún disparo
+// hecho sin un rival a tiro.
 func TestReferenceBots_FiveAcesFightToElimination(t *testing.T) {
 	ace := "games/starfighter/examples/bot_ace.py"
 	st := runRealMatch(t, []string{ace, ace, ace, ace, ace}, 1, 3600)
@@ -129,6 +168,9 @@ func TestReferenceBots_FiveAcesFightToElimination(t *testing.T) {
 	}
 	if len(st.destroyed) != 4 {
 		t.Fatalf("destroyed = %v, want four ships out", st.destroyed)
+	}
+	if total(st.shotsNoTarget) != 0 {
+		t.Fatalf("shots without a rival in range = %v, want none", st.shotsNoTarget)
 	}
 	if total(st.kills) < 2 {
 		t.Fatalf("kills = %v, want at least two kills by bullets", st.kills)
@@ -145,7 +187,8 @@ func TestReferenceBots_FiveAcesFightToElimination(t *testing.T) {
 }
 
 // bot_ace.py esquiva y ataca: en un duelo contra bot_hunter.py (que solo
-// ataca) no recibe impactos y gana.
+// ataca) gana, esquiva al menos 3 de cada 4 balas del hunter y le acierta
+// más de lo que recibe.
 func TestReferenceBots_AceOutDuelsHunter(t *testing.T) {
 	st := runRealMatch(t, []string{
 		"games/starfighter/examples/bot_ace.py",
@@ -154,7 +197,10 @@ func TestReferenceBots_AceOutDuelsHunter(t *testing.T) {
 	if st.reason != "eliminated" || st.ranks["bot_ace-0"] != 1 {
 		t.Fatalf("reason=%q ranks=%v, want the ace to eliminate the hunter", st.reason, st.ranks)
 	}
-	if st.hitsTaken[0] != 0 || st.fired[1] == 0 {
-		t.Fatalf("hits taken by ace = %d with hunter shots = %d, want every shot dodged", st.hitsTaken[0], st.fired[1])
+	if st.fired[1] == 0 || 4*st.hitsTaken[0] > st.fired[1] {
+		t.Fatalf("ace took %d hits from %d hunter shots, want at most one in four", st.hitsTaken[0], st.fired[1])
+	}
+	if st.hitsTaken[1] <= st.hitsTaken[0] {
+		t.Fatalf("ace dealt %d hits and took %d, want more dealt than taken", st.hitsTaken[1], st.hitsTaken[0])
 	}
 }

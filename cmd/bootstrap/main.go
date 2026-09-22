@@ -351,7 +351,7 @@ const ffaDemoMatchID = "match-star-ffa-demo-001"
 
 // runFreeForAllDemo ejecuta con el motor real una partida amistosa de los
 // cinco bots Ace (ADR-0013). Con estos slots y la semilla 1 termina por
-// eliminación a los 663 ticks (~11 s); la personalidad de cada Ace depende
+// eliminación a los 1178 ticks (~20 s); la personalidad de cada Ace depende
 // del id de su slot, así que no es la misma partida del test
 // TestReferenceBots_FiveAcesFightToElimination. Es idempotente: una partida
 // ya terminada no se vuelve a ejecutar.

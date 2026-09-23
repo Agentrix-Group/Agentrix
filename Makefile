@@ -21,7 +21,7 @@ DB_SCRIPT ?= ./script/setup_postgres.sh
 PG_TEST_PORT ?= 55432
 
 .PHONY: help setup setup-all agentrix-setup db-setup db-migrate db-status db-reset db-seed db-bootstrap \
-        build build-all build-engine build-engines engine engine-test bot-runtimes bot-runtimes-lock run clean coverage \
+        build build-all build-engine build-engines engine engine-test bot-runtimes bot-runtimes-lock neural-templates run clean coverage \
         fmt fmt-check vet test test-race test-integration openapi-check check \
         web-install web-dev web-lint web-test web-build web-e2e \
         demo-up demo-down demo-reset demo-smoke
@@ -44,6 +44,7 @@ help:
 	@echo "    make engine           - Build bin/starfighter-engine from commit pinned in engine.lock"
 	@echo "    make engine-test      - Run cargo fmt, clippy -D warnings and tests on agentrix_engine"
 	@echo "    make bot-runtimes     - Build bot runtimes (python-ml-cpu) into bin/runtimes"
+	@echo "    make neural-templates - Rebuild the ONNX/NPZ bot templates in web/public"
 	@echo ""
 	@echo "  Local Development & Build:"
 	@echo "    make build            - Compile Go backend binary (bin/agentrix)"
@@ -114,6 +115,10 @@ engine:
 # Runtimes de bots (ADR-0014): Python 3.12 independiente + python-ml-cpu.
 bot-runtimes:
 	./script/build_bot_runtimes.sh
+
+# Plantillas de bots con red neuronal para la web (ADR-0014, N5).
+neural-templates:
+	python3 ./script/build_neural_templates.py
 
 # Regenera el lock con hashes de python-ml-cpu (requiere red).
 bot-runtimes-lock:

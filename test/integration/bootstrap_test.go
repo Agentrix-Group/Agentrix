@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -359,6 +360,26 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 		r.Equal(http.StatusCreated, code, raw)
 		status, detail := admit(sub.Id)
 		r.Equal("ready", status, "the ONNX example must be admitted on python-ml-cpu: %s", detail)
+
+		// N5: the templates the web offers for download are admitted as-is.
+		for _, name := range []string{"starfighter-neural-onnx.zip", "starfighter-neural-npz.zip"} {
+			zr, err := zip.OpenReader("../../web/public/" + name)
+			r.NoError(err, "run `make neural-templates`")
+			files := map[string][]byte{}
+			for _, f := range zr.File {
+				rc, err := f.Open()
+				r.NoError(err)
+				content, err := io.ReadAll(rc)
+				_ = rc.Close()
+				r.NoError(err)
+				files[f.Name] = content
+			}
+			_ = zr.Close()
+			code, raw, sub := uploadV2(files)
+			r.Equal(http.StatusCreated, code, "%s: %s", name, raw)
+			status, detail := admit(sub.Id)
+			r.Equal("ready", status, "template %s must be admitted: %s", name, detail)
+		}
 
 		code, raw, sub = uploadV2(map[string][]byte{
 			"agentrix.json": mlManifest,

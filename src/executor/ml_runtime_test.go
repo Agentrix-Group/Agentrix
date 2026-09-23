@@ -1,8 +1,10 @@
 package executor
 
 import (
+	"archive/zip"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -256,4 +258,64 @@ func TestMLAdmission_RejectsSlowOrHeavyModelsWithReason(t *testing.T) {
 	require.NoError(t, sandbox.ValidateBot(context.Background(), writeMLBundle(t, map[string]string{
 		"bot.py": read("bot_onnx.py"), "policy.py": read("policy.py"), "model/policy.onnx": read("model/policy.onnx"),
 	})))
+}
+
+// ADR-0014 (N5): las plantillas que ofrece la web son los ejemplos neurales
+// empaquetados (no divergen de ellos), pasan la admisión y juegan.
+func TestMLRuntime_WebNeuralTemplatesAreAdmittedAndPlay(t *testing.T) {
+	neural := resolveTestPath("games/starfighter/examples/neural")
+	checkTemplate := func(zipName, botFile, modelFile string) {
+		files := readTemplateZip(t, zipName)
+		sources := map[string]string{
+			"bot.py":             botFile,
+			"policy.py":          "policy.py",
+			"model/" + modelFile: "model/" + modelFile,
+		}
+		require.Len(t, files, len(sources)+1, "%s: unexpected entries", zipName)
+		for entry, source := range sources {
+			want, err := os.ReadFile(filepath.Join(neural, source))
+			require.NoError(t, err)
+			require.Equal(t, string(want), files[entry], "%s is stale: run `make neural-templates`", zipName)
+		}
+		var manifest model.AgentPackageManifest
+		require.NoError(t, json.Unmarshal([]byte(files["agentrix.json"]), &manifest))
+		require.Equal(t, model.BotRuntimePythonMLCPU, manifest.Runtime)
+		require.Equal(t, "bot.py", manifest.Entrypoint)
+	}
+	checkTemplate("starfighter-neural-onnx.zip", "bot_onnx.py", "policy.onnx")
+	checkTemplate("starfighter-neural-npz.zip", "bot_npz.py", "policy.npz")
+
+	requireMLRuntime(t)
+	unpack := func(zipName string) string {
+		codePath := writeMLBundle(t, readTemplateZip(t, zipName))
+		require.NoError(t, NewSandbox(2*time.Second).ValidateBot(context.Background(), codePath), "%s must pass admission", zipName)
+		return codePath
+	}
+	onnxBot := unpack("starfighter-neural-onnx.zip")
+	npzBot := unpack("starfighter-neural-npz.zip")
+	ace := "games/starfighter/examples/bot_ace.py"
+	st := runRealMatch(t, []string{onnxBot, ace, npzBot}, 11, 1800)
+	require.Len(t, st.ranks, 3)
+	for _, slot := range []int{0, 2} {
+		require.Greater(t, st.fired[slot], 0, "template bot in slot %d must play and shoot", slot)
+	}
+	t.Logf("reason=%s ticks=%d fired=%v kills=%v ranks=%v", st.reason, st.ticks, st.fired, st.kills, st.ranks)
+}
+
+// readTemplateZip devuelve las entradas de una plantilla de web/public.
+func readTemplateZip(t *testing.T, zipName string) map[string]string {
+	t.Helper()
+	zr, err := zip.OpenReader(resolveTestPath("web/public/" + zipName))
+	require.NoError(t, err, "run `make neural-templates`")
+	defer zr.Close()
+	files := map[string]string{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		require.NoError(t, err)
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		require.NoError(t, err)
+		files[f.Name] = string(content)
+	}
+	return files
 }

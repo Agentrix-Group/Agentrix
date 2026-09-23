@@ -28,10 +28,10 @@ describe('Sprint FQ-2: Asynchronous Bot Admission & Validation Feedback', () => 
       expect(formatBytes(1024 * 1024 * 1.5)).toBe('1.5 MB');
     });
 
-    it('rejects files larger than 2 MiB before uploading', () => {
+    it('rejects files larger than 50 MB before uploading', () => {
       const mockT = (key) => key;
       const oversizedFile = new File(['a'.repeat(100)], 'huge.zip', { type: 'application/zip' });
-      Object.defineProperty(oversizedFile, 'size', { value: 3 * 1024 * 1024 }); // 3 MiB
+      Object.defineProperty(oversizedFile, 'size', { value: 51 * 1024 * 1024 }); // 51 MiB
 
       const result = validateBundleFile(oversizedFile, mockT);
       expect(result.valid).toBe(false);
@@ -47,10 +47,10 @@ describe('Sprint FQ-2: Asynchronous Bot Admission & Validation Feedback', () => 
       expect(result.error).toBe('agents:messages.invalidZipType');
     });
 
-    it('accepts valid zip files within 2 MiB', () => {
+    it('accepts valid zip files within 50 MB, including the old 2 MiB limit', () => {
       const mockT = (key) => key;
       const validZip = new File(['fake zip content'], 'my_bot.zip', { type: 'application/zip' });
-      Object.defineProperty(validZip, 'size', { value: 50 * 1024 }); // 50 KB
+      Object.defineProperty(validZip, 'size', { value: 3 * 1024 * 1024 }); // 3 MiB
 
       const result = validateBundleFile(validZip, mockT);
       expect(result.valid).toBe(true);
@@ -72,7 +72,7 @@ describe('Sprint FQ-2: Asynchronous Bot Admission & Validation Feedback', () => 
 
       const fileInput = document.querySelector('input[type="file"]');
       const oversizedFile = new File(['content'], 'big.zip', { type: 'application/zip' });
-      Object.defineProperty(oversizedFile, 'size', { value: 4 * 1024 * 1024 });
+      Object.defineProperty(oversizedFile, 'size', { value: 60 * 1024 * 1024 });
 
       await act(async () => {
         fireEvent.change(fileInput, { target: { files: [oversizedFile] } });
@@ -87,7 +87,7 @@ describe('Sprint FQ-2: Asynchronous Bot Admission & Validation Feedback', () => 
         />
       );
 
-      expect(validationError).toContain('2 MiB');
+      expect(validationError).toContain('50 MB');
       expect(screen.getByRole('alert')).toBeDefined();
     });
 

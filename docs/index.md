@@ -26,6 +26,7 @@ Este índice es la entrada canónica a la documentación. Un documento que no ap
 | [Seguridad](operations/security.md) | Amenazas, brechas actuales y condición de producción |
 | [Protocolo local](../protocol/engine/v1/README.md) | Detalle del contrato Go↔Rust |
 | [Bots de referencia](../games/starfighter/examples/README.md) | Ejemplos del MVP |
+| [Bots con red neuronal](operations/neural-bots.md) | Cómo empaquetar y subir un bot con modelo (ADR-0014) |
 
 Estas guías están subordinadas a las fuentes normativas y al código cuando describen el estado actual.
 

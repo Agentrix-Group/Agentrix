@@ -5,6 +5,7 @@ import { formatDateTime, formatNumber } from '../i18n/formatters.js';
 import { Bot, ShieldCheck, UploadCloud, UserPlus, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { BundleDropzone } from '../components/BundleDropzone.jsx';
 import { StarterKitCard } from '../components/StarterKitCard.jsx';
+import { NeuralTemplateCard } from '../components/NeuralTemplateCard.jsx';
 import { AdmissionStatusBanner, sanitizeAdmissionError } from '../components/AdmissionStatusBanner.jsx';
 
 export function AgentsPage({ currentUser }) {
@@ -108,7 +109,9 @@ export function AgentsPage({ currentUser }) {
 
   const pollSubmissionAdmission = async (submissionId, agentId) => {
     setAdmissionStage('validating');
-    const maxAttempts = 15;
+    // El worker carga el modelo del bot (hasta 10 s) y puede tener otras
+    // admisiones en cola: se espera hasta un minuto.
+    const maxAttempts = 40;
     const intervalMs = 1500;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -341,6 +344,7 @@ export function AgentsPage({ currentUser }) {
 
               {/* Starter Template Box */}
               <StarterKitCard />
+              <NeuralTemplateCard />
 
               {/* Upload Dropzone Card */}
               <div className="card" style={{ marginBottom: '24px' }}>

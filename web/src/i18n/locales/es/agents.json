@@ -27,8 +27,8 @@
     "language": "Lenguaje:",
     "publish": "Validar y publicar ZIP",
     "chooseZip": "Selecciona el paquete ZIP",
-    "zipHelp": "Debe contener agentrix.json y bot.py en la raíz. Máximo 2 MiB.",
-    "admissionCheck": "Agentrix comprobará sintaxis, inicialización y respuesta al tick 0.",
+    "zipHelp": "Debe contener agentrix.json y bot.py en la raíz; opcionalmente otros módulos .py y modelos en model/. Máximo 50 MB.",
+    "admissionCheck": "Tras subirlo, el worker ejecuta el bot en el sandbox con su runtime: debe iniciar y responder dos ticks de prueba.",
     "starterTitle": "Plantilla de inicio para Starfighter",
     "downloadStarter": "Descargar Starfighter Starter Kit (.zip)",
     "starterHelp": "Paquete ZIP listo para admitir con agentrix.json y bot.py de referencia.",
@@ -40,7 +40,7 @@
     "clearFile": "Quitar archivo",
     "validationStages": {
       "uploading": "Subiendo paquete ZIP...",
-      "validating": "Validando en sandbox (sintaxis, inicialización y tick 0)...",
+      "validating": "Validando en sandbox (inicio y dos ticks de prueba)...",
       "ready": "Admisión completada con éxito",
       "rejected": "Admisión rechazada"
     },
@@ -48,8 +48,8 @@
       "title": "Fallo en la validación del bot",
       "guidanceTitle": "Comprobaciones necesarias para resolver el fallo:",
       "rule1": "El archivo agentrix.json debe existir en la raíz del ZIP con entrypoint='bot.py' y protocol_version='1.0'.",
-      "rule2": "bot.py debe tener sintaxis Python válida y responder al tick 0 en el tiempo estipulado.",
-      "rule3": "No debe utilizar librerías fuera de la estándar de Python ni realizar llamadas bloqueantes o de red.",
+      "rule2": "bot.py debe tener sintaxis Python válida, cargar su modelo en menos de 10 s y responder cada tick a tiempo.",
+      "rule3": "Con runtime python-stdlib solo está la biblioteca estándar; para numpy, onnxruntime o safetensors declara \"runtime\": \"python-ml-cpu\". No hay red.",
       "downloadReference": "Descarga el Starter Kit para verificar la estructura requerida."
     },
     "history": "Historial de versiones",
@@ -74,7 +74,58 @@
     "enrollSuccess": "¡'{{name}}' inscrito en el concurso '{{contest}}'!",
     "enrollError": "Error al inscribir el agente",
     "invalidZipType": "Solo se permiten paquetes de extensión .zip.",
-    "fileTooLarge": "El archivo supera el límite máximo permitido de 2 MiB.",
+    "fileTooLarge": "El archivo supera el límite máximo permitido de 50 MB.",
     "admissionTimeout": "La validación tardó más de lo esperado. Comprueba el historial."
+  },
+  "bundle": {
+    "contentsTitle": "Contenido del paquete",
+    "runtimeLabel": "Runtime:",
+    "runtimes": {
+      "stdlib": "Python estándar (python-stdlib)",
+      "mlCpu": "Python ML en CPU (python-ml-cpu)",
+      "unknown": "sin determinar"
+    },
+    "runtimeHelp": {
+      "stdlib": "Solo la biblioteca estándar de Python.",
+      "mlCpu": "Python 3.12 con numpy, onnxruntime y safetensors; un núcleo de CPU, 1 GB de RAM y 10 s para cargar el modelo."
+    },
+    "kinds": {
+      "manifest": "manifiesto",
+      "module": "módulo",
+      "model": "modelo"
+    },
+    "problems": {
+      "unsafePath": "Ruta no permitida en el ZIP: {{name}}.",
+      "unexpectedRoot": "Archivo no permitido en la raíz: {{name}}. La raíz acepta agentrix.json y módulos .py.",
+      "unexpectedPath": "Archivo fuera de lugar: {{name}}. Los modelos van dentro de model/.",
+      "modelExtension": "El modelo {{name}} debe ser .onnx, .safetensors, .npz o .json.",
+      "fileTooLarge": "{{name}} supera el límite de {{limitMb}} MB por archivo.",
+      "tooManyFiles": "El paquete tiene {{count}} archivos; el máximo es {{max}}.",
+      "totalTooLarge": "El contenido descomprimido supera los 50 MB.",
+      "missingRequired": "El paquete debe contener agentrix.json y un bot.py no vacío en la raíz.",
+      "invalidManifest": "agentrix.json no es un JSON válido.",
+      "unknownManifestField": "agentrix.json tiene un campo no admitido: {{field}}.",
+      "invalidName": "El campo name de agentrix.json debe tener entre 1 y 80 caracteres.",
+      "invalidRuntime": "Runtime desconocido \"{{runtime}}\": usa python-stdlib o python-ml-cpu."
+    }
+  },
+  "neural": {
+    "title": "Plantillas con red neuronal",
+    "help": "Bots que cargan un modelo desde model/ y corren en el runtime python-ml-cpu.",
+    "download": {
+      "onnx": "Plantilla ONNX (.zip)",
+      "npz": "Plantilla NPZ (.zip)"
+    },
+    "showGuide": "Cómo subir un bot con red neuronal",
+    "hideGuide": "Ocultar guía",
+    "guideTitle": "Cómo subir un bot con red neuronal",
+    "steps": {
+      "download": "Descarga una plantilla: la ONNX usa onnxruntime y la NPZ usa numpy. Las dos se admiten y juegan tal como vienen.",
+      "model": "Reemplaza el archivo de model/ por tu red (.onnx, .safetensors, .npz o .json) y adapta policy.py a sus entradas y salidas.",
+      "manifest": "Deja \"runtime\": \"python-ml-cpu\" en agentrix.json. Abre los modelos con rutas relativas, como model/policy.onnx.",
+      "limits": "Límites: 50 MB por ZIP, 20 MB por modelo, 1 núcleo, 1 GB de RAM y 10 s para cargar el modelo. Usa un solo hilo de inferencia.",
+      "upload": "Sube el ZIP: la versión queda en Validando hasta que el worker la prueba y pasa a Admitido o Rechazado (con la causa)."
+    },
+    "runtimeVersions": "Runtime python-ml-cpu: Python 3.12.14, numpy 2.5.3, onnxruntime 1.30.0 (CPU) y safetensors 0.8.0. Sin red y sin instalar paquetes."
   }
 }

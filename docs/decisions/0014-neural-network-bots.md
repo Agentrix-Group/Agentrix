@@ -87,6 +87,20 @@ transferencias durante la partida.
 - La admisión conserva los últimos 2 KB de stderr del bot para explicar el
   rechazo.
 
+### Formulario y plantillas (N5, 2026-09-23)
+
+- La web acepta ZIP de hasta 50 MB. Al elegir el archivo lo lee en el
+  navegador, muestra el runtime y la lista de archivos, y avisa antes de
+  subir si rompe una regla de `src/service/bundle.go`, replicada en
+  `web/src/components/bundleInspector.js`. Si el navegador no puede leer
+  el ZIP, decide el servidor.
+- Plantillas `web/public/starfighter-neural-onnx.zip` y
+  `starfighter-neural-npz.zip`, generadas de forma reproducible desde
+  `games/starfighter/examples/neural` con `make neural-templates`. Un test
+  del executor comprueba que no divergen de los ejemplos, que pasan la
+  admisión y que juegan una partida real.
+- Guía para participantes: [Bots con red neuronal](../operations/neural-bots.md).
+
 ### Fuera de alcance
 
 Entrenar redes con el motor real (entorno Gym) sigue la etapa Gym del

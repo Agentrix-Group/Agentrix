@@ -1,8 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { FileArchive, UploadCloud, XCircle, CheckCircle2, AlertCircle } from 'lucide-react';
-
-const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024; // 2 MiB
+import { FileArchive, XCircle, CheckCircle2, AlertCircle, Cpu, FileCode, Brain, FileJson } from 'lucide-react';
+import { MAX_BUNDLE_BYTES, RUNTIME_ML_CPU, UnreadableZipError, inspectBundle } from './bundleInspector.js';
 
 export function formatBytes(bytes) {
   if (bytes === 0) return '0 B';
@@ -28,14 +27,59 @@ export function validateBundleFile(file, t) {
     };
   }
 
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+  if (file.size > MAX_BUNDLE_BYTES) {
     return {
       valid: false,
-      error: t('agents:messages.fileTooLarge', { defaultValue: 'File exceeds the maximum allowed limit of 2 MiB.' }),
+      error: t('agents:messages.fileTooLarge', { defaultValue: 'File exceeds the maximum allowed limit of 50 MB.' }),
     };
   }
 
   return { valid: true, error: null };
+}
+
+/** Traduce un problema del inspector a un mensaje para el usuario. */
+export function describeBundleProblem(problem, t) {
+  return t(`agents:bundle.problems.${problem.code}`, problem.params);
+}
+
+const KIND_ICONS = { manifest: FileJson, module: FileCode, model: Brain };
+
+/** Lista el contenido de un paquete ya inspeccionado: runtime y archivos. */
+export function BundleContents({ inspection }) {
+  const { t } = useTranslation(['agents']);
+  if (!inspection) return null;
+  const runtime = inspection.runtime;
+  return (
+    <div className="bundle-contents" aria-label={t('agents:bundle.contentsTitle')}>
+      <div className="bundle-contents-runtime">
+        <Cpu size={16} aria-hidden="true" />
+        <span>{t('agents:bundle.runtimeLabel')}</span>
+        <strong>
+          {runtime
+            ? t(`agents:bundle.runtimes.${runtime === RUNTIME_ML_CPU ? 'mlCpu' : 'stdlib'}`)
+            : t('agents:bundle.runtimes.unknown')}
+        </strong>
+      </div>
+      {runtime && (
+        <div className="bundle-contents-runtime-help">
+          {t(`agents:bundle.runtimeHelp.${runtime === RUNTIME_ML_CPU ? 'mlCpu' : 'stdlib'}`)}
+        </div>
+      )}
+      <ul className="bundle-contents-files">
+        {inspection.files.map((file) => {
+          const Icon = KIND_ICONS[file.kind] || FileCode;
+          return (
+            <li key={file.name}>
+              <Icon size={14} aria-hidden="true" />
+              <code>{file.name}</code>
+              <span className="bundle-contents-kind">{t(`agents:bundle.kinds.${file.kind}`)}</span>
+              <span className="bundle-contents-size">{formatBytes(file.size)}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
 }
 
 export function BundleDropzone({
@@ -47,7 +91,34 @@ export function BundleDropzone({
 }) {
   const { t } = useTranslation(['agents', 'common']);
   const [isDragging, setIsDragging] = useState(false);
+  const [inspection, setInspection] = useState(null);
   const fileInputRef = useRef(null);
+
+  // Muestra runtime y archivos del ZIP elegido. Si el paquete rompe una
+  // regla del servidor se avisa antes de subirlo; si el navegador no puede
+  // leerlo, decide el servidor.
+  useEffect(() => {
+    let cancelled = false;
+    setInspection(null);
+    if (!bundle || typeof bundle.arrayBuffer !== 'function') return undefined;
+    (async () => {
+      try {
+        const result = await inspectBundle(await bundle.arrayBuffer());
+        if (cancelled) return;
+        setInspection(result);
+        if (result.problems.length > 0) {
+          setValidationError(describeBundleProblem(result.problems[0], t));
+        }
+      } catch (err) {
+        if (!(err instanceof UnreadableZipError) && !(err instanceof RangeError)) {
+          console.warn('bundle inspection failed', err);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [bundle]);
 
   const processFile = (file) => {
     if (!file) {
@@ -121,7 +192,7 @@ export function BundleDropzone({
             : t('agents:submission.chooseZip', { defaultValue: 'Selecciona el paquete ZIP' })}
         </strong>
         <span>
-          {t('agents:submission.zipHelp', { defaultValue: 'Debe contener agentrix.json y bot.py en la raíz. Máximo 2 MiB.' })}
+          {t('agents:submission.zipHelp')}
         </span>
         <input
           id="bundle-file-input"
@@ -152,6 +223,8 @@ export function BundleDropzone({
           <span>{validationError}</span>
         </div>
       )}
+
+      {bundle && inspection && <BundleContents inspection={inspection} />}
 
       {bundle && !validationError && (
         <div className="bundle-selected-info">

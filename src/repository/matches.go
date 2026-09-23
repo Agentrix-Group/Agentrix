@@ -81,6 +81,9 @@ type MatchSlotRepository interface {
 // MatchCASRepository defines optimistic concurrency operations for matches.
 type MatchCASRepository interface {
 	UpdateMatchStatusCAS(ctx context.Context, matchId string, expectedStatus, newStatus model.MatchStatus) (bool, error)
+	// ClaimMatchForRun pasa la partida a queued y registra su run activo en
+	// el mismo UPDATE: quien vea queued ve también el run.
+	ClaimMatchForRun(ctx context.Context, matchId string, expectedStatus model.MatchStatus, runId string) (bool, error)
 }
 
 func (r *repository) ListMatchSlots(ctx context.Context, matchId string) ([]model.MatchSlot, error) {
@@ -139,11 +142,11 @@ func (r *repository) GetMatch(ctx context.Context, id string) (*model.Match, err
 		return nil, err
 	}
 
-	query := `SELECT id, COALESCE(contest_id, ''), game_id, status, seed, COALESCE(replay_id, ''), active, created_at, finished_at, committed_run_id FROM matches WHERE id = $1 AND active = TRUE`
+	query := `SELECT id, COALESCE(contest_id, ''), game_id, status, seed, COALESCE(replay_id, ''), active, created_at, finished_at, committed_run_id, COALESCE(run_id, '') FROM matches WHERE id = $1 AND active = TRUE`
 
 	var m model.Match
 	err = db.QueryRowContext(ctx, query, id).Scan(
-		&m.Id, &m.ContestId, &m.GameId, &m.Status, &m.Seed, &m.ReplayId, &m.Active, &m.CreatedAt, &m.FinishedAt, &m.CommittedRunId,
+		&m.Id, &m.ContestId, &m.GameId, &m.Status, &m.Seed, &m.ReplayId, &m.Active, &m.CreatedAt, &m.FinishedAt, &m.CommittedRunId, &m.RunId,
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -255,6 +258,23 @@ func (r *repository) UpdateMatchStatusCAS(ctx context.Context, matchId string, e
 
 	query := `UPDATE matches SET status = $1 WHERE id = $2 AND status = $3`
 	res, err := db.ExecContext(ctx, query, string(newStatus), matchId, string(expectedStatus))
+	if err != nil {
+		return false, ClassifyDBError(err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return rows > 0, nil
+}
+
+func (r *repository) ClaimMatchForRun(ctx context.Context, matchId string, expectedStatus model.MatchStatus, runId string) (bool, error) {
+	db, err := r.getDb()
+	if err != nil {
+		return false, err
+	}
+	query := `UPDATE matches SET status = $1, run_id = $2 WHERE id = $3 AND status = $4`
+	res, err := db.ExecContext(ctx, query, string(model.MatchStatusQueued), runId, matchId, string(expectedStatus))
 	if err != nil {
 		return false, ClassifyDBError(err)
 	}

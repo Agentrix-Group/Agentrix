@@ -74,6 +74,39 @@ func validateMatchParticipants(submissionIds []string) error {
 	return nil
 }
 
+// jobIDForRun deriva el id del job de su run. Es determinista para que una
+// petición concurrente que pierde la carrera pueda informar el job sin
+// esperar a que el ganador lo encole.
+func jobIDForRun(runId string) string {
+	return "job-" + runId
+}
+
+// activeRunIDs devuelve el run y el job activos de una partida en cola o en
+// ejecución. El run_id se registra en el mismo UPDATE que la pone en cola
+// (ClaimMatchForRun), así que no hace falta esperar al ganador de una
+// carrera. Las partidas encoladas antes de ese cambio usan la búsqueda
+// anterior.
+func (s *service) activeRunIDs(ctx context.Context, match *model.Match) (string, string) {
+	if match.RunId != "" {
+		return match.RunId, jobIDForRun(match.RunId)
+	}
+	runId, jobId := "", ""
+	if runRepo, ok := s.repo.(repository.MatchRunRepository); ok {
+		if latestRun, err := runRepo.GetLatestMatchRunByMatch(ctx, match.Id); err == nil && latestRun != nil {
+			runId = latestRun.Id
+		}
+	}
+	if s.queue != nil {
+		if job, err := s.queue.GetJobByMatch(ctx, match.Id); err == nil && job != nil {
+			jobId = job.JobId
+			if runId == "" {
+				runId = job.RunId
+			}
+		}
+	}
+	return runId, jobId
+}
+
 func (s *service) CreateMatch(ctx context.Context, match *model.Match, submissionIds []string) (*model.MatchResponse, error) {
 	if match.GameId != "starfighter" {
 		return nil, ErrUnsupportedGame
@@ -192,21 +225,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 
 	// If match is already queued or running, return the active run/job idempotently
 	if match.Status == common.MatchStatusQueued || match.Status == common.MatchStatusRunning {
-		runId := ""
-		jobId := ""
-		if runRepo, ok := s.repo.(repository.MatchRunRepository); ok {
-			if latestRun, err := runRepo.GetLatestMatchRunByMatch(ctx, matchId); err == nil && latestRun != nil {
-				runId = latestRun.Id
-			}
-		}
-		if s.queue != nil {
-			if job, err := s.queue.GetJobByMatch(ctx, matchId); err == nil && job != nil {
-				jobId = job.JobId
-				if runId == "" {
-					runId = job.RunId
-				}
-			}
-		}
+		runId, jobId := s.activeRunIDs(ctx, match)
 		return &model.RunMatchResponse{
 			HttpStatusCode: http.StatusAccepted,
 			MatchId:        match.Id,
@@ -423,7 +442,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 	// 6. Atomically transition match to queued using CAS
 	var updated bool
 	if casRepo, ok := s.repo.(repository.MatchCASRepository); ok {
-		updated, err = casRepo.UpdateMatchStatusCAS(ctx, matchId, model.MatchStatus(match.Status), model.MatchStatusQueued)
+		updated, err = casRepo.ClaimMatchForRun(ctx, matchId, model.MatchStatus(match.Status), runId)
 		if err != nil {
 			return nil, fmt.Errorf("failed to transition match status to queued: %w", err)
 		}
@@ -439,26 +458,7 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		// Concurrent request updated the match; return active run/job
 		freshMatch, err := s.repo.GetMatch(ctx, matchId)
 		if err == nil && (freshMatch.Status == common.MatchStatusQueued || freshMatch.Status == common.MatchStatusRunning) {
-			existingRunId := ""
-			existingJobId := ""
-			for retry := 0; retry < 15 && (existingRunId == "" || existingJobId == ""); retry++ {
-				if retry > 0 {
-					time.Sleep(5 * time.Millisecond)
-				}
-				if runRepo, ok := s.repo.(repository.MatchRunRepository); ok && existingRunId == "" {
-					if latestRun, err := runRepo.GetLatestMatchRunByMatch(ctx, matchId); err == nil && latestRun != nil {
-						existingRunId = latestRun.Id
-					}
-				}
-				if s.queue != nil && existingJobId == "" {
-					if job, err := s.queue.GetJobByMatch(ctx, matchId); err == nil && job != nil {
-						existingJobId = job.JobId
-						if existingRunId == "" {
-							existingRunId = job.RunId
-						}
-					}
-				}
-			}
+			existingRunId, existingJobId := s.activeRunIDs(ctx, freshMatch)
 			return &model.RunMatchResponse{
 				HttpStatusCode: http.StatusAccepted,
 				MatchId:        match.Id,
@@ -490,8 +490,8 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		}
 	}
 
-	// 8. Enqueue MatchJob
-	jobId := uuid.New().String()
+	// 8. Enqueue MatchJob (id derivado del run: ver jobIDForRun)
+	jobId := jobIDForRun(runId)
 	if s.queue != nil {
 		job := &connection.MatchJob{
 			JobId:         jobId,

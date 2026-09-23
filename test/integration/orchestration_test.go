@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,6 +116,9 @@ func setupPostgresOrchestrationServer(t *testing.T, conn *connection.Connection,
 func TestIntegration_Orchestration_ConcurrentRunMatch(t *testing.T) {
 	r := require.New(t)
 	ctx := context.Background()
+	// Engine digest fixed here so the test does not depend on another test
+	// having loaded the engine binary (RunMatch fails closed without it).
+	t.Setenv("AGENTRIX_ENGINE_DIGEST", strings.Repeat("a", 64))
 
 	dbName := fmt.Sprintf("agentrix_orch_concur_%d", time.Now().UnixNano()%1000000)
 	conn, cleanup := createIsolatedDB(t, dbName)

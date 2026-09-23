@@ -182,3 +182,24 @@ while True:
 		require.Greater(t, st.fired[slot], 0, "bundle bot in slot %d must play and shoot", slot)
 	}
 }
+
+// ADR-0014, regla A: en una partida real de 5, un bot que se cae en el
+// tick 3 pierde su nave en ese momento, queda último y el resto sigue.
+func TestCrashedBotLeavesRealFreeForAll(t *testing.T) {
+	if !IsRootlessSandboxAvailable() {
+		t.Skip("rootless sandbox not available on host")
+	}
+	crashing := writeProtocolBot(t, `import json, sys
+init = json.loads(sys.stdin.readline())
+for _ in range(3):
+    msg = json.loads(sys.stdin.readline())
+    print(json.dumps({"type": "action", "tick": msg["tick"], "action": {"thrust": "OFF", "turn": "NONE", "shoot": False, "shield": False}}), flush=True)
+raise RuntimeError("boom")
+`)
+	ace := "games/starfighter/examples/bot_ace.py"
+	st := runRealMatch(t, []string{crashing, ace, ace, ace, ace}, 4, 900)
+	require.Equal(t, 5, st.ranks["bot-0"], "the crashed bot ranks last: %v", st.ranks)
+	require.NotEmpty(t, st.destroyed)
+	require.Equal(t, "P0@4", st.destroyed[0], "its ship leaves on the tick of the crash")
+	require.Greater(t, st.ticks, 4, "the other four keep playing")
+}

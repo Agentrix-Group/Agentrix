@@ -191,3 +191,19 @@ func TestMLRuntime_ExampleNeuralBotsPlayFiveShipMatch(t *testing.T) {
 	}
 	t.Logf("reason=%s ticks=%d fired=%v kills=%v ranks=%v", st.reason, st.ticks, st.fired, st.kills, st.ranks)
 }
+
+// ADR-0014 (N3 + regla A): un bot que excede 1 GB sin capturar el error se
+// cae y queda descalificado.
+func TestMLRuntime_BotExceedingMemoryIsDisqualified(t *testing.T) {
+	requireMLRuntime(t)
+	codePath := writeMLBundle(t, map[string]string{
+		"bot.py": `import json, sys
+init = json.loads(sys.stdin.readline()); msg = json.loads(sys.stdin.readline())
+blob = bytearray(1536 * 1024 * 1024)
+print(json.dumps({"type": "action", "tick": msg["tick"], "action": {"thrust": "OFF"}}), flush=True)
+`,
+	})
+	res := runMLTurn(t, codePath, 5*time.Second)
+	require.Equal(t, engine.ActionStatusDisqualified, res.Status)
+	require.Equal(t, crashCause, res.ErrorDetails)
+}

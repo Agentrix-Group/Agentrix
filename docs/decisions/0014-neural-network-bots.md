@@ -59,6 +59,18 @@ transferencias durante la partida.
 - La admisión ejecuta el bot con su runtime: debe cargar su modelo y
   responder un tick de prueba dentro de esos límites.
 
+### Caída de un bot (decisión del 2026-09-22)
+
+- Un bot cuyo proceso termina durante la partida (excepción no capturada,
+  falta de memoria, salida del proceso) queda descalificado con causa
+  `crash`: su nave sale en ese tick, como una descalificación por timeout
+  (ADR-0013). Antes su nave quedaba quieta hasta ser destruida.
+- No descalifican los fallos de la plataforma: un bot que no pudo arrancar
+  (por ejemplo, runtime no instalado en el worker) o una partida cancelada
+  siguen informándose como `crashed`.
+- La admisión conserva los últimos 2 KB de stderr del bot para explicar el
+  rechazo.
+
 ### Fuera de alcance
 
 Entrenar redes con el motor real (entorno Gym) sigue la etapa Gym del

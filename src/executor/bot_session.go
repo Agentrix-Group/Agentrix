@@ -64,6 +64,36 @@ type botProcess struct {
 	// modelo en python-ml-cpu); answered indica que ya respondió una vez.
 	firstTurnTimeout time.Duration
 	answered         bool
+	// stderrTail guarda el final de stderr del bot para diagnosticar una
+	// caída (p. ej. MemoryError) sin guardar toda su salida.
+	stderrTail *tailBuffer
+}
+
+// crashCause es el motivo de descalificación de un bot cuyo proceso murió
+// durante la partida (ADR-0014, regla A): su nave sale en ese tick.
+const crashCause = "crash"
+
+// tailBuffer conserva los últimos max bytes escritos.
+type tailBuffer struct {
+	mu  sync.Mutex
+	max int
+	buf []byte
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.buf = append(t.buf, p...)
+	if len(t.buf) > t.max {
+		t.buf = append([]byte(nil), t.buf[len(t.buf)-t.max:]...)
+	}
+	return len(p), nil
+}
+
+func (t *tailBuffer) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return string(t.buf)
 }
 
 func IsRootlessSandboxAvailable() bool {
@@ -109,9 +139,11 @@ func startBotProcessOn(playerID, codePath string, cpu int, runtime ...BotRuntime
 			lines <- scanner.Text()
 		}
 	}()
-	go func() { _, _ = io.Copy(io.Discard, botProc.Stderr()) }()
+	stderrTail := &tailBuffer{max: 2048}
+	go func() { _, _ = io.Copy(stderrTail, botProc.Stderr()) }()
 
 	return &botProcess{
+		stderrTail:       stderrTail,
 		firstTurnTimeout: firstTurnTimeout,
 		playerID:         playerID,
 		proc:             botProc,
@@ -280,8 +312,9 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		Type: "perception", MatchID: s.matchID, PlayerID: playerID,
 		Tick: &requestedTick, Perception: perception, Data: perception,
 	}); err != nil {
-		proc.disconnect()
-		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: err.Error()}
+		// No se pudo escribirle: el proceso murió.
+		proc.disqualify(crashCause)
+		return engine.PlayerActionInput{Status: engine.ActionStatusDisqualified, ErrorDetails: crashCause}
 	}
 
 	turnTimeout := s.timeout
@@ -303,8 +336,11 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		proc.disconnect()
 		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: ctx.Err().Error()}
 	case "crashed":
-		proc.disconnect()
-		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: "bot process disconnected"}
+		// El proceso terminó durante la partida: queda descalificado.
+		proc.disqualify(crashCause)
+		tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.turn.disqualified_crash", "El proceso del bot terminó y fue descalificado",
+			tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Int("tick", tick))
+		return engine.PlayerActionInput{Status: engine.ActionStatusDisqualified, ErrorDetails: crashCause}
 	}
 
 	var msg botIncoming

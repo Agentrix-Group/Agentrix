@@ -400,7 +400,7 @@ func (e *matchExecutor) Execute(ctx context.Context, job *connection.MatchJob) e
 			actions[pID] = input
 
 			if input.Status != engine.ActionStatusValid {
-				recordAgentIssue(agentIssues, pID, statusToAgentError(input.Status))
+				recordAgentIssue(agentIssues, pID, agentInputError(input))
 				if input.Status == engine.ActionStatusDisqualified {
 					disqualified[pID] = true
 					if input.ErrorDetails == "timeout" {
@@ -711,6 +711,15 @@ type agentIssueSummary struct {
 }
 
 // statusToAgentError maps a bot protocol status into the incident summary.
+// agentInputError clasifica una acción no válida: una descalificación por
+// caída del proceso es un error de ejecución, no un timeout.
+func agentInputError(input engine.PlayerActionInput) error {
+	if input.Status == engine.ActionStatusDisqualified && input.ErrorDetails == crashCause {
+		return ErrAgentExecution
+	}
+	return statusToAgentError(input.Status)
+}
+
 func statusToAgentError(status string) error {
 	switch status {
 	case engine.ActionStatusTimeout:

@@ -5,6 +5,8 @@
 > su implementación en el motor están en
 > [ADR-0013](0013-starfighter-rapier-and-free-for-all.md); en 1 contra 1 el
 > resultado sigue siendo el descrito aquí.
+> Desde [ADR-0014](0014-neural-network-bots.md), la caída del proceso de un
+> bot durante la partida (`crash`) también lo descalifica.
 
 ## Estado
 

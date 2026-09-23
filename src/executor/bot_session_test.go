@@ -214,3 +214,26 @@ print(json.dumps({"type": "action", "tick": msg["tick"], "action": action}), flu
 	require.Equal(t, "BLOCKED_FS", payloadWrite["thrust"])
 	require.Equal(t, "OSError", payloadWrite["error"])
 }
+
+// ADR-0014, regla A: un bot cuyo proceso termina durante la partida queda
+// descalificado (crash), en ese turno y en los siguientes.
+func TestBotSessionProcessExitDisqualifiesAsCrash(t *testing.T) {
+	bot := writeProtocolBot(t, `import json, sys
+init = json.loads(sys.stdin.readline())
+msg = json.loads(sys.stdin.readline())
+print(json.dumps({"type": "action", "tick": msg["tick"], "action": {"thrust": "OFF"}}), flush=True)
+raise SystemExit(3)
+`)
+	sandbox := NewSandbox(2 * time.Second).(*agentSandbox)
+	session, err := sandbox.StartSession(context.Background(), "match-crash", map[string]string{"p1": bot}, 1, 0)
+	require.NoError(t, err)
+	defer session.Close(context.Background(), "", "test")
+
+	first := session.ExecuteTurn(context.Background(), 0, "p1", json.RawMessage(`{"tick":0}`))
+	require.Equal(t, engine.ActionStatusValid, first.Status)
+	second := session.ExecuteTurn(context.Background(), 1, "p1", json.RawMessage(`{"tick":1}`))
+	require.Equal(t, engine.ActionStatusDisqualified, second.Status)
+	require.Equal(t, crashCause, second.ErrorDetails)
+	third := session.ExecuteTurn(context.Background(), 2, "p1", json.RawMessage(`{"tick":2}`))
+	require.Equal(t, engine.ActionStatusDisqualified, third.Status)
+}

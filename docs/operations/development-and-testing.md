@@ -49,6 +49,20 @@ CARGO_TARGET_DIR=/tmp/agentrix-engine-target cargo test --locked --offline
 
 El 2026-09-19 pasaron 11 unit tests y 1 integración del subproceso; 1 prueba estadística quedó ignorada por su duración. Esto prueba el engine en el entorno actual, no conformidad multiplataforma.
 
+## Runtimes de bots (ADR-0014)
+
+Los bots con `runtime: python-ml-cpu` necesitan el runtime construido:
+
+```bash
+make bot-runtimes        # Python 3.12.14 + numpy, onnxruntime y safetensors en bin/runtimes
+```
+
+Descarga paquetes una sola vez y los instala solo desde
+`runtimes/python-ml-cpu/requirements.lock` (con hashes). Con
+`AGENTRIX_REQUIRE_SANDBOX=1`, la suite de integración falla si el runtime no
+está construido. La imagen del worker lo construye en su propia etapa y lo
+instala en `/opt/agentrix/runtimes` (`AGENTRIX_BOT_RUNTIMES_DIR`).
+
 ## Construcción integrada
 
 ```bash

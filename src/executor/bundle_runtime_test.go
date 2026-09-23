@@ -29,23 +29,25 @@ func writeBundle(t *testing.T, files map[string]string) string {
 	return filepath.Join(bundle, "bot.py")
 }
 
+var stdlibRuntime = pythonRuntime{name: model.BotRuntimePythonStdlib, interpreter: "python3"}
+
 func TestSandboxArgs_MountBundleOrSingleFileReadOnlyAtBot(t *testing.T) {
 	r := require.New(t)
 	bundle := botMount{hostPath: "/data/v1/bundle", isBundle: true}
 	single := botMount{hostPath: "/data/v1/bot.py"}
 
-	bw := strings.Join(bubblewrapArgs(bundle, []string{"/usr"}), " ")
+	bw := strings.Join(bubblewrapArgs(bundle, []string{"/usr"}, stdlibRuntime), " ")
 	r.Contains(bw, "--ro-bind /data/v1/bundle /bot")
 	r.Contains(bw, "--remount-ro / --chdir /bot python3 /bot/bot.py")
 	r.Contains(bw, "--unshare-net")
-	bwSingle := strings.Join(bubblewrapArgs(single, []string{"/usr"}), " ")
+	bwSingle := strings.Join(bubblewrapArgs(single, []string{"/usr"}, stdlibRuntime), " ")
 	r.Contains(bwSingle, "--ro-bind /data/v1/bot.py /bot/bot.py")
 	r.NotContains(bwSingle, "--ro-bind /data/v1 ")
 
-	pm := strings.Join(podmanArgs(bundle, "img"), " ")
+	pm := strings.Join(podmanArgs(bundle, "img", stdlibRuntime), " ")
 	r.Contains(pm, "-v /data/v1/bundle:/bot:ro -w /bot img python3 /bot/bot.py")
 	r.Contains(pm, "--network none")
-	r.Contains(strings.Join(podmanArgs(single, "img"), " "), "-v /data/v1/bot.py:/bot/bot.py:ro")
+	r.Contains(strings.Join(podmanArgs(single, "img", stdlibRuntime), " "), "-v /data/v1/bot.py:/bot/bot.py:ro")
 }
 
 // runSingleTurn ejecuta un turno de un bot en el sandbox real y devuelve su

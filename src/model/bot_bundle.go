@@ -3,6 +3,7 @@ package model
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -19,6 +20,32 @@ const (
 	BotBundleDirName      = "bundle"
 	BotBundleManifestName = "bundle-manifest.json"
 )
+
+// Runtimes de ejecución de bots (ADR-0014).
+const (
+	BotRuntimePythonStdlib = "python-stdlib"
+	BotRuntimePythonMLCPU  = "python-ml-cpu"
+)
+
+// BotBundleRuntime devuelve el runtime declarado por el paquete que contiene
+// codePath. Los bots v1 y los paquetes sin runtime usan python-stdlib.
+func BotBundleRuntime(codePath string) string {
+	dir, ok := BotBundleDir(codePath)
+	if !ok {
+		return BotRuntimePythonStdlib
+	}
+	raw, err := os.ReadFile(filepath.Join(filepath.Dir(dir), BotBundleManifestName))
+	if err != nil {
+		return BotRuntimePythonStdlib
+	}
+	var manifest struct {
+		Runtime string `json:"runtime"`
+	}
+	if json.Unmarshal(raw, &manifest) != nil || manifest.Runtime == "" {
+		return BotRuntimePythonStdlib
+	}
+	return manifest.Runtime
+}
 
 // BotBundleDir devuelve la carpeta del paquete v2 que contiene codePath, o
 // ok=false si codePath es un bot v1 de un solo archivo.

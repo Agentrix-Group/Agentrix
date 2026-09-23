@@ -6,11 +6,26 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -mod=readonly -ldflags="-s -w" -o /agentrix-worker ./cmd/worker
 
+# Bot runtimes (ADR-0014): Python 3.12 standalone + python-ml-cpu, installed
+# only from the hashed lock. Same script as `make bot-runtimes`.
+FROM debian:bookworm-slim AS bot-runtimes
+COPY --from=ghcr.io/astral-sh/uv:0.12.17 /uv /usr/local/bin/uv
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY script/build_bot_runtimes.sh script/
+COPY runtimes/python-ml-cpu/requirements.lock runtimes/python-ml-cpu/
+RUN UV_CACHE_DIR=/tmp/uv-cache ./script/build_bot_runtimes.sh /opt/agentrix/runtimes \
+    && rm -rf /tmp/uv-cache
+
 # Final runtime stage with Python, Bubblewrap, and zstd
 FROM debian:bookworm-slim
+# util-linux-extra provides taskset: each python-ml-cpu bot is pinned to one
+# core; prlimit (util-linux) caps its memory.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bubblewrap \
     python3 \
+    util-linux-extra \
     zstd \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -19,6 +34,8 @@ WORKDIR /app
 COPY --from=builder /agentrix-worker /app/agentrix-worker
 COPY bin/starfighter-engine /app/bin/starfighter-engine
 COPY games ./games
+COPY --from=bot-runtimes /opt/agentrix/runtimes /opt/agentrix/runtimes
 
 ENV PATH="/app/bin:${PATH}"
+ENV AGENTRIX_BOT_RUNTIMES_DIR=/opt/agentrix/runtimes
 ENTRYPOINT ["/app/agentrix-worker"]

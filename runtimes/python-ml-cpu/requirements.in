@@ -1,0 +1,5 @@
+# Runtime python-ml-cpu (ADR-0014): versiones estables fijadas.
+# Regenerar el lock con: make bot-runtimes-lock
+numpy==2.5.3
+onnxruntime==1.30.0
+safetensors==0.8.0

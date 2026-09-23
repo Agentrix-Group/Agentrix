@@ -9,11 +9,13 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Agentrix-Group/Agentrix/src/engine"
+	"github.com/Agentrix-Group/Agentrix/src/model"
 	"github.com/Agentrix-Group/Agentrix/src/tracer"
 )
 
@@ -58,6 +60,10 @@ type botProcess struct {
 	disqualified    bool
 	disqualifyCause string
 	disconnectOnce  sync.Once
+	// firstTurnTimeout amplía la espera de la primera respuesta (carga del
+	// modelo en python-ml-cpu); answered indica que ya respondió una vez.
+	firstTurnTimeout time.Duration
+	answered         bool
 }
 
 func IsRootlessSandboxAvailable() bool {
@@ -66,6 +72,12 @@ func IsRootlessSandboxAvailable() bool {
 }
 
 func startBotProcess(playerID, codePath string, runtime ...BotRuntime) (*botProcess, error) {
+	return startBotProcessOn(playerID, codePath, 0, runtime...)
+}
+
+// startBotProcessOn inicia el bot con el runtime que declara su paquete; cpu
+// es el núcleo asignado (python-ml-cpu).
+func startBotProcessOn(playerID, codePath string, cpu int, runtime ...BotRuntime) (*botProcess, error) {
 	var rt BotRuntime
 	if len(runtime) > 0 && runtime[0] != nil {
 		rt = runtime[0]
@@ -73,12 +85,19 @@ func startBotProcess(playerID, codePath string, runtime ...BotRuntime) (*botProc
 		rt = DefaultBotRuntime()
 	}
 
+	runtimeName := model.BotBundleRuntime(codePath)
 	botProc, err := rt.Spawn(context.Background(), BotRuntimeConfig{
 		PlayerID: playerID,
 		CodePath: codePath,
+		Runtime:  runtimeName,
+		CPU:      cpu,
 	})
 	if err != nil {
 		return nil, err
+	}
+	var firstTurnTimeout time.Duration
+	if runtimeName == model.BotRuntimePythonMLCPU {
+		firstTurnTimeout = mlInitTimeout
 	}
 
 	lines := make(chan string)
@@ -93,11 +112,12 @@ func startBotProcess(playerID, codePath string, runtime ...BotRuntime) (*botProc
 	go func() { _, _ = io.Copy(io.Discard, botProc.Stderr()) }()
 
 	return &botProcess{
-		playerID:  playerID,
-		proc:      botProc,
-		stdin:     botProc.Stdin(),
-		lines:     lines,
-		connected: true,
+		firstTurnTimeout: firstTurnTimeout,
+		playerID:         playerID,
+		proc:             botProc,
+		stdin:            botProc.Stdin(),
+		lines:            lines,
+		connected:        true,
 	}, nil
 }
 
@@ -174,6 +194,10 @@ func (s *agentSandbox) ValidateBot(ctx context.Context, codePath string) error {
 		return fmt.Errorf("invalid Python syntax: %s", strings.TrimSpace(string(output)))
 	}
 
+	// Un runtime no instalado se rechaza con un motivo claro, sin ejecutar.
+	if _, err := resolvePythonRuntime(model.BotBundleRuntime(codePath), 0); err != nil {
+		return err
+	}
 	session, err := s.StartSession(ctx, "admission-check", map[string]string{"candidate": codePath}, 1, s.timeout)
 	if err != nil {
 		return err
@@ -208,8 +232,16 @@ func (s *agentSandbox) StartSession(ctx context.Context, matchID string, players
 		timeout = s.timeout
 	}
 	session := &botSession{matchID: matchID, timeout: timeout, processes: make(map[string]*botProcess, len(players))}
-	for playerID, codePath := range players {
-		proc, err := startBotProcess(playerID, codePath, s.runtime)
+	// Núcleos asignados en orden estable de slot: un núcleo por bot ML.
+	playerIDs := make([]string, 0, len(players))
+	for playerID := range players {
+		playerIDs = append(playerIDs, playerID)
+	}
+	sort.Strings(playerIDs)
+	cpus := allowedCPUs()
+	for index, playerID := range playerIDs {
+		codePath := players[playerID]
+		proc, err := startBotProcessOn(playerID, codePath, cpus[index%len(cpus)], s.runtime)
 		if err != nil {
 			tracer.WarnEvent(ctx, tracer.ScopeAgent, "agent.session.start_failed", "No se pudo iniciar el proceso Python del bot",
 				tracer.Origin(tracer.OriginAgent), tracer.String("agent_id", playerID), tracer.Err(err))
@@ -252,7 +284,14 @@ func (s *botSession) ExecuteTurn(ctx context.Context, tick int, playerID string,
 		return engine.PlayerActionInput{Status: engine.ActionStatusCrashed, ErrorDetails: err.Error()}
 	}
 
-	line, outcome := proc.recv(ctx, s.timeout)
+	turnTimeout := s.timeout
+	if !proc.answered && proc.firstTurnTimeout > turnTimeout {
+		turnTimeout = proc.firstTurnTimeout
+	}
+	line, outcome := proc.recv(ctx, turnTimeout)
+	if outcome == "" {
+		proc.answered = true
+	}
 	switch outcome {
 	case "timeout":
 		tracer.RecordSandboxTimeout()

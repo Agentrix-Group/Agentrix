@@ -32,8 +32,8 @@ const (
 
 // Runtimes de ejecución admitidos en agentrix.json.
 const (
-	RuntimePythonStdlib = "python-stdlib"
-	RuntimePythonMLCPU  = "python-ml-cpu"
+	RuntimePythonStdlib = model.BotRuntimePythonStdlib
+	RuntimePythonMLCPU  = model.BotRuntimePythonMLCPU
 )
 
 var (

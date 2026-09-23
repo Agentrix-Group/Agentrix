@@ -33,6 +33,10 @@ type BotRuntimeConfig struct {
 	MaxOutputKB   int
 	EnvAllowlist  []string
 	AllowFallback bool
+	// Runtime es python-stdlib o python-ml-cpu (ADR-0014); CPU es el núcleo
+	// asignado al bot en python-ml-cpu.
+	Runtime string
+	CPU     int
 }
 
 // BotProcess abstracts a running, isolated bot process with standard streams.
@@ -129,7 +133,7 @@ func resolveBotMount(codePath string) (botMount, error) {
 // bubblewrapArgs arma el sandbox: raíz vacía en solo lectura, sin red, los
 // runtimes del sistema en solo lectura y el código del bot en /bot, también
 // en solo lectura, con /bot como directorio de trabajo.
-func bubblewrapArgs(mount botMount, systemDirs []string) []string {
+func bubblewrapArgs(mount botMount, systemDirs []string, py pythonRuntime) []string {
 	args := []string{
 		"--die-with-parent",
 		"--unshare-net",
@@ -141,6 +145,10 @@ func bubblewrapArgs(mount botMount, systemDirs []string) []string {
 	for _, sysDir := range systemDirs {
 		args = append(args, "--ro-bind", sysDir, sysDir)
 	}
+	if py.bindDir != "" {
+		// Runtime ML autocontenido, en su misma ruta y en solo lectura.
+		args = append(args, "--ro-bind", py.bindDir, py.bindDir)
+	}
 	if mount.isBundle {
 		args = append(args, "--ro-bind", mount.hostPath, botMountPoint)
 	} else {
@@ -148,30 +156,46 @@ func bubblewrapArgs(mount botMount, systemDirs []string) []string {
 	}
 	// Remount root read-only after setting up required mount points
 	args = append(args, "--remount-ro", "/", "--chdir", botMountPoint)
-	return append(args, "python3", botMountPoint+"/bot.py")
+	return append(args, py.interpreter, botMountPoint+"/bot.py")
+}
+
+// wrapCommand antepone los límites del runtime (prlimit, taskset) al
+// comando del sandbox.
+func wrapCommand(py pythonRuntime, name string, args []string) (string, []string) {
+	if len(py.wrapper) == 0 {
+		return name, args
+	}
+	full := append(append(append([]string{}, py.wrapper[1:]...), name), args...)
+	return py.wrapper[0], full
 }
 
 // podmanArgs arma el contenedor con el código del bot en /bot, en solo
 // lectura, y /bot como directorio de trabajo.
-func podmanArgs(mount botMount, image string) []string {
+func podmanArgs(mount botMount, image string, py pythonRuntime) []string {
 	volume := fmt.Sprintf("%s:%s/bot.py:ro", mount.hostPath, botMountPoint)
 	if mount.isBundle {
 		volume = fmt.Sprintf("%s:%s:ro", mount.hostPath, botMountPoint)
 	}
-	return []string{
+	memory := "256m"
+	args := []string{
 		"run", "--rm", "-i",
 		"--network", "none",
 		"--read-only",
 		"--tmpfs", "/tmp:rw,size=16m",
 		"--cap-drop", "ALL",
 		"--security-opt", "no-new-privileges",
-		"--memory", "256m",
 		"--pids-limit", "64",
-		"-v", volume,
-		"-w", botMountPoint,
-		image,
-		"python3", botMountPoint + "/bot.py",
 	}
+	if py.name == model.BotRuntimePythonMLCPU {
+		// La imagen ML trae el mismo lock de python-ml-cpu.
+		memory = "1g"
+		args = append(args, "--cpus", "1")
+		for _, env := range mlThreadEnv {
+			args = append(args, "-e", env)
+		}
+	}
+	args = append(args, "--memory", memory, "-v", volume, "-w", botMountPoint, image)
+	return append(args, "python3", botMountPoint+"/bot.py")
 }
 
 // BubblewrapRuntime executes bots in a hardened rootless bubblewrap sandbox.
@@ -198,12 +222,15 @@ func (b *BubblewrapRuntime) Spawn(ctx context.Context, cfg BotRuntimeConfig) (Bo
 			systemDirs = append(systemDirs, sysDir)
 		}
 	}
-	args := bubblewrapArgs(mount, systemDirs)
-
-	cmd := exec.CommandContext(ctx, "bwrap", args...)
+	py, err := resolvePythonRuntime(cfg.Runtime, cfg.CPU)
+	if err != nil {
+		return nil, err
+	}
+	name, args := wrapCommand(py, "bwrap", bubblewrapArgs(mount, systemDirs, py))
+	cmd := exec.CommandContext(ctx, name, args...)
 
 	// Clean environment: strictly pass only allowed runtime variables, stripping all host secrets
-	env := DefaultEnvAllowlist
+	env := py.env
 	if len(cfg.EnvAllowlist) > 0 {
 		env = cfg.EnvAllowlist
 	}
@@ -233,6 +260,8 @@ func (b *BubblewrapRuntime) Spawn(ctx context.Context, cfg BotRuntimeConfig) (Bo
 // PodmanRuntime executes bots using rootless Podman containers.
 type PodmanRuntime struct {
 	Image string
+	// MLImage es la imagen del runtime python-ml-cpu.
+	MLImage string
 }
 
 func (p *PodmanRuntime) Name() string { return "podman-rootless" }
@@ -250,11 +279,24 @@ func (p *PodmanRuntime) Spawn(ctx context.Context, cfg BotRuntimeConfig) (BotPro
 	if err != nil {
 		return nil, err
 	}
+	py, err := resolvePythonRuntime(cfg.Runtime, cfg.CPU)
+	if err != nil && cfg.Runtime != model.BotRuntimePythonMLCPU {
+		return nil, err
+	}
+	if cfg.Runtime == model.BotRuntimePythonMLCPU {
+		py = pythonRuntime{name: model.BotRuntimePythonMLCPU}
+	}
 	image := p.Image
 	if image == "" {
 		image = "docker.io/library/python:3.11-slim"
 	}
-	args := podmanArgs(mount, image)
+	if py.name == model.BotRuntimePythonMLCPU {
+		image = p.MLImage
+		if image == "" {
+			image = "localhost/agentrix-bot-python-ml:latest"
+		}
+	}
+	args := podmanArgs(mount, image, py)
 
 	cmd := exec.CommandContext(ctx, "podman", args...)
 	cmd.Env = DefaultEnvAllowlist
@@ -295,15 +337,19 @@ func (d *DirectPythonRuntime) Spawn(ctx context.Context, cfg BotRuntimeConfig) (
 	if err != nil {
 		return nil, err
 	}
+	py, err := resolvePythonRuntime(cfg.Runtime, cfg.CPU)
+	if err != nil {
+		return nil, err
+	}
 	entry := mount.hostPath
 	if mount.isBundle {
 		entry = filepath.Join(mount.hostPath, "bot.py")
 	}
-	cmd := exec.CommandContext(ctx, "python3", entry)
+	cmd := exec.CommandContext(ctx, py.interpreter, entry)
 	// Sin aislamiento (solo desarrollo): al menos el mismo directorio de
-	// trabajo que ve el bot en el sandbox.
+	// trabajo y el mismo intérprete que ve el bot en el sandbox.
 	cmd.Dir = mount.workDir
-	cmd.Env = DefaultEnvAllowlist
+	cmd.Env = py.env
 
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

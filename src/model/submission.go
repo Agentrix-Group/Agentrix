@@ -20,7 +20,7 @@ type Submission struct {
 	Language    string    `json:"language,omitempty" db:"language"`
 	Status      string    `json:"status,omitempty" db:"status"`
 	Active      bool      `json:"active,omitempty" db:"active"`
-	ErrorDetail string    `json:"error_detail,omitempty" db:"-"`
+	ErrorDetail string    `json:"error_detail,omitempty" db:"error_detail"`
 	CreatedAt   time.Time `json:"created_at,omitempty" db:"created_at"`
 	Agent       *Agent    `json:"agent,omitempty"`
 }

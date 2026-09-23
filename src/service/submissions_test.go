@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
@@ -117,11 +118,13 @@ func TestCreateSubmissionBundle(t *testing.T) {
 		`{"name":"Candidate","entrypoint":"bot.py","protocol_version":"1.0"}`,
 		"import json, sys\n",
 	)
-	svc := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{})
+	// La subida no ejecuta el bot (ADR-0007): ni siquiera necesita validador.
+	svc := NewService(repo, &mockArtifactStore{}, nil)
 	submission, err := svc.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", bundle)
 	require.NoError(t, err)
 	require.Same(t, created, submission)
 	require.Equal(t, "python", submission.Language)
+	require.Equal(t, common.SubmissionStatusValidating, submission.Status, "the worker runs the admission dry run")
 	require.Contains(t, submission.CodePath, "/submissions/agent-1/v1/bundle/bot.py")
 
 	badBundle := makeBotBundle(t,
@@ -138,10 +141,61 @@ func TestCreateSubmissionBundle(t *testing.T) {
 	_, err = svc.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", unknownFieldBundle)
 	require.ErrorIs(t, err, ErrInvalidBotBundle)
 
-	rejecting := NewService(repo, &mockArtifactStore{}, nil, mockAdmissionValidator{err: errors.New("tick timeout")})
-	_, err = rejecting.CreateSubmissionBundle(ctx, "user-1", common.RoleParticipant, "agent-1", bundle)
-	require.ErrorIs(t, err, ErrAdmissionFailed)
-
 	_, err = svc.CreateSubmissionBundle(ctx, "another-user", common.RoleParticipant, "agent-1", bundle)
 	require.ErrorIs(t, err, ErrAgentNotOwned)
+}
+
+// mockAdmissionRepo simula la cola de admisión de submissions.
+type mockAdmissionRepo struct {
+	mockSubmissionRepo
+	pending  []*model.Submission
+	finished map[string][2]string
+}
+
+func (m *mockAdmissionRepo) ClaimNextAdmission(ctx context.Context, staleAfter time.Duration) (*model.Submission, error) {
+	if len(m.pending) == 0 {
+		return nil, nil
+	}
+	next := m.pending[0]
+	m.pending = m.pending[1:]
+	return next, nil
+}
+
+func (m *mockAdmissionRepo) FinishAdmission(ctx context.Context, id, status, detail string) error {
+	m.finished[id] = [2]string{status, detail}
+	return nil
+}
+
+// ADR-0014 (N4): el worker prueba cada submission pendiente y guarda
+// 'ready' o 'rejected' con el motivo.
+func TestProcessNextAdmission(t *testing.T) {
+	ctx := context.Background()
+	repo := &mockAdmissionRepo{
+		pending:  []*model.Submission{{Id: "sub-ok", CodePath: "/ok/bot.py"}, {Id: "sub-bad", CodePath: "/bad/bot.py"}},
+		finished: map[string][2]string{},
+	}
+	validator := mockPathValidator{failing: map[string]error{"/bad/bot.py": errors.New("bot failed admission: exceeded the 1024 MB memory limit")}}
+	svc := NewService(repo, &mockArtifactStore{}, nil, validator)
+
+	for i := 0; i < 2; i++ {
+		processed, err := svc.ProcessNextAdmission(ctx)
+		require.NoError(t, err)
+		require.True(t, processed)
+	}
+	processed, err := svc.ProcessNextAdmission(ctx)
+	require.NoError(t, err)
+	require.False(t, processed, "no pending admissions left")
+
+	require.Equal(t, [2]string{common.SubmissionStatusReady, ""}, repo.finished["sub-ok"])
+	require.Equal(t, [2]string{common.SubmissionStatusRejected, "bot failed admission: exceeded the 1024 MB memory limit"}, repo.finished["sub-bad"])
+
+	// Sin validador (proceso de la API) no se ejecuta ninguna admisión.
+	_, err = NewService(repo, &mockArtifactStore{}, nil).ProcessNextAdmission(ctx)
+	require.ErrorIs(t, err, ErrAdmissionFailed)
+}
+
+type mockPathValidator struct{ failing map[string]error }
+
+func (m mockPathValidator) ValidateBot(ctx context.Context, codePath string) error {
+	return m.failing[codePath]
 }

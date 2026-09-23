@@ -55,6 +55,7 @@ type Service interface {
 	ListSubmissionsByAgent(ctx context.Context, agentId string) ([]model.Submission, error)
 	GetSubmission(ctx context.Context, id string) (*model.Submission, error)
 	CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error)
+	ProcessNextAdmission(ctx context.Context) (bool, error)
 
 	// Matches
 	ListMatches(ctx context.Context) ([]model.Match, error)

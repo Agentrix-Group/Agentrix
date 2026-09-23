@@ -57,7 +57,23 @@ transferencias durante la partida.
   con 1 GB de RAM, 10 s para cargar su modelo en `init` y los 2 s por tick
   actuales.
 - La admisión ejecuta el bot con su runtime: debe cargar su modelo y
-  responder un tick de prueba dentro de esos límites.
+  responder dos ticks de prueba dentro de esos límites.
+
+### Admisión asíncrona en el worker (decisión del 2026-09-22)
+
+- La API no ejecuta bots ([ADR-0007](0007-separated-api-and-worker-roles-and-reproducible-containers.md)):
+  valida el paquete de forma estática, lo guarda y crea la submission en
+  estado `validating`. Responde 201 sin esperar la prueba.
+- El worker toma las submissions `validating` de a una
+  (`FOR UPDATE SKIP LOCKED`, columna `admission_claimed_at`), corre la
+  prueba de admisión en el sandbox con el runtime declarado y deja la
+  submission en `ready` o en `rejected` con el motivo en `error_detail`. Un
+  reclamo con más de 2 minutos, de un worker caído, se vuelve a tomar.
+- Migración `00006_async_bot_admission`: agrega `error_detail` y
+  `admission_claimed_at` a `submissions`.
+- `RunMatch` rechaza slots cuya submission está en `validating`,
+  `rejected` o `failed`.
+- La web consulta `GET /submissions/{id}` hasta ver `ready` o `rejected`.
 
 ### Caída de un bot (decisión del 2026-09-22)
 
@@ -84,7 +100,7 @@ roadmap. Este ADR permite subir y ejecutar redes, no entrenarlas.
 | N1 | Paquete v2 y admisión: un test de rechazo por caso (ruta `../`, extensión no permitida, tamaño, ZIP bomb, `.npz` con pickle, JSON inválido, cabecera `.safetensors` corrupta); los paquetes v1 siguen admitiéndose |
 | N2 | Un bot que lee su modelo desde `/bot` juega una partida real con replay sellado; escribir en `/bot` falla |
 | N3 | Bots de ejemplo con `.onnx`, `.safetensors` y `.npz` juegan una partida de 5; RAM máxima medida y bajo el límite; un bot que excede la RAM queda descalificado; el runtime `python-stdlib` no cambia |
-| N4 | La admisión rechaza, con el motivo, un modelo demasiado lento y uno demasiado pesado |
+| N4 | La admisión, en el worker, rechaza con el motivo un modelo demasiado lento y uno demasiado pesado; la API no ejecuta bots; un bot no admitido no juega |
 | N5 | Formulario web con runtime y archivos; guía y plantillas ONNX y NPZ que se admiten y juegan |
 | N6 | Integración completa con `-race`: 0 fallas y 0 saltados; partida de 5 con bots ML y clásicos mezclados y replay sellado |
 

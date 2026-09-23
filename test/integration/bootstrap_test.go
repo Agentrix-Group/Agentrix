@@ -164,6 +164,23 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 	validBotPy, err := os.ReadFile("../../games/starfighter/examples/bot_random.py")
 	r.NoError(err, "Must be able to read bot_random.py for bundle admission test")
 
+	// ADR-0014 (N4): the API only stores the bundle as `validating`; the
+	// worker runs the admission dry run. admit drains that queue the way
+	// the worker loop does and returns the submission's final state.
+	admit := func(id string) (status, detail string) {
+		for {
+			processed, err := srv.Service.ProcessNextAdmission(context.Background())
+			r.NoError(err)
+			if !processed {
+				break
+			}
+		}
+		r.NoError(conn.Db.QueryRow(
+			"SELECT status, COALESCE(error_detail, '') FROM submissions WHERE id = $1", id,
+		).Scan(&status, &detail))
+		return status, detail
+	}
+
 	// 6a. Valid bundle upload by owner (pilot_alpha) succeeds
 	{
 		bundleBytes := createBundle(validBotPy, validManifest)
@@ -184,7 +201,9 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 		var sub model.Submission
 		r.NoError(json.Unmarshal(rec.Body.Bytes(), &sub))
 		r.Equal("agent-star-hunter", sub.AgentId)
-		r.Equal("ready", sub.Status)
+		r.Equal("validating", sub.Status, "the API must not run the bot (ADR-0007)")
+		status, detail := admit(sub.Id)
+		r.Equal("ready", status, detail)
 	}
 
 	// 6b. Unauthorized upload by pilot_beta for pilot_alpha's agent is rejected with 403 Forbidden
@@ -287,7 +306,9 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 			"model/weights.npz":         npz,
 			"model/normalization.json":  []byte(`{"mean":[0],"std":[1]}`),
 		})
-		r.Equal(http.StatusCreated, code, "v2 bundle must be admitted: %s", raw)
+		r.Equal(http.StatusCreated, code, "v2 bundle must be stored: %s", raw)
+		status, detail := admit(sub.Id)
+		r.Equal("ready", status, "v2 bundle must pass the admission dry run: %s", detail)
 		var codePath string
 		r.NoError(conn.Db.QueryRow("SELECT code_path FROM submissions WHERE id = $1", sub.Id).Scan(&codePath))
 		bundleDir := filepath.Dir(codePath)
@@ -308,12 +329,14 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 		r.Len(stored.Files, 7)
 	}
 	{
-		code, raw, _ := uploadV2(map[string][]byte{
+		code, raw, sub := uploadV2(map[string][]byte{
 			"agentrix.json":      v2Manifest,
 			"bot.py":             validBotPy,
 			"model/weights.json": []byte("[" + strings.Repeat("0.125,", 700_000) + "0]"),
 		})
-		r.Equal(http.StatusCreated, code, "a >2 MiB bundle within the 50 MB limit must be admitted: %s", raw)
+		r.Equal(http.StatusCreated, code, "a >2 MiB bundle within the 50 MB limit must be stored: %s", raw)
+		status, detail := admit(sub.Id)
+		r.Equal("ready", status, detail)
 	}
 
 	// 6f/6g. ADR-0014 (N4): through the HTTP API, the ONNX example bot is
@@ -327,20 +350,32 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 			return content
 		}
 		mlManifest := []byte(`{"name":"NeuralOnnx","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python-ml-cpu"}`)
-		code, raw, _ := uploadV2(map[string][]byte{
+		code, raw, sub := uploadV2(map[string][]byte{
 			"agentrix.json":     mlManifest,
 			"bot.py":            read("bot_onnx.py"),
 			"policy.py":         read("policy.py"),
 			"model/policy.onnx": read("model/policy.onnx"),
 		})
-		r.Equal(http.StatusCreated, code, "the ONNX example must be admitted on python-ml-cpu: %s", raw)
+		r.Equal(http.StatusCreated, code, raw)
+		status, detail := admit(sub.Id)
+		r.Equal("ready", status, "the ONNX example must be admitted on python-ml-cpu: %s", detail)
 
-		code, raw, _ = uploadV2(map[string][]byte{
+		code, raw, sub = uploadV2(map[string][]byte{
 			"agentrix.json": mlManifest,
 			"bot.py":        []byte("blob = bytearray(1536 * 1024 * 1024)\n"),
 		})
-		r.Equal(http.StatusBadRequest, code)
-		r.Contains(raw, "exceeded the 1024 MB memory limit")
+		r.Equal(http.StatusCreated, code, raw)
+		status, detail = admit(sub.Id)
+		r.Equal("rejected", status)
+		r.Contains(detail, "exceeded the 1024 MB memory limit")
+
+		// The rejection reason is visible to the owner through the API.
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/submissions/"+sub.Id, nil)
+		req.Header.Set("Authorization", "Bearer "+pilotAlphaToken)
+		rec := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(rec, req)
+		r.Equal(http.StatusOK, rec.Code, rec.Body.String())
+		r.Contains(rec.Body.String(), "exceeded the 1024 MB memory limit")
 	}
 
 	// 7. Test Idempotency: Re-executing seeds must not error or duplicate rows

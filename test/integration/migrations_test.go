@@ -331,13 +331,13 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 	conn, cleanup := createIsolatedDB(t, dbName)
 	defer cleanup()
 
-	// 1. Initial Migrate: 0 -> 5
+	// 1. Initial Migrate: 0 -> 6
 	err := database.Migrate(conn.Db)
-	r.NoError(err, "Initial forward migration to v5 must succeed")
+	r.NoError(err, "Initial forward migration to v6 must succeed")
 
 	ver, err := database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(5), ver)
+	r.Equal(int64(6), ver)
 
 	scoringDefault := func() string {
 		var def string
@@ -354,7 +354,18 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 
 	ver, err = database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(5), ver)
+	r.Equal(int64(6), ver)
+
+	// 2b. Rollback v6 -> v5 drops the async admission columns
+	err = database.Rollback(conn.Db)
+	r.NoError(err, "Rollback from v6 to v5 must succeed")
+	var errorDetailExists bool
+	_ = conn.Db.QueryRow(`
+		SELECT EXISTS (
+			SELECT FROM information_schema.columns
+			WHERE table_name = 'submissions' AND column_name = 'error_detail'
+		)`).Scan(&errorDetailExists)
+	r.False(errorDetailExists, "error_detail must be dropped after rolling back v6")
 
 	// 3. Rollback v5 -> v4 restores the win/draw/loss default
 	err = database.Rollback(conn.Db)
@@ -396,13 +407,13 @@ func TestIntegration_Migrations_ReversibilityAndIdempotence(t *testing.T) {
 		)`).Scan(&sessionsTableExists)
 	r.False(sessionsTableExists, "sessions table must be dropped after rolling back v3")
 
-	// 6. Re-apply all migrations forward: v2 -> v5
+	// 6. Re-apply all migrations forward: v2 -> v6
 	err = database.Migrate(conn.Db)
-	r.NoError(err, "Re-migrating from v2 back to v5 must succeed cleanly")
+	r.NoError(err, "Re-migrating from v2 back to v6 must succeed cleanly")
 
 	ver, err = database.GetCurrentVersion(conn.Db)
 	r.NoError(err)
-	r.Equal(int64(5), ver)
+	r.Equal(int64(6), ver)
 
 	err = database.CheckSchemaCompatible(ctx, conn.Db)
 	r.NoError(err, "Database must be fully schema compatible after re-migrating")

@@ -264,6 +264,11 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		if !sub.Active {
 			return nil, fmt.Errorf("%w: slot %d submission %s is inactive", ErrInvalidSubmissions, slot.SlotIndex, slot.SubmissionId)
 		}
+		// Solo juegan bots que pasaron la admisión del worker (ADR-0014, N4).
+		switch sub.Status {
+		case common.SubmissionStatusValidating, common.SubmissionStatusRejected, common.SubmissionStatusFailed:
+			return nil, fmt.Errorf("%w: slot %d submission %s is not ready (%s)", ErrInvalidSubmissions, slot.SlotIndex, slot.SubmissionId, sub.Status)
+		}
 		submissionIds = append(submissionIds, slot.SubmissionId)
 		subMap[slot.SubmissionId] = sub
 	}

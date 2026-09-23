@@ -114,6 +114,10 @@ func main() {
 		workerPool.Start(ctx)
 		defer workerPool.Stop()
 		tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.pool.started", "Worker pool activo")
+		// Admisión de bots en el worker (ADR-0014, N4; la API no ejecuta bots).
+		admissionWorker := executor.NewAdmissionWorker(svc, 0)
+		admissionWorker.Start(ctx)
+		defer admissionWorker.Stop()
 
 		if role == "worker" {
 			// Worker only: wait for termination signal

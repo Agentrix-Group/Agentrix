@@ -12,7 +12,6 @@ import (
 	"github.com/Agentrix-Group/Agentrix/src/config"
 	"github.com/Agentrix-Group/Agentrix/src/connection"
 	"github.com/Agentrix-Group/Agentrix/src/database"
-	"github.com/Agentrix-Group/Agentrix/src/executor"
 	"github.com/Agentrix-Group/Agentrix/src/repository"
 	"github.com/Agentrix-Group/Agentrix/src/server"
 	"github.com/Agentrix-Group/Agentrix/src/service"
@@ -77,10 +76,10 @@ func main() {
 	}
 	defer queue.Close()
 
-	// Compose Layers - API does NOT run simulation or bots
+	// Compose Layers - API does NOT run simulation or bots (ADR-0007): no
+	// sandbox here; bot admission runs on the worker (ADR-0014, N4).
 	repo := repository.NewRepository(conn)
-	sandbox := executor.NewSandbox(0)
-	svc := service.NewService(repo, artifacts, queue, sandbox)
+	svc := service.NewService(repo, artifacts, queue)
 
 	srv := server.NewServer(svc)
 	serverHost := fmt.Sprintf(":%s", cfg.Server.Port)

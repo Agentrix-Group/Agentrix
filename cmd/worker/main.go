@@ -103,6 +103,10 @@ func main() {
 	workerPool := executor.NewWorkerPool(queue, matchExecutor, 2)
 	workerPool.Start(ctx)
 	tracer.InfoEvent(ctx, tracer.ScopeWorker, "worker.pool.started", "Worker pool activo procesando partidas")
+	// Admisión de bots en el worker (ADR-0014, N4; la API no ejecuta bots).
+	admissionWorker := executor.NewAdmissionWorker(svc, 0)
+	admissionWorker.Start(ctx)
+	defer admissionWorker.Stop()
 
 	// Wait for shutdown signal
 	sigChan := make(chan os.Signal, 1)

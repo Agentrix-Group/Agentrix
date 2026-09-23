@@ -35,6 +35,13 @@ El punto de entrada anterior (`main.go`) ejecutaba de manera monolítica el serv
    - `Dockerfile.worker`: Contenedor basado en Debian que incluye `bubblewrap`, `python3`, `zstd`, el binario oficial del motor `starfighter-engine` y el binario `agentrix-worker`.
    - `docker-compose.yml`: Orquestación local reproducible con servicios `postgres`, `api` y `worker`.
 
+## Nota (2026-09-22)
+
+La prueba de admisión de bots, que antes corría la API al subir el
+paquete, pasa al worker ([ADR-0014](0014-neural-network-bots.md)): la API
+guarda la submission en `validating` y el worker la deja en `ready` o
+`rejected`. Así la API no necesita sandbox ni runtimes de Python.
+
 ## Consecuencias
 
 - Aislamiento completo de la superficie de red de la ejecución de código no confiable.

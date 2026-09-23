@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/Agentrix-Group/Agentrix/src/common"
 	"github.com/Agentrix-Group/Agentrix/src/model"
+	"github.com/Agentrix-Group/Agentrix/src/repository"
+	"github.com/Agentrix-Group/Agentrix/src/tracer"
 	"github.com/google/uuid"
 )
 
@@ -63,16 +63,7 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 	if manifest.Entrypoint != "bot.py" || manifest.ProtocolVersion != agentProtocolVersion {
 		return nil, fmt.Errorf("%w: agentrix.json must declare bot.py and protocol 1.0", ErrInvalidBotBundle)
 	}
-	if s.validator == nil {
-		return nil, fmt.Errorf("%w: validator unavailable", ErrAdmissionFailed)
-	}
-	tempDir, err := os.MkdirTemp("", "agentrix-admission-*")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(tempDir)
-	// bundle-manifest.json: digest, runtime y SHA-256 por archivo. Es el
-	// mismo en la admisión y en el almacenamiento definitivo.
+	// bundle-manifest.json: digest, runtime y SHA-256 por archivo.
 	bundleManifest, err := json.MarshalIndent(map[string]any{
 		"digest":  bundle.Digest,
 		"runtime": manifest.Runtime,
@@ -81,34 +72,16 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 	if err != nil {
 		return nil, err
 	}
-	// La prueba de admisión usa la misma estructura en disco que la
-	// ejecución (bundle/ + bundle-manifest.json): el sandbox monta el paquete
-	// completo con el runtime que declara.
-	admissionBundle := filepath.Join(tempDir, model.BotBundleDirName)
-	if err := os.WriteFile(filepath.Join(tempDir, model.BotBundleManifestName), bundleManifest, 0o600); err != nil {
-		return nil, err
-	}
-	for _, name := range bundle.SortedPaths() {
-		target := filepath.Join(admissionBundle, filepath.FromSlash(name))
-		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(target, bundle.Files[name], 0o600); err != nil {
-			return nil, err
-		}
-	}
-	tempBot := filepath.Join(admissionBundle, "bot.py")
-	if err := s.validator.ValidateBot(ctx, tempBot); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAdmissionFailed, err)
-	}
 
 	version := 1
 	if existing, listErr := s.repo.ListSubmissionsByAgent(ctx, agentId); listErr == nil {
 		version = len(existing) + 1
 	}
+	// La API no ejecuta bots (ADR-0007): la prueba de admisión la hace un
+	// worker (ProcessNextAdmission). Hasta entonces el bot está 'validating'.
 	submission := &model.Submission{
 		Id: uuid.New().String(), AgentId: agentId, Version: version,
-		Language: "python", Status: common.SubmissionStatusReady,
+		Language: "python", Status: common.SubmissionStatusValidating,
 		Active: true, CreatedAt: time.Now().UTC(),
 	}
 	// El paquete se guarda desplegado en bundle/, que es la carpeta que el
@@ -143,4 +116,35 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 		return errors.New("unexpected data after JSON object")
 	}
 	return nil
+}
+
+// admissionStaleAfter es cuánto espera una admisión reservada por un worker
+// que no la terminó (por ejemplo, porque se cayó) antes de que otro la retome.
+const admissionStaleAfter = 2 * time.Minute
+
+// ProcessNextAdmission ejecuta la prueba de admisión de la siguiente
+// submission 'validating' (ADR-0014, N4). Corre solo en el worker: la API
+// no ejecuta bots (ADR-0007). Devuelve false si no había trabajo.
+func (s *service) ProcessNextAdmission(ctx context.Context) (bool, error) {
+	if s.validator == nil {
+		return false, fmt.Errorf("%w: validator unavailable", ErrAdmissionFailed)
+	}
+	admissions, ok := s.repo.(repository.SubmissionAdmissionRepository)
+	if !ok {
+		return false, fmt.Errorf("%w: repository does not support asynchronous admission", ErrAdmissionFailed)
+	}
+	submission, err := admissions.ClaimNextAdmission(ctx, admissionStaleAfter)
+	if err != nil || submission == nil {
+		return false, err
+	}
+	status, detail := common.SubmissionStatusReady, ""
+	if err := s.validator.ValidateBot(ctx, submission.CodePath); err != nil {
+		status, detail = common.SubmissionStatusRejected, err.Error()
+	}
+	if err := admissions.FinishAdmission(ctx, submission.Id, status, detail); err != nil {
+		return true, err
+	}
+	tracer.InfoEvent(ctx, tracer.ScopeAgent, "submission.admission.finished", "Admisión del bot terminada",
+		tracer.String("submission_id", submission.Id), tracer.String("status", status))
+	return true, nil
 }

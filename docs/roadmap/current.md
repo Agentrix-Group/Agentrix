@@ -21,6 +21,7 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 | Despliegue | Implementado | API/worker separados, Dockerfile.api/worker, docker-compose y fail-closed en producción |
 | Certificación MVP | Implementado | Suite E2E canónica, rechazo de zombis por fencing token, replay atómico verificado bit a bit y ADR-0008 |
 | Rapier + todos contra todos | Implementado en ramas `feat/rapier-ffa` (F0–F6); pendiente de integrar | F7 opcional: evidencia ARM64. Integrar primero `agentrix_engine` (commit fijado en `engine.lock`) |
+| Bots con redes neuronales (ADR-0014) | En curso: N0 hecha | Fases N1–N6 con sus criterios |
 | sim-core | No iniciado | Mismas reglas fuera de IPC/renderer |
 | Segundo juego | No iniciado | Juego discreto sin modificar el loop central |
 | Gym | No iniciado | API vectorizada sobre el mismo sim-core |

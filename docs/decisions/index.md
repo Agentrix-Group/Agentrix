@@ -17,6 +17,7 @@ Las decisiones se conservan sin reescribir retrospectivamente su contexto. Una d
 | [0011](0011-rbac-capabilities-and-session-security.md) | accepted | Modelo de seguridad RBAC, sesiones persistentes y trazabilidad sin fuga |
 | [0012](0012-deterministic-rankings-and-recalculation-policy.md) | accepted | Clasificaciones deterministas, criterios de desempate en cascada y snapshots auditables |
 | [0013](0013-starfighter-rapier-and-free-for-all.md) | accepted | Starfighter sobre `rapier2d` directo y partidas de 2 a 5 jugadores todos contra todos |
+| [0014](0014-neural-network-bots.md) | accepted | Bots con redes neuronales: paquete v2 con modelos (`.onnx`, `.safetensors`, `.npz`, `.json`) y runtime `python-ml-cpu` |
 
 ## Decisiones vigentes resumidas
 

@@ -227,7 +227,9 @@ func (s *agentSandbox) ValidateBot(ctx context.Context, codePath string) error {
 	}
 
 	// Un runtime no instalado se rechaza con un motivo claro, sin ejecutar.
-	if _, err := resolvePythonRuntime(model.BotBundleRuntime(codePath), 0); err != nil {
+	runtimeName := model.BotBundleRuntime(codePath)
+	py, err := resolvePythonRuntime(runtimeName, 0)
+	if err != nil {
 		return err
 	}
 	session, err := s.StartSession(ctx, "admission-check", map[string]string{"candidate": codePath}, 1, s.timeout)
@@ -235,8 +237,25 @@ func (s *agentSandbox) ValidateBot(ctx context.Context, codePath string) error {
 		return err
 	}
 	defer session.Close(context.Background(), "", "admission_check")
-	perception := json.RawMessage(`{
-		"tick":0,
+	var proc *botProcess
+	if concrete, ok := session.(*botSession); ok {
+		proc = concrete.processes["candidate"]
+	}
+	// Dos ticks (ADR-0014): el primero incluye la carga del modelo; el
+	// segundo mide una respuesta normal dentro del tiempo por tick.
+	for tick := 0; tick < 2; tick++ {
+		input := session.ExecuteTurn(ctx, tick, "candidate", admissionPerception(tick))
+		if input.Status != engine.ActionStatusValid {
+			return admissionFailure(tick, input, py, s.timeout, proc)
+		}
+	}
+	return nil
+}
+
+// admissionPerception es la percepción de prueba de la admisión.
+func admissionPerception(tick int) json.RawMessage {
+	return json.RawMessage(fmt.Sprintf(`{
+		"tick":%d,
 		"player_id":0,
 		"myself":{
 			"position":{"x":0,"y":0},
@@ -249,12 +268,42 @@ func (s *agentSandbox) ValidateBot(ctx context.Context, codePath string) error {
 		},
 		"rivals":[],
 		"bullets":[]
-	}`)
-	input := session.ExecuteTurn(ctx, 0, "candidate", perception)
-	if input.Status != engine.ActionStatusValid {
-		return fmt.Errorf("bot failed admission tick: %s (%s)", input.Status, input.ErrorDetails)
+	}`, tick))
+}
+
+// admissionFailure traduce el fallo de un tick de admisión a un motivo que
+// el autor del bot pueda entender y corregir.
+func admissionFailure(tick int, input engine.PlayerActionInput, py pythonRuntime, turnTimeout time.Duration, proc *botProcess) error {
+	stderr := ""
+	if proc != nil && proc.stderrTail != nil {
+		stderr = proc.stderrTail.String()
 	}
-	return nil
+	switch {
+	case input.ErrorDetails == "timeout" && tick == 0 && py.initTimeout > turnTimeout:
+		return fmt.Errorf("bot failed admission: loading the model and answering the first tick took longer than %s", py.initTimeout)
+	case input.ErrorDetails == "timeout":
+		return fmt.Errorf("bot failed admission: answering tick %d took longer than %s", tick, turnTimeout)
+	case strings.Contains(stderr, "MemoryError"):
+		return fmt.Errorf("bot failed admission: exceeded the %d MB memory limit", mlMemoryLimitBytes>>20)
+	case input.ErrorDetails == crashCause:
+		if last := lastErrorLine(stderr); last != "" {
+			return fmt.Errorf("bot failed admission: the bot process stopped: %s", last)
+		}
+		return fmt.Errorf("bot failed admission: the bot process stopped at tick %d", tick)
+	default:
+		return fmt.Errorf("bot failed admission tick %d: %s (%s)", tick, input.Status, input.ErrorDetails)
+	}
+}
+
+// lastErrorLine devuelve la última línea no vacía de stderr (en Python, la
+// del tipo de excepción), recortada.
+func lastErrorLine(stderr string) string {
+	lines := strings.Split(strings.TrimSpace(stderr), "\n")
+	last := strings.TrimSpace(lines[len(lines)-1])
+	if len(last) > 300 {
+		last = last[:300] + "..."
+	}
+	return last
 }
 
 // StartSession starts one persistent Python process per player. The first and

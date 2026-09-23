@@ -207,3 +207,53 @@ print(json.dumps({"type": "action", "tick": msg["tick"], "action": {"thrust": "O
 	require.Equal(t, engine.ActionStatusDisqualified, res.Status)
 	require.Equal(t, crashCause, res.ErrorDetails)
 }
+
+// loopBot arma un bot que responde en bucle, con código opcional antes de
+// leer init (carga del modelo) y por tick.
+func loopBot(beforeInit, perTick string) string {
+	return "import json, sys, time\n" + beforeInit + `
+init = json.loads(sys.stdin.readline())
+for line in sys.stdin:
+    msg = json.loads(line)
+` + perTick + `
+    print(json.dumps({"type": "action", "tick": msg["tick"], "action": {"thrust": "OFF"}}), flush=True)
+`
+}
+
+// ADR-0014 (N4): la admisión ejecuta el bot con su runtime y rechaza, con
+// un motivo entendible, lo que no cumple los límites.
+func TestMLAdmission_RejectsSlowOrHeavyModelsWithReason(t *testing.T) {
+	requireMLRuntime(t)
+	sandbox := NewSandbox(2 * time.Second)
+	validate := func(bot string) error {
+		return sandbox.ValidateBot(context.Background(), writeMLBundle(t, map[string]string{"bot.py": bot}))
+	}
+
+	cases := map[string]struct {
+		bot    string
+		reason string
+	}{
+		"model load over 10 s": {loopBot("time.sleep(12)", ""), "loading the model and answering the first tick took longer than 10s"},
+		"inference over 2 s":   {loopBot("", "    if msg[\"tick\"] == 1: time.sleep(3)"), "answering tick 1 took longer than 2s"},
+		"model over 1 GB":      {loopBot("blob = bytearray(1536 * 1024 * 1024)", ""), "exceeded the 1024 MB memory limit"},
+		"unavailable library":  {loopBot("import torch", ""), "ModuleNotFoundError: No module named 'torch'"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			err := validate(tc.bot)
+			require.Error(t, err)
+			require.ErrorContains(t, err, tc.reason)
+		})
+	}
+
+	// La plantilla ONNX de ejemplo sí se admite.
+	dir := resolveTestPath("games/starfighter/examples/neural")
+	read := func(name string) string {
+		content, err := os.ReadFile(filepath.Join(dir, name))
+		require.NoError(t, err)
+		return string(content)
+	}
+	require.NoError(t, sandbox.ValidateBot(context.Background(), writeMLBundle(t, map[string]string{
+		"bot.py": read("bot_onnx.py"), "policy.py": read("policy.py"), "model/policy.onnx": read("model/policy.onnx"),
+	})))
+}

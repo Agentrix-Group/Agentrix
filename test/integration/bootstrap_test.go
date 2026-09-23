@@ -316,6 +316,33 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 		r.Equal(http.StatusCreated, code, "a >2 MiB bundle within the 50 MB limit must be admitted: %s", raw)
 	}
 
+	// 6f/6g. ADR-0014 (N4): through the HTTP API, the ONNX example bot is
+	// admitted on the python-ml-cpu runtime, and a bot that exceeds the
+	// memory limit is rejected with the reason.
+	{
+		neural := "../../games/starfighter/examples/neural/"
+		read := func(name string) []byte {
+			content, err := os.ReadFile(neural + name)
+			r.NoError(err)
+			return content
+		}
+		mlManifest := []byte(`{"name":"NeuralOnnx","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python-ml-cpu"}`)
+		code, raw, _ := uploadV2(map[string][]byte{
+			"agentrix.json":     mlManifest,
+			"bot.py":            read("bot_onnx.py"),
+			"policy.py":         read("policy.py"),
+			"model/policy.onnx": read("model/policy.onnx"),
+		})
+		r.Equal(http.StatusCreated, code, "the ONNX example must be admitted on python-ml-cpu: %s", raw)
+
+		code, raw, _ = uploadV2(map[string][]byte{
+			"agentrix.json": mlManifest,
+			"bot.py":        []byte("blob = bytearray(1536 * 1024 * 1024)\n"),
+		})
+		r.Equal(http.StatusBadRequest, code)
+		r.Contains(raw, "exceeded the 1024 MB memory limit")
+	}
+
 	// 7. Test Idempotency: Re-executing seeds must not error or duplicate rows
 	_, err = conn.Db.Exec(string(seedSQL))
 	r.NoError(err, "Re-executing seeds must be idempotent and succeed")

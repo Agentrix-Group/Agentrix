@@ -71,11 +71,21 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 		return nil, err
 	}
 	defer os.RemoveAll(tempDir)
+	// bundle-manifest.json: digest, runtime y SHA-256 por archivo. Es el
+	// mismo en la admisión y en el almacenamiento definitivo.
+	bundleManifest, err := json.MarshalIndent(map[string]any{
+		"digest":  bundle.Digest,
+		"runtime": manifest.Runtime,
+		"files":   bundle.FileDigests,
+	}, "", "  ")
+	if err != nil {
+		return nil, err
+	}
 	// La prueba de admisión usa la misma estructura en disco que la
-	// ejecución (bundle/ + bundle-manifest.json), así el sandbox monta el
-	// paquete completo y el bot puede importar sus módulos y leer su modelo.
+	// ejecución (bundle/ + bundle-manifest.json): el sandbox monta el paquete
+	// completo con el runtime que declara.
 	admissionBundle := filepath.Join(tempDir, model.BotBundleDirName)
-	if err := os.WriteFile(filepath.Join(tempDir, model.BotBundleManifestName), []byte("{}"), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, model.BotBundleManifestName), bundleManifest, 0o600); err != nil {
 		return nil, err
 	}
 	for _, name := range bundle.SortedPaths() {
@@ -113,14 +123,6 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 		if name == "bot.py" {
 			codePath = saved
 		}
-	}
-	bundleManifest, err := json.MarshalIndent(map[string]any{
-		"digest":  bundle.Digest,
-		"runtime": manifest.Runtime,
-		"files":   bundle.FileDigests,
-	}, "", "  ")
-	if err != nil {
-		return nil, err
 	}
 	if _, err := s.artifacts.Save(ctx, basePath+"/"+model.BotBundleManifestName, bundleManifest); err != nil {
 		return nil, err

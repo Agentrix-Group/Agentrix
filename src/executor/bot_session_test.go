@@ -143,13 +143,15 @@ func TestBotSessionUnknownPlayerIsCrashed(t *testing.T) {
 
 func TestValidateBotChecksSyntaxAndAdmissionTick(t *testing.T) {
 	sandbox := NewSandbox(time.Second).(*agentSandbox)
+	// La admisión prueba dos ticks (ADR-0014, N4): el bot responde en bucle.
 	valid := writeProtocolBot(t, `import json, sys
 init = json.loads(sys.stdin.readline())
 assert init["type"] == "init"
-msg = json.loads(sys.stdin.readline())
-print(json.dumps({"type":"action", "tick":msg["tick"], "action":{
-    "thrust":"OFF", "turn":"NONE", "shoot":False, "shield":False
-}}), flush=True)
+for line in sys.stdin:
+    msg = json.loads(line)
+    print(json.dumps({"type":"action", "tick":msg["tick"], "action":{
+        "thrust":"OFF", "turn":"NONE", "shoot":False, "shield":False
+    }}), flush=True)
 `)
 	require.NoError(t, sandbox.ValidateBot(context.Background(), valid))
 

@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -221,6 +223,95 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 
 		srv.Handler.ServeHTTP(rec, req)
 		r.Equal(http.StatusBadRequest, rec.Code, "Missing manifest must be rejected with 400 Bad Request")
+	}
+
+	// 6d/6e. ADR-0014: v2 bundle with extra modules and model files in the
+	// four accepted formats is admitted through the real validator, stored as
+	// a full tree with per-file digests; bundles above the old 2 MiB limit
+	// are accepted up to 50 MB.
+	uploadV2 := func(files map[string][]byte) (int, string, model.Submission) {
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		for name, content := range files {
+			f, err := zw.Create(name)
+			r.NoError(err)
+			_, _ = f.Write(content)
+		}
+		r.NoError(zw.Close())
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		_ = writer.WriteField("agent_id", "agent-star-hunter")
+		part, _ := writer.CreateFormFile("bundle", "neural_bundle.zip")
+		_, _ = part.Write(buf.Bytes())
+		_ = writer.Close()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/submissions/upload", &body)
+		req.Header.Set("Authorization", "Bearer "+pilotAlphaToken)
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		rec := httptest.NewRecorder()
+		srv.Handler.ServeHTTP(rec, req)
+		var sub model.Submission
+		_ = json.Unmarshal(rec.Body.Bytes(), &sub)
+		return rec.Code, rec.Body.String(), sub
+	}
+	npz := func() []byte {
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("w.npy")
+		header := "{'descr': '<f4', 'fortran_order': False, 'shape': (2,), }"
+		for (10+len(header)+1)%64 != 0 {
+			header += " "
+		}
+		header += "\n"
+		_, _ = f.Write([]byte{0x93, 'N', 'U', 'M', 'P', 'Y', 1, 0, byte(len(header)), 0})
+		_, _ = f.Write([]byte(header))
+		_, _ = f.Write(make([]byte, 8))
+		_ = zw.Close()
+		return buf.Bytes()
+	}()
+	safetensors := func() []byte {
+		header := []byte(`{"w":{"dtype":"F32","shape":[2],"data_offsets":[0,8]}}`)
+		out := []byte{byte(len(header)), 0, 0, 0, 0, 0, 0, 0}
+		out = append(out, header...)
+		return append(out, make([]byte, 8)...)
+	}()
+	v2Manifest := []byte(`{"name":"NeuralV2","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python-stdlib"}`)
+	{
+		code, raw, sub := uploadV2(map[string][]byte{
+			"agentrix.json":             v2Manifest,
+			"bot.py":                    validBotPy,
+			"helpers.py":                []byte("SCALE = 1.0\n"),
+			"model/policy.onnx":         []byte("\x08\x07onnx"),
+			"model/weights.safetensors": safetensors,
+			"model/weights.npz":         npz,
+			"model/normalization.json":  []byte(`{"mean":[0],"std":[1]}`),
+		})
+		r.Equal(http.StatusCreated, code, "v2 bundle must be admitted: %s", raw)
+		var codePath string
+		r.NoError(conn.Db.QueryRow("SELECT code_path FROM submissions WHERE id = $1", sub.Id).Scan(&codePath))
+		bundleDir := filepath.Dir(codePath)
+		r.Equal("bundle", filepath.Base(bundleDir), "code_path points into the unpacked bundle")
+		for _, name := range []string{"agentrix.json", "helpers.py", "model/policy.onnx", "model/weights.safetensors", "model/weights.npz", "model/normalization.json"} {
+			r.FileExists(filepath.Join(bundleDir, filepath.FromSlash(name)))
+		}
+		var stored struct {
+			Digest  string            `json:"digest"`
+			Runtime string            `json:"runtime"`
+			Files   map[string]string `json:"files"`
+		}
+		manifestRaw, err := os.ReadFile(filepath.Join(filepath.Dir(bundleDir), "bundle-manifest.json"))
+		r.NoError(err)
+		r.NoError(json.Unmarshal(manifestRaw, &stored))
+		r.Len(stored.Digest, 64)
+		r.Equal("python-stdlib", stored.Runtime)
+		r.Len(stored.Files, 7)
+	}
+	{
+		code, raw, _ := uploadV2(map[string][]byte{
+			"agentrix.json":      v2Manifest,
+			"bot.py":             validBotPy,
+			"model/weights.json": []byte("[" + strings.Repeat("0.125,", 700_000) + "0]"),
+		})
+		r.Equal(http.StatusCreated, code, "a >2 MiB bundle within the 50 MB limit must be admitted: %s", raw)
 	}
 
 	// 7. Test Idempotency: Re-executing seeds must not error or duplicate rows

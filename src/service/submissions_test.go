@@ -122,7 +122,7 @@ func TestCreateSubmissionBundle(t *testing.T) {
 	require.NoError(t, err)
 	require.Same(t, created, submission)
 	require.Equal(t, "python", submission.Language)
-	require.Contains(t, submission.CodePath, "/submissions/agent-1/v1/bot.py")
+	require.Contains(t, submission.CodePath, "/submissions/agent-1/v1/bundle/bot.py")
 
 	badBundle := makeBotBundle(t,
 		`{"name":"Candidate","entrypoint":"main.js","protocol_version":"1.0"}`,

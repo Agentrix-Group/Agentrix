@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 
@@ -57,9 +58,10 @@ func (s *Server) uploadSubmissionBundle(w http.ResponseWriter, r *http.Request) 
 		common.WriteErrorResponse(w, common.ACCESS_DENIED_ERROR)
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 3<<20)
-	if err := r.ParseMultipartForm(3 << 20); err != nil {
-		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "ZIP upload exceeds the 2 MiB limit or is malformed")
+	// Margen de 1 MiB para los campos y cabeceras del formulario.
+	r.Body = http.MaxBytesReader(w, r.Body, service.MaxBundleBytes+(1<<20))
+	if err := r.ParseMultipartForm(8 << 20); err != nil {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, fmt.Sprintf("ZIP upload exceeds the %d MiB limit or is malformed", service.MaxBundleBytes>>20))
 		return
 	}
 	agentID := r.FormValue("agent_id")
@@ -73,12 +75,12 @@ func (s *Server) uploadSubmissionBundle(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer file.Close()
-	if header.Size <= 0 || header.Size > 2<<20 {
-		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "bundle ZIP must not exceed 2 MiB")
+	if header.Size <= 0 || header.Size > service.MaxBundleBytes {
+		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, fmt.Sprintf("bundle ZIP must not exceed %d MiB", service.MaxBundleBytes>>20))
 		return
 	}
-	archive, err := io.ReadAll(io.LimitReader(file, (2<<20)+1))
-	if err != nil || len(archive) > 2<<20 {
+	archive, err := io.ReadAll(io.LimitReader(file, service.MaxBundleBytes+1))
+	if err != nil || len(archive) > service.MaxBundleBytes {
 		common.WriteErrorMessage(w, common.INVALID_REQUEST_ERROR, "could not read bundle ZIP")
 		return
 	}

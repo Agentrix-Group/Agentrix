@@ -29,4 +29,6 @@ type AgentPackageManifest struct {
 	Name            string `json:"name"`
 	Entrypoint      string `json:"entrypoint"`
 	ProtocolVersion string `json:"protocol_version"`
+	// Runtime es "python-stdlib" (por defecto) o "python-ml-cpu" (ADR-0014).
+	Runtime string `json:"runtime,omitempty"`
 }

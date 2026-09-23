@@ -32,8 +32,11 @@ transferencias durante la partida.
 - `agentrix.json` agrega `runtime`: `python-stdlib` (por defecto, el actual)
   o `python-ml-cpu`.
 - Límites: 50 MB por paquete, 20 MB por archivo de modelo, 1 MiB por módulo
-  `.py`, sin directorios fuera de la raíz y `model/`, sin rutas relativas
-  ni absolutas peligrosas y con límite de razón de compresión.
+  `.py`, sin directorios fuera de la raíz y `model/` y sin rutas relativas
+  ni absolutas peligrosas. Contra ZIP bombs se revisa el tamaño declarado
+  antes de descomprimir y la lectura se corta en el límite, así que la
+  memoria nunca supera los límites del paquete. Se descartó un límite de
+  razón de compresión: rechazaba pesos legítimos muy repetitivos.
 - Validación estática en la admisión: `.json` debe ser JSON válido; `.npz`
   no puede contener arrays de objetos de Python (bloquea pickle);
   `.safetensors` debe tener cabecera y tipos de dato válidos; `.onnx` se

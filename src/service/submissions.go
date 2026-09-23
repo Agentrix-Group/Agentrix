@@ -37,10 +37,6 @@ var (
 
 const agentProtocolVersion = "1.0"
 
-// bundleManifestFile guarda, junto al paquete, su digest y el SHA-256 de
-// cada archivo (ADR-0014).
-const bundleManifestFile = "bundle-manifest.json"
-
 func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, agentId string, archive []byte) (*model.Submission, error) {
 	if len(archive) == 0 || len(archive) > MaxBundleBytes {
 		return nil, fmt.Errorf("%w: ZIP must be between 1 byte and %d MiB", ErrInvalidBotBundle, MaxBundleBytes>>20)
@@ -75,9 +71,15 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 		return nil, err
 	}
 	defer os.RemoveAll(tempDir)
-	// La prueba de admisión recibe el paquete completo, con su árbol.
+	// La prueba de admisión usa la misma estructura en disco que la
+	// ejecución (bundle/ + bundle-manifest.json), así el sandbox monta el
+	// paquete completo y el bot puede importar sus módulos y leer su modelo.
+	admissionBundle := filepath.Join(tempDir, model.BotBundleDirName)
+	if err := os.WriteFile(filepath.Join(tempDir, model.BotBundleManifestName), []byte("{}"), 0o600); err != nil {
+		return nil, err
+	}
 	for _, name := range bundle.SortedPaths() {
-		target := filepath.Join(tempDir, filepath.FromSlash(name))
+		target := filepath.Join(admissionBundle, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 			return nil, err
 		}
@@ -85,7 +87,7 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 			return nil, err
 		}
 	}
-	tempBot := filepath.Join(tempDir, "bot.py")
+	tempBot := filepath.Join(admissionBundle, "bot.py")
 	if err := s.validator.ValidateBot(ctx, tempBot); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrAdmissionFailed, err)
 	}
@@ -104,7 +106,7 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 	basePath := fmt.Sprintf("submissions/%s/v%d", agentId, version)
 	codePath := ""
 	for _, name := range bundle.SortedPaths() {
-		saved, err := s.artifacts.Save(ctx, basePath+"/bundle/"+name, bundle.Files[name])
+		saved, err := s.artifacts.Save(ctx, basePath+"/"+model.BotBundleDirName+"/"+name, bundle.Files[name])
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +122,7 @@ func (s *service) CreateSubmissionBundle(ctx context.Context, userId, roleId, ag
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.artifacts.Save(ctx, basePath+"/"+bundleManifestFile, bundleManifest); err != nil {
+	if _, err := s.artifacts.Save(ctx, basePath+"/"+model.BotBundleManifestName, bundleManifest); err != nil {
 		return nil, err
 	}
 	if _, err := s.artifacts.Save(ctx, basePath+"/bundle.zip", archive); err != nil {

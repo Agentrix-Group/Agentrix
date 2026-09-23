@@ -277,8 +277,10 @@ func TestIntegration_Bootstrap_StarfighterAndBundleAdmission(t *testing.T) {
 	v2Manifest := []byte(`{"name":"NeuralV2","entrypoint":"bot.py","protocol_version":"1.0","runtime":"python-stdlib"}`)
 	{
 		code, raw, sub := uploadV2(map[string][]byte{
-			"agentrix.json":             v2Manifest,
-			"bot.py":                    validBotPy,
+			"agentrix.json": v2Manifest,
+			// The admission dry run must see the whole bundle: bot.py imports
+			// a sibling module and reads a model file before playing.
+			"bot.py":                    append([]byte("import json\nimport helpers\nassert json.load(open('model/normalization.json'))['std'] == [1]\n"), validBotPy...),
 			"helpers.py":                []byte("SCALE = 1.0\n"),
 			"model/policy.onnx":         []byte("\x08\x07onnx"),
 			"model/weights.safetensors": safetensors,

@@ -265,7 +265,8 @@ func (s *service) RunMatch(ctx context.Context, matchId string, idempotencyKey .
 		artifactDigest := ""
 		if sub, ok := subMap[slot.SubmissionId]; ok && sub != nil {
 			if sub.CodePath != "" {
-				if d, err := model.ComputeFileSHA256(sub.CodePath); err == nil {
+				// Bot v2: digest del paquete completo (ADR-0014).
+				if d, err := model.BotArtifactDigest(sub.CodePath); err == nil {
 					artifactDigest = d
 				}
 			}

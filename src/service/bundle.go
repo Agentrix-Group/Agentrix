@@ -188,11 +188,7 @@ func readBotBundle(archive []byte) (*BotBundle, error) {
 		digests[name] = hex.EncodeToString(sum[:])
 	}
 	bundle := &BotBundle{Manifest: manifest, ManifestBytes: manifestBytes, Files: files, FileDigests: digests}
-	listing := sha256.New()
-	for _, name := range bundle.SortedPaths() {
-		fmt.Fprintf(listing, "%s\x00%s\n", name, digests[name])
-	}
-	bundle.Digest = hex.EncodeToString(listing.Sum(nil))
+	bundle.Digest = model.BundleListingDigest(digests)
 	return bundle, nil
 }
 

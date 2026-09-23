@@ -118,6 +118,17 @@ roadmap. Este ADR permite subir y ejecutar redes, no entrenarlas.
 | N5 | Formulario web con runtime y archivos; guía y plantillas ONNX y NPZ que se admiten y juegan |
 | N6 | Integración completa con `-race`: 0 fallas y 0 saltados; partida de 5 con bots ML y clásicos mezclados y replay sellado |
 
+## Evidencia (2026-09-23)
+
+| Fase | Evidencia |
+| --- | --- |
+| N1 | `src/service/bundle_test.go`: un rechazo por caso; los paquetes v1 se siguen admitiendo |
+| N2 | `src/executor/bundle_runtime_test.go`: el bot lee su modelo de `/bot` y no puede escribir ahí |
+| N3 | `src/executor/ml_runtime_test.go`: partida de 5 con los ejemplos `.onnx`, `.safetensors` y `.npz`; 55 MB de RSS medidos con el bot ONNX; un bot que supera 1 GB queda descalificado |
+| N4 | `TestMLAdmission_RejectsSlowOrHeavyModelsWithReason`; `test/integration/admission_test.go` (cola con `SKIP LOCKED`, reclamo vencido, `RunMatch` exige `ready`); `bootstrap_test.go` (rechazo por memoria visible en la API) |
+| N5 | `web/test/bundle_inspector.test.jsx`; `TestMLRuntime_WebNeuralTemplatesAreAdmittedAndPlay`; las plantillas se admiten por la API en `bootstrap_test.go` |
+| N6 | `test/integration/neural_match_test.go`: 3 bots neuronales subidos y admitidos por el worker contra 2 Ace, con `RunMatch`, la cola de Postgres y el motor real; replay sellado y publicado; los 3 disparan. `make test-integration`: 100 pasan, 0 fallan, 0 saltados |
+
 ## Consecuencias
 
 - La imagen del worker crece con el runtime ML (numpy + onnxruntime).

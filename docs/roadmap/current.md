@@ -21,7 +21,7 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 | Despliegue | Implementado | API/worker separados, Dockerfile.api/worker, docker-compose y fail-closed en producción |
 | Certificación MVP | Implementado | Suite E2E canónica, rechazo de zombis por fencing token, replay atómico verificado bit a bit y ADR-0008 |
 | Rapier + todos contra todos | Implementado en ramas `feat/rapier-ffa` (F0–F6); pendiente de integrar | F7 opcional: evidencia ARM64. Integrar primero `agentrix_engine` (commit fijado en `engine.lock`) |
-| Bots con redes neuronales (ADR-0014) | En curso: N0 hecha | Fases N1–N6 con sus criterios |
+| Bots con redes neuronales (ADR-0014) | Implementado en rama `feat/neural-bots` (N0–N6); pendiente de integrar | Paquete v2 con `.onnx`/`.safetensors`/`.npz`/`.json`, runtime `python-ml-cpu`, admisión asíncrona en el worker, formulario y plantillas web; integración con `-race` 100/0/0 y partida de 5 mezclando bots neuronales y clásicos con replay sellado |
 | sim-core | No iniciado | Mismas reglas fuera de IPC/renderer |
 | Segundo juego | No iniciado | Juego discreto sin modificar el loop central |
 | Gym | No iniciado | API vectorizada sobre el mismo sim-core |
@@ -35,7 +35,7 @@ baseline -> sandbox -> lease/fencing -> protocolo/configuración
 
 ## Próximo corte
 
-Integrar las ramas `feat/rapier-ffa` de `agentrix_engine` y `Agentrix` (en ese orden, porque `engine.lock` fija un commit del motor). F7 (evidencia ARM64) es opcional y no bloquea.
+Integrar las ramas `feat/rapier-ffa` de `agentrix_engine` y `Agentrix` (en ese orden, porque `engine.lock` fija un commit del motor), y después `feat/neural-bots` de `Agentrix`, que parte de `feat/rapier-ffa`. F7 (evidencia ARM64) es opcional y no bloquea.
 
 Después, post-MVP (sim-core): extracción de la lógica de simulación fuera de Bevy/IPC para inferencia rápida y soporte Gym sin alterar las garantías transaccionales del MVP cerrado.
 
